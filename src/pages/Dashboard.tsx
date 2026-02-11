@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getTrending, TMDBMovie, searchMovies, searchByTitles } from '@/lib/tmdb';
 import { getStoredM3UTitles } from '@/lib/m3u-parser';
 import { motion } from 'framer-motion';
-import { Film, Search, Heart, Clock, Dices, Signal, HelpCircle, LogOut, Wallet } from 'lucide-react';
+import { Film, Search, Heart, Clock, Dices, Signal, HelpCircle, LogOut, Wallet, Trophy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import MovieCard from '@/components/MovieCard';
 import MovieModal from '@/components/MovieModal';
@@ -13,8 +13,9 @@ import QualityThermometer from '@/components/QualityThermometer';
 import SupportTickets from '@/components/SupportTickets';
 import ExpirationBanner from '@/components/ExpirationBanner';
 import PointsWallet from '@/components/PointsWallet';
+import AgendaJogos from '@/components/AgendaJogos';
 
-type Tab = 'home' | 'watchlist' | 'history' | 'roleta' | 'quality' | 'support' | 'points';
+type Tab = 'home' | 'watchlist' | 'history' | 'roleta' | 'jogos' | 'quality' | 'support' | 'points';
 
 const Dashboard = () => {
   const { currentClient, isClient, isExpiringSoon, logout } = useAuth();
@@ -84,6 +85,7 @@ const Dashboard = () => {
     { id: 'watchlist', label: 'Favoritos', icon: <Heart className="w-4 h-4" /> },
     { id: 'history', label: 'Assistidos', icon: <Clock className="w-4 h-4" /> },
     { id: 'roleta', label: 'Cine-Roleta', icon: <Dices className="w-4 h-4" /> },
+    { id: 'jogos', label: 'Jogos VIP', icon: <Trophy className="w-4 h-4" /> },
     { id: 'quality', label: 'Qualidade', icon: <Signal className="w-4 h-4" /> },
     { id: 'support', label: 'Suporte', icon: <HelpCircle className="w-4 h-4" /> },
     { id: 'points', label: 'Pontos', icon: <Wallet className="w-4 h-4" /> },
@@ -236,6 +238,12 @@ const Dashboard = () => {
               onToggleFavorite={toggleFavorite}
               onToggleWatched={toggleWatched}
             />
+          </motion.div>
+        )}
+
+        {tab === 'jogos' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <AgendaJogos />
           </motion.div>
         )}
 
