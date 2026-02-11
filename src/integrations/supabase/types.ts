@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      clients_list: {
+        Row: {
+          clients: Json
+          id: string
+          uploaded_at: string
+        }
+        Insert: {
+          clients?: Json
+          id?: string
+          uploaded_at?: string
+        }
+        Update: {
+          clients?: Json
+          id?: string
+          uploaded_at?: string
+        }
+        Relationships: []
+      }
       football_cache: {
         Row: {
           cache_date: string

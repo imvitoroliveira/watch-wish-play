@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface ClientData {
   u: string;
@@ -19,6 +20,7 @@ interface AuthContextType {
   logout: () => void;
   uploadClientList: (data: ClientData[]) => void;
   isExpiringSoon: boolean;
+  clientsLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -42,8 +44,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const saved = localStorage.getItem('msc_clients');
     return saved ? JSON.parse(saved) : [];
   });
+  const [clientsLoading, setClientsLoading] = useState(true);
 
   const isExpiringSoon = currentClient?.["7"] === "1";
+
+  // Load clients from DB on mount
+  useEffect(() => {
+    const loadClients = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('manage-clients', {
+          method: 'GET',
+        });
+        if (!error && data?.clients && Array.isArray(data.clients) && data.clients.length > 0) {
+          setClientList(data.clients);
+          localStorage.setItem('msc_clients', JSON.stringify(data.clients));
+        }
+      } catch (e) {
+        console.warn('[Auth] Failed to load clients from DB, using local cache:', e);
+      } finally {
+        setClientsLoading(false);
+      }
+    };
+    loadClients();
+  }, []);
 
   const loginAdmin = (user: string, pass: string) => {
     if (user === ADMIN_USER && pass === ADMIN_PASS) {
@@ -75,9 +98,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('msc_client');
   };
 
-  const uploadClientList = (data: ClientData[]) => {
+  const uploadClientList = async (data: ClientData[]) => {
     setClientList(data);
     localStorage.setItem('msc_clients', JSON.stringify(data));
+    
+    // Persist to database
+    try {
+      await supabase.functions.invoke('manage-clients', {
+        method: 'POST',
+        body: { clients: data },
+      });
+    } catch (e) {
+      console.warn('[Auth] Failed to persist clients to DB:', e);
+    }
   };
 
   return (
@@ -91,6 +124,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       logout,
       uploadClientList,
       isExpiringSoon,
+      clientsLoading,
     }}>
       {children}
     </AuthContext.Provider>
