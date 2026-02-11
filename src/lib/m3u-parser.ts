@@ -64,7 +64,7 @@ export function isInM3UCatalog(tmdbTitle: string, m3uTitlesNormalized: Set<strin
 }
 
 // Fetch catalog from backend (DB-cached)
-export async function fetchM3UCatalog(): Promise<{ titles: string[]; source_url: string | null }> {
+export async function fetchM3UCatalog(): Promise<{ titles: string[]; total: number; source_url: string | null }> {
   try {
     const { data, error } = await supabase.functions.invoke('parse-m3u', {
       method: 'GET',
@@ -74,10 +74,28 @@ export async function fetchM3UCatalog(): Promise<{ titles: string[]; source_url:
     if (titles.length > 0) {
       localStorage.setItem('msc_m3u_titles', JSON.stringify(titles));
     }
-    return { titles, source_url: data?.source_url || null };
+    return { titles, total: data?.total || titles.length, source_url: data?.source_url || null };
   } catch (e) {
     console.warn('[M3U] Failed to fetch catalog from backend, using local cache:', e);
-    return { titles: getStoredM3UTitles(), source_url: null };
+    const cached = getStoredM3UTitles();
+    return { titles: cached, total: cached.length, source_url: null };
+  }
+}
+
+// Fetch a random sample of titles from the full catalog
+export async function fetchRandomM3UTitles(count: number): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.functions.invoke(`parse-m3u?random=${count}`, {
+      method: 'GET',
+    });
+    if (error) throw error;
+    return data?.titles || [];
+  } catch (e) {
+    console.warn('[M3U] Failed to fetch random titles:', e);
+    // Fallback: pick random from local cache
+    const cached = getStoredM3UTitles();
+    const shuffled = [...cached].sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, Math.min(count, shuffled.length));
   }
 }
 
