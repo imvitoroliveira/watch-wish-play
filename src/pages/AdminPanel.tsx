@@ -2,10 +2,11 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { parseM3UTitles, storeM3UTitles, getStoredM3UTitles } from '@/lib/m3u-parser';
 
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList } = useAuth();
@@ -15,6 +16,56 @@ const AdminPanel = () => {
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [m3uUrl, setM3uUrl] = useState(() => localStorage.getItem('msc_m3u_url') || '');
+  const [m3uContent, setM3uContent] = useState('');
+  const [m3uLoading, setM3uLoading] = useState(false);
+  const [m3uTitleCount, setM3uTitleCount] = useState(() => getStoredM3UTitles().length);
+
+  const handleM3uProcess = async () => {
+    let content = m3uContent;
+
+    // If URL provided, try to fetch
+    if (m3uUrl.trim() && !content.trim()) {
+      setM3uLoading(true);
+      try {
+        const res = await fetch(m3uUrl.trim());
+        content = await res.text();
+      } catch {
+        // CORS fallback: ask to paste content
+        toast({ title: 'Erro ao acessar URL', description: 'Cole o conteúdo M3U diretamente no campo abaixo.', variant: 'destructive' });
+        setM3uLoading(false);
+        return;
+      }
+    }
+
+    if (!content.trim()) {
+      toast({ title: 'Sem conteúdo', description: 'Informe a URL ou cole o conteúdo M3U.', variant: 'destructive' });
+      setM3uLoading(false);
+      return;
+    }
+
+    const titles = parseM3UTitles(content);
+    if (titles.length === 0) {
+      toast({ title: 'Nenhum título encontrado', description: 'Verifique se o conteúdo M3U é válido.', variant: 'destructive' });
+      setM3uLoading(false);
+      return;
+    }
+
+    storeM3UTitles(titles);
+    localStorage.setItem('msc_m3u_url', m3uUrl.trim());
+    setM3uTitleCount(titles.length);
+    setM3uLoading(false);
+    toast({ title: 'M3U processado!', description: `${titles.length} títulos VOD extraídos.` });
+  };
+
+  const clearM3u = () => {
+    storeM3UTitles([]);
+    localStorage.removeItem('msc_m3u_url');
+    setM3uUrl('');
+    setM3uContent('');
+    setM3uTitleCount(0);
+    toast({ title: 'Lista M3U removida', description: 'O catálogo voltará a exibir tendências.' });
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,6 +220,53 @@ const AdminPanel = () => {
           <Button onClick={() => fileRef.current?.click()} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
             <Upload className="w-4 h-4 mr-2" /> Selecionar Arquivo
           </Button>
+        </div>
+
+        {/* M3U Validation */}
+        <div className="bg-card rounded-xl border border-border p-6 mb-8">
+          <h2 className="text-xl font-display text-foreground mb-3 flex items-center gap-2">
+            <Link className="w-5 h-5 text-accent" />
+            VALIDAÇÃO M3U
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Cole a URL M3U ou o conteúdo diretamente. O sistema extrairá os títulos VOD para filtrar o catálogo.
+          </p>
+
+          <div className="space-y-3">
+            <Input
+              value={m3uUrl}
+              onChange={e => setM3uUrl(e.target.value)}
+              placeholder="URL da lista M3U (ex: http://...)"
+              className="h-10 bg-background border-border text-foreground"
+              maxLength={500}
+            />
+            <textarea
+              value={m3uContent}
+              onChange={e => setM3uContent(e.target.value)}
+              placeholder="Ou cole o conteúdo M3U aqui..."
+              className="w-full h-32 rounded-lg bg-background border border-border text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={handleM3uProcess}
+                disabled={m3uLoading}
+                className="bg-accent text-accent-foreground hover:bg-accent/90"
+              >
+                {m3uLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                Processar M3U
+              </Button>
+              {m3uTitleCount > 0 && (
+                <Button variant="outline" onClick={clearM3u} className="border-border text-foreground">
+                  Limpar Lista
+                </Button>
+              )}
+              {m3uTitleCount > 0 && (
+                <span className="text-sm text-accent font-medium">
+                  ✅ {m3uTitleCount} títulos VOD carregados
+                </span>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Client list preview */}

@@ -12,12 +12,67 @@ interface Ticket {
 }
 
 const COMMON_ISSUES = [
-  { label: 'Tela Preta', suggestion: 'Tente limpar o cache do seu player e reiniciar o app. Se persistir, verifique sua conexão de internet.' },
-  { label: 'Travamento', suggestion: 'Verifique se sua internet está estável (mín. 10 Mbps). Tente mudar o DNS para 8.8.8.8 / 8.8.4.4.' },
-  { label: 'Áudio Dessincronizado', suggestion: 'Reinicie o player. Se usar TV Box, verifique as configurações de áudio (PCM/Passthrough).' },
-  { label: 'Canal Fora do Ar', suggestion: 'Alguns canais podem ter instabilidade temporária. Aguarde 15 minutos e tente novamente.' },
-  { label: 'Erro de Login', suggestion: 'Verifique se seu usuário e senha estão corretos. Se o problema persistir, entre em contato.' },
-  { label: 'Qualidade Baixa', suggestion: 'Ative a opção de qualidade HD/4K no seu player. Mín. 25 Mbps para 4K.' },
+  { 
+    label: 'Tela Preta', 
+    suggestion: 'Tente limpar o cache do seu player e reiniciar o app. Se persistir, verifique sua conexão de internet.',
+    faq: [
+      'Vá em Configurações > Apps > Seu Player > Limpar cache',
+      'Reinicie o roteador e aguarde 30 segundos',
+      'Teste com outro player (VLC, TiviMate, XCIPTV)',
+      'Verifique se o Wi-Fi está na banda 5GHz para melhor desempenho',
+    ]
+  },
+  { 
+    label: 'Travamento', 
+    suggestion: 'Verifique se sua internet está estável (mín. 10 Mbps). Tente mudar o DNS para 8.8.8.8 / 8.8.4.4.',
+    faq: [
+      'Faça um teste de velocidade em fast.com',
+      'Configure DNS: Configurações > Rede > DNS Manual > 8.8.8.8 / 8.8.4.4',
+      'Desative VPN se estiver usando',
+      'Reinicie a TV Box / Smart TV',
+      'Conecte via cabo Ethernet em vez de Wi-Fi',
+    ]
+  },
+  { 
+    label: 'Áudio Dessincronizado', 
+    suggestion: 'Reinicie o player. Se usar TV Box, verifique as configurações de áudio (PCM/Passthrough).',
+    faq: [
+      'No player: Configurações > Áudio > Modo: PCM',
+      'Desative o Passthrough de áudio se estiver ativo',
+      'Teste com fones de ouvido para isolar o problema',
+      'Atualize o firmware da sua TV Box',
+    ]
+  },
+  { 
+    label: 'Canal Fora do Ar', 
+    suggestion: 'Alguns canais podem ter instabilidade temporária. Aguarde 15 minutos e tente novamente.',
+    faq: [
+      'Aguarde 15 minutos e tente novamente',
+      'Atualize a lista de canais no player',
+      'Verifique se outros canais estão funcionando',
+      'Tente reiniciar o aplicativo completamente',
+    ]
+  },
+  { 
+    label: 'Erro de Login', 
+    suggestion: 'Verifique se seu usuário e senha estão corretos. Se o problema persistir, entre em contato.',
+    faq: [
+      'Verifique se não há espaços extras no usuário/senha',
+      'Confira se o Caps Lock está desativado',
+      'Tente copiar e colar o usuário e senha',
+      'Verifique se sua assinatura está ativa',
+    ]
+  },
+  { 
+    label: 'Qualidade Baixa', 
+    suggestion: 'Ative a opção de qualidade HD/4K no seu player. Mín. 25 Mbps para 4K.',
+    faq: [
+      'No player: Configurações > Qualidade > HD ou 4K',
+      'Velocidade mínima: 10 Mbps (HD), 25 Mbps (4K)',
+      'Use conexão cabeada para 4K estável',
+      'Verifique se o canal oferece opção HD/FHD',
+    ]
+  },
 ];
 
 const SupportTickets = () => {
@@ -93,7 +148,22 @@ const SupportTickets = () => {
             className="bg-card border border-border rounded-xl p-6"
           >
             <h3 className="font-semibold text-foreground mb-1">{selectedIssue.label}</h3>
-            <p className="text-muted-foreground text-sm mb-4">{selectedIssue.suggestion}</p>
+            <p className="text-muted-foreground text-sm mb-3">{selectedIssue.suggestion}</p>
+
+            {/* FAQ Knowledge Base */}
+            {'faq' in selectedIssue && selectedIssue.faq && (
+              <div className="mb-4 bg-secondary/50 rounded-lg p-4">
+                <p className="text-xs font-semibold text-accent mb-2 uppercase tracking-wide">📖 Base de Conhecimento</p>
+                <ul className="space-y-1.5">
+                  {(selectedIssue as any).faq.map((step: string, i: number) => (
+                    <li key={i} className="text-sm text-muted-foreground flex gap-2">
+                      <span className="text-accent font-medium shrink-0">{i + 1}.</span>
+                      {step}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="flex gap-3">
               <Button

@@ -70,6 +70,26 @@ export const searchMovies = async (query: string): Promise<TMDBMovie[]> => {
   return data?.results?.filter((r: any) => r.media_type !== 'person') || [];
 };
 
+// Search TMDB for a list of titles and return matched movies
+export const searchByTitles = async (titles: string[]): Promise<TMDBMovie[]> => {
+  // Pick up to 20 random titles to avoid too many API calls
+  const sample = titles.length <= 20 ? titles : titles.sort(() => Math.random() - 0.5).slice(0, 20);
+  const results: TMDBMovie[] = [];
+  const seenIds = new Set<number>();
+
+  const searches = sample.map(async (title) => {
+    const data = await fetchTMDB('/search/movie', { query: title });
+    const first = data?.results?.[0];
+    if (first && !seenIds.has(first.id)) {
+      seenIds.add(first.id);
+      results.push({ ...first, media_type: 'movie' });
+    }
+  });
+
+  await Promise.all(searches);
+  return results;
+};
+
 export const getByGenre = async (genreId: number): Promise<TMDBMovie[]> => {
   const data = await fetchTMDB('/discover/movie', { with_genres: String(genreId) });
   return data?.results || [];
