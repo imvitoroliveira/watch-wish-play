@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { getTrending, TMDBMovie, searchMovies } from '@/lib/tmdb';
+import { getTrending, TMDBMovie, searchMovies, searchByTitles } from '@/lib/tmdb';
+import { getStoredM3UTitles } from '@/lib/m3u-parser';
 import { motion } from 'framer-motion';
-import { Film, Search, Heart, Clock, Dices, Signal, HelpCircle, LogOut } from 'lucide-react';
+import { Film, Search, Heart, Clock, Dices, Signal, HelpCircle, LogOut, Wallet } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import MovieCard from '@/components/MovieCard';
 import MovieModal from '@/components/MovieModal';
@@ -11,8 +12,9 @@ import CineRoleta from '@/components/CineRoleta';
 import QualityThermometer from '@/components/QualityThermometer';
 import SupportTickets from '@/components/SupportTickets';
 import ExpirationBanner from '@/components/ExpirationBanner';
+import PointsWallet from '@/components/PointsWallet';
 
-type Tab = 'home' | 'watchlist' | 'history' | 'roleta' | 'quality' | 'support';
+type Tab = 'home' | 'watchlist' | 'history' | 'roleta' | 'quality' | 'support' | 'points';
 
 const Dashboard = () => {
   const { currentClient, isClient, isExpiringSoon, logout } = useAuth();
@@ -36,7 +38,15 @@ const Dashboard = () => {
   }, [isClient, navigate]);
 
   useEffect(() => {
-    getTrending().then(setMovies);
+    const m3uTitles = getStoredM3UTitles();
+    if (m3uTitles.length > 0) {
+      searchByTitles(m3uTitles).then(results => {
+        if (results.length > 0) setMovies(results);
+        else getTrending().then(setMovies);
+      });
+    } else {
+      getTrending().then(setMovies);
+    }
   }, []);
 
   useEffect(() => {
@@ -76,6 +86,7 @@ const Dashboard = () => {
     { id: 'roleta', label: 'Cine-Roleta', icon: <Dices className="w-4 h-4" /> },
     { id: 'quality', label: 'Qualidade', icon: <Signal className="w-4 h-4" /> },
     { id: 'support', label: 'Suporte', icon: <HelpCircle className="w-4 h-4" /> },
+    { id: 'points', label: 'Pontos', icon: <Wallet className="w-4 h-4" /> },
   ];
 
   return (
@@ -237,6 +248,12 @@ const Dashboard = () => {
         {tab === 'support' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <SupportTickets />
+          </motion.div>
+        )}
+
+        {tab === 'points' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <PointsWallet />
           </motion.div>
         )}
       </main>
