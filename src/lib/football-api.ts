@@ -1,8 +1,8 @@
 // Football API integration for Brazilian leagues
-// Uses API-Football (api-football.com) when key is available, falls back to mock data
+// Uses Sportmonks API (sportmonks.com)
 
-const API_FOOTBALL_KEY = ''; // Set your API-Football key here (RapidAPI)
-const API_BASE = 'https://v3.football.api-sports.io';
+const SPORTMONKS_TOKEN = '6XTAKuADi9YCNeQoxVKpk3xrt1flB2oyvv2ZP4sASNRcflxRLAwk306QC6Ua';
+const API_BASE = 'https://api.sportmonks.com/v3/football';
 
 export interface Team {
   id: number;
@@ -25,20 +25,20 @@ export interface Match {
   };
   homeTeam: Team;
   awayTeam: Team;
-  date: string; // ISO string
+  date: string;
   status: 'NS' | '1H' | 'HT' | '2H' | 'FT' | 'AET' | 'PEN' | 'SUSP' | 'PST' | 'CANC' | 'LIVE';
   elapsed: number | null;
   goals: MatchGoals;
   broadcast: string[];
 }
 
-// Brazilian league IDs in API-Football
+// Brazilian league IDs in Sportmonks
 const LEAGUE_IDS = {
-  SERIE_A: 71,
-  SERIE_B: 72,
-  COPA_DO_BRASIL: 73,
-  COPA_NORDESTE: 475,
-  FEMININO: 606,
+  SERIE_A: 462,
+  SERIE_B: 463,
+  COPA_DO_BRASIL: 475,
+  COPA_NORDESTE: 1360,
+  FEMININO: 648,
 };
 
 const LEAGUE_PRIORITY = [
@@ -49,7 +49,6 @@ const LEAGUE_PRIORITY = [
   LEAGUE_IDS.FEMININO,
 ];
 
-// Broadcast mapping (common Brazilian TV channels per league)
 const BROADCAST_MAP: Record<number, string[]> = {
   [LEAGUE_IDS.SERIE_A]: ['Premiere', 'Globo', 'SporTV'],
   [LEAGUE_IDS.SERIE_B]: ['Premiere', 'SporTV', 'TV Brasil'],
@@ -79,64 +78,160 @@ function isLive(status: Match['status']): boolean {
   return ['1H', 'HT', '2H', 'AET', 'PEN', 'LIVE'].includes(status);
 }
 
-// Fetch today's matches from API-Football
-async function fetchFromAPI(): Promise<Match[]> {
-  if (!API_FOOTBALL_KEY) return [];
+// Map Sportmonks state to our status
+function mapSportmonksState(stateId: number, stateName: string): Match['status'] {
+  // Sportmonks state IDs: 1=NS, 2=INPLAY_1ST, 3=HT, 4=INPLAY_2ND, 5=FT, 6=AET, 7=PEN, etc.
+  const stateMap: Record<number, Match['status']> = {
+    1: 'NS',    // Not Started
+    2: '1H',    // 1st Half
+    3: 'HT',    // Half Time
+    4: '2H',    // 2nd Half
+    5: 'FT',    // Full Time
+    6: 'AET',   // After Extra Time
+    7: 'PEN',   // Penalties
+    8: 'FT',    // FT after penalties
+    9: 'SUSP',  // Suspended
+    10: 'PST',  // Postponed
+    11: 'CANC', // Cancelled
+    13: 'LIVE', // Live (generic)
+    14: '2H',   // Extra Time
+    15: 'PEN',  // Penalty Shootout
+    21: 'FT',   // Finished after extra
+    22: 'CANC', // Cancelled
+  };
 
-  const today = new Date().toISOString().split('T')[0];
-  const allMatches: Match[] = [];
+  if (stateMap[stateId]) return stateMap[stateId];
 
-  for (const leagueId of LEAGUE_PRIORITY) {
-    try {
-      const res = await fetch(
-        `${API_BASE}/fixtures?league=${leagueId}&date=${today}&season=2026&timezone=America/Sao_Paulo`,
-        {
-          headers: {
-            'x-apisports-key': API_FOOTBALL_KEY,
-          },
-        }
-      );
-      const data = await res.json();
-      if (data.response) {
-        for (const fixture of data.response) {
-          allMatches.push({
-            id: fixture.fixture.id,
-            league: {
-              id: fixture.league.id,
-              name: fixture.league.name,
-              logo: fixture.league.logo,
-              round: fixture.league.round,
-            },
-            homeTeam: {
-              id: fixture.teams.home.id,
-              name: fixture.teams.home.name,
-              logo: fixture.teams.home.logo,
-            },
-            awayTeam: {
-              id: fixture.teams.away.id,
-              name: fixture.teams.away.name,
-              logo: fixture.teams.away.logo,
-            },
-            date: fixture.fixture.date,
-            status: fixture.fixture.status.short,
-            elapsed: fixture.fixture.status.elapsed,
-            goals: {
-              home: fixture.goals.home,
-              away: fixture.goals.away,
-            },
-            broadcast: BROADCAST_MAP[leagueId] || ['Premiere'],
-          });
-        }
-      }
-    } catch (e) {
-      console.warn(`Failed to fetch league ${leagueId}:`, e);
+  // Fallback: check name
+  const lower = stateName?.toLowerCase() || '';
+  if (lower.includes('live') || lower.includes('inplay')) return 'LIVE';
+  if (lower.includes('finished') || lower.includes('ft')) return 'FT';
+  if (lower.includes('half')) return 'HT';
+  if (lower.includes('postponed')) return 'PST';
+  return 'NS';
+}
+
+// Extract current score from Sportmonks scores array
+function extractScores(scores: any[]): MatchGoals {
+  if (!scores || scores.length === 0) return { home: null, away: null };
+
+  // Find the CURRENT score entry, or fallback to 2ND_HALF, then 1ST_HALF
+  const current = scores.find((s: any) => s.description === 'CURRENT')
+    || scores.find((s: any) => s.description === '2ND_HALF')
+    || scores.find((s: any) => s.description === '1ST_HALF');
+
+  if (!current) return { home: null, away: null };
+
+  return {
+    home: current.score?.participant === 'home' ? current.score?.goals : null,
+    away: current.score?.participant === 'away' ? current.score?.goals : null,
+  };
+}
+
+function extractGoalsFromScores(scores: any[]): MatchGoals {
+  if (!scores || scores.length === 0) return { home: null, away: null };
+
+  let home: number | null = null;
+  let away: number | null = null;
+
+  // Sportmonks scores have participant = 'home' or 'away' with goals count
+  for (const s of scores) {
+    if (s.description === 'CURRENT' || s.description === '2ND_HALF' || s.description === '1ST_HALF') {
+      if (s.score?.participant === 'home') home = s.score?.goals ?? null;
+      if (s.score?.participant === 'away') away = s.score?.goals ?? null;
     }
   }
 
-  return allMatches;
+  // If no CURRENT found, try any available
+  if (home === null && away === null) {
+    for (const s of scores) {
+      if (s.score?.participant === 'home' && home === null) home = s.score?.goals ?? null;
+      if (s.score?.participant === 'away' && away === null) away = s.score?.goals ?? null;
+    }
+  }
+
+  return { home, away };
 }
 
-// Generate realistic mock data for demo
+// Fetch today's matches from Sportmonks
+async function fetchFromAPI(): Promise<Match[]> {
+  if (!SPORTMONKS_TOKEN) return [];
+
+  const today = new Date().toISOString().split('T')[0];
+  const leagueFilter = Object.values(LEAGUE_IDS).join(',');
+
+  try {
+    const url = `${API_BASE}/fixtures/date/${today}?api_token=${SPORTMONKS_TOKEN}&include=participants;scores;league;state&filters=fixtureLeagues:${leagueFilter}&timezone=America/Sao_Paulo`;
+    console.log('[Football API] Fetching:', url.replace(SPORTMONKS_TOKEN, '***'));
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.warn('[Football API] Error response:', data);
+      return [];
+    }
+
+    if (!data.data || !Array.isArray(data.data)) {
+      console.log('[Football API] No fixtures found for today');
+      return [];
+    }
+
+    const matches: Match[] = [];
+
+    for (const fixture of data.data) {
+      const participants = fixture.participants || [];
+      const homeTeam = participants.find((p: any) => p.meta?.location === 'home');
+      const awayTeam = participants.find((p: any) => p.meta?.location === 'away');
+
+      if (!homeTeam || !awayTeam) continue;
+
+      const leagueId = fixture.league_id || fixture.league?.id;
+      const leagueName = fixture.league?.name || 'Liga Brasileira';
+      const leagueLogo = fixture.league?.image_path || '';
+
+      const stateId = fixture.state_id || 1;
+      const stateName = fixture.state?.name || '';
+      const status = mapSportmonksState(stateId, stateName);
+      const elapsed = fixture.state?.clock?.minute ?? fixture.minute ?? null;
+
+      const goals = extractGoalsFromScores(fixture.scores || []);
+
+      matches.push({
+        id: fixture.id,
+        league: {
+          id: leagueId,
+          name: leagueName,
+          logo: leagueLogo,
+          round: fixture.round?.name || undefined,
+        },
+        homeTeam: {
+          id: homeTeam.id,
+          name: homeTeam.name || homeTeam.short_code || 'Home',
+          logo: homeTeam.image_path || '/placeholder.svg',
+        },
+        awayTeam: {
+          id: awayTeam.id,
+          name: awayTeam.name || awayTeam.short_code || 'Away',
+          logo: awayTeam.image_path || '/placeholder.svg',
+        },
+        date: fixture.starting_at || today,
+        status,
+        elapsed,
+        goals,
+        broadcast: BROADCAST_MAP[leagueId] || ['Premiere'],
+      });
+    }
+
+    console.log(`[Football API] Loaded ${matches.length} fixtures from Sportmonks`);
+    return matches;
+  } catch (e) {
+    console.warn('[Football API] Fetch failed:', e);
+    return [];
+  }
+}
+
+// Generate realistic mock data for demo (fallback)
 function generateMockMatches(): Match[] {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
@@ -159,116 +254,63 @@ function generateMockMatches(): Match[] {
     serieB: [
       { id: 20, name: 'Sport', logo: 'https://media.api-sports.io/football/teams/2624.png' },
       { id: 21, name: 'Ceará', logo: 'https://media.api-sports.io/football/teams/2323.png' },
-      { id: 22, name: 'Goiás', logo: 'https://media.api-sports.io/football/teams/1193.png' },
-      { id: 23, name: 'Ponte Preta', logo: 'https://media.api-sports.io/football/teams/7752.png' },
     ],
     nordeste: [
       { id: 30, name: 'Bahia', logo: 'https://media.api-sports.io/football/teams/118.png' },
       { id: 31, name: 'Fortaleza', logo: 'https://media.api-sports.io/football/teams/1191.png' },
-      { id: 32, name: 'CRB', logo: 'https://media.api-sports.io/football/teams/2317.png' },
-      { id: 33, name: 'CSA', logo: 'https://media.api-sports.io/football/teams/2318.png' },
     ],
   };
 
-  const matches: Match[] = [
-    // Série A - Live match
+  return [
     {
       id: 1001,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: 'https://media.api-sports.io/football/leagues/71.png', round: 'Rodada 5' },
-      homeTeam: teams.serieA[0],
-      awayTeam: teams.serieA[1],
+      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: '', round: 'Rodada 5' },
+      homeTeam: teams.serieA[0], awayTeam: teams.serieA[1],
       date: new Date(now.getTime() - 45 * 60000).toISOString(),
-      status: '2H',
-      elapsed: 67,
-      goals: { home: 2, away: 1 },
+      status: '2H', elapsed: 67, goals: { home: 2, away: 1 },
       broadcast: ['Premiere', 'Globo'],
     },
-    // Série A - Upcoming
     {
       id: 1002,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: 'https://media.api-sports.io/football/leagues/71.png', round: 'Rodada 5' },
-      homeTeam: teams.serieA[2],
-      awayTeam: teams.serieA[3],
+      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: '', round: 'Rodada 5' },
+      homeTeam: teams.serieA[2], awayTeam: teams.serieA[3],
       date: `${today}T21:30:00-03:00`,
-      status: 'NS',
-      elapsed: null,
-      goals: { home: null, away: null },
+      status: 'NS', elapsed: null, goals: { home: null, away: null },
       broadcast: ['Premiere', 'SporTV'],
     },
-    // Série A - Another
     {
       id: 1003,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: 'https://media.api-sports.io/football/leagues/71.png', round: 'Rodada 5' },
-      homeTeam: teams.serieA[4],
-      awayTeam: teams.serieA[5],
+      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: '', round: 'Rodada 5' },
+      homeTeam: teams.serieA[4], awayTeam: teams.serieA[5],
       date: `${today}T19:00:00-03:00`,
-      status: 'FT',
-      elapsed: 90,
-      goals: { home: 0, away: 0 },
+      status: 'FT', elapsed: 90, goals: { home: 0, away: 0 },
       broadcast: ['Premiere'],
     },
-    // Copa do Brasil
     {
       id: 1004,
-      league: { id: LEAGUE_IDS.COPA_DO_BRASIL, name: 'Copa do Brasil', logo: 'https://media.api-sports.io/football/leagues/73.png', round: 'Oitavas de Final' },
-      homeTeam: teams.serieA[6],
-      awayTeam: teams.serieA[7],
+      league: { id: LEAGUE_IDS.COPA_DO_BRASIL, name: 'Copa do Brasil', logo: '', round: 'Oitavas de Final' },
+      homeTeam: teams.serieA[6], awayTeam: teams.serieA[7],
       date: `${today}T20:00:00-03:00`,
-      status: '1H',
-      elapsed: 23,
-      goals: { home: 0, away: 1 },
+      status: '1H', elapsed: 23, goals: { home: 0, away: 1 },
       broadcast: ['Globo', 'SporTV', 'Amazon Prime'],
     },
-    // Série B
     {
       id: 1005,
-      league: { id: LEAGUE_IDS.SERIE_B, name: 'Brasileirão Série B', logo: 'https://media.api-sports.io/football/leagues/72.png', round: 'Rodada 8' },
-      homeTeam: teams.serieB[0],
-      awayTeam: teams.serieB[1],
+      league: { id: LEAGUE_IDS.SERIE_B, name: 'Brasileirão Série B', logo: '', round: 'Rodada 8' },
+      homeTeam: teams.serieB[0], awayTeam: teams.serieB[1],
       date: `${today}T16:00:00-03:00`,
-      status: 'FT',
-      elapsed: 90,
-      goals: { home: 3, away: 2 },
+      status: 'FT', elapsed: 90, goals: { home: 3, away: 2 },
       broadcast: ['Premiere', 'SporTV'],
     },
-    // Copa do Nordeste
     {
       id: 1006,
-      league: { id: LEAGUE_IDS.COPA_NORDESTE, name: 'Copa do Nordeste', logo: 'https://media.api-sports.io/football/leagues/475.png', round: 'Semifinal' },
-      homeTeam: teams.nordeste[0],
-      awayTeam: teams.nordeste[1],
+      league: { id: LEAGUE_IDS.COPA_NORDESTE, name: 'Copa do Nordeste', logo: '', round: 'Semifinal' },
+      homeTeam: teams.nordeste[0], awayTeam: teams.nordeste[1],
       date: `${today}T22:00:00-03:00`,
-      status: 'NS',
-      elapsed: null,
-      goals: { home: null, away: null },
+      status: 'NS', elapsed: null, goals: { home: null, away: null },
       broadcast: ['SBT', 'ESPN'],
     },
-    // Série A extra
-    {
-      id: 1007,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: 'https://media.api-sports.io/football/leagues/71.png', round: 'Rodada 5' },
-      homeTeam: teams.serieA[8],
-      awayTeam: teams.serieA[9],
-      date: `${today}T18:30:00-03:00`,
-      status: 'HT',
-      elapsed: 45,
-      goals: { home: 1, away: 1 },
-      broadcast: ['Premiere'],
-    },
-    {
-      id: 1008,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: 'https://media.api-sports.io/football/leagues/71.png', round: 'Rodada 5' },
-      homeTeam: teams.serieA[10],
-      awayTeam: teams.serieA[11],
-      date: `${today}T20:30:00-03:00`,
-      status: 'NS',
-      elapsed: null,
-      goals: { home: null, away: null },
-      broadcast: ['Premiere', 'Globo'],
-    },
   ];
-
-  return matches;
 }
 
 export async function getTodayMatches(): Promise<Match[]> {
@@ -279,17 +321,14 @@ export async function getTodayMatches(): Promise<Match[]> {
 
 function sortByPriority(matches: Match[]): Match[] {
   return matches.sort((a, b) => {
-    // Live matches first
     const aLive = isLive(a.status) ? 0 : 1;
     const bLive = isLive(b.status) ? 0 : 1;
     if (aLive !== bLive) return aLive - bLive;
 
-    // Then by league priority
     const aPrio = LEAGUE_PRIORITY.indexOf(a.league.id);
     const bPrio = LEAGUE_PRIORITY.indexOf(b.league.id);
     if (aPrio !== bPrio) return aPrio - bPrio;
 
-    // Then by time
     return new Date(a.date).getTime() - new Date(b.date).getTime();
   });
 }
@@ -308,7 +347,6 @@ export function toggleReminder(matchId: number): Set<number> {
     reminders.delete(matchId);
   } else {
     reminders.add(matchId);
-    // Schedule notification
     scheduleNotification(matchId);
   }
   localStorage.setItem(REMINDERS_KEY, JSON.stringify([...reminders]));
@@ -316,7 +354,6 @@ export function toggleReminder(matchId: number): Set<number> {
 }
 
 function scheduleNotification(matchId: number) {
-  // Request notification permission
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }
@@ -332,7 +369,6 @@ export function checkAndFireReminders(matches: Match[]) {
     if (!reminders.has(match.id)) return;
     const matchTime = new Date(match.date).getTime();
     const diff = matchTime - now;
-    // Fire if within 15 minutes
     if (diff > 0 && diff <= 15 * 60 * 1000) {
       const firedKey = `msc_reminder_fired_${match.id}`;
       if (!localStorage.getItem(firedKey)) {
