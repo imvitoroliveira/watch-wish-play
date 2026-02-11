@@ -89,8 +89,15 @@ Deno.serve(async (req) => {
 
     const fetches = leagueIds.map(async (leagueId) => {
       try {
-        const res = await fetch(
-          `${API_BASE}/fixtures?league=${leagueId}&date=${brDate}&season=2025&timezone=America/Sao_Paulo`,
+        // Use current year for season; some leagues may span years (e.g. 2025/2026)
+        const currentYear = new Date().getFullYear();
+        const prevYear = currentYear - 1;
+        
+        // Try current year first, then previous year (for leagues like Libertadores that span seasons)
+        const seasons = [currentYear, prevYear];
+        for (const season of seasons) {
+          const res = await fetch(
+            `${API_BASE}/fixtures?league=${leagueId}&date=${brDate}&season=${season}&timezone=America/Sao_Paulo`,
           { headers: { "x-apisports-key": API_FOOTBALL_KEY } }
         );
         const data = await res.json();
