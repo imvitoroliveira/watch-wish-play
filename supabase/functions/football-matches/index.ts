@@ -3,43 +3,34 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const API_BASE = "https://v3.football.api-sports.io";
 
-const LEAGUE_IDS: Record<string, number> = {
-  SERIE_A: 71,
-  SERIE_B: 72,
-  SERIE_C: 75,
-  COPA_DO_BRASIL: 73,
-  COPA_NORDESTE: 475,
-  FEMININO: 606,
-  SUPERCOPA: 625,
-  CARIOCA: 352,
-  PAULISTA: 480,
-  LIBERTADORES: 13,
-  SULAMERICANA: 11,
-  RECOPA_SULAMERICANA: 535,
-  ELIMINATORIAS: 34,
-  AMISTOSOS: 10,
-};
+// Brazilian & South American league IDs we want
+const TARGET_LEAGUE_IDS = new Set([
+  71, 72, 75, 73, 475, 606, 625, // Nacional
+  352, 480,                       // Estaduais
+  13, 11, 535,                    // Continental
+  34, 10,                         // Seleções
+]);
 
 const BROADCAST_MAP: Record<number, string[]> = {
-  [LEAGUE_IDS.SERIE_A]: ["Premiere", "Globo", "SporTV"],
-  [LEAGUE_IDS.SERIE_B]: ["Premiere", "SporTV", "TV Brasil"],
-  [LEAGUE_IDS.SERIE_C]: ["DAZN", "NSports"],
-  [LEAGUE_IDS.COPA_DO_BRASIL]: ["Premiere", "Globo", "SporTV", "Amazon Prime"],
-  [LEAGUE_IDS.COPA_NORDESTE]: ["SBT", "ESPN", "SporTV"],
-  [LEAGUE_IDS.FEMININO]: ["SporTV", "Globo", "TV Brasil"],
-  [LEAGUE_IDS.SUPERCOPA]: ["Globo", "SporTV"],
-  [LEAGUE_IDS.CARIOCA]: ["Band", "SporTV", "Premiere"],
-  [LEAGUE_IDS.PAULISTA]: ["Record", "CazéTV", "Premiere"],
-  [LEAGUE_IDS.LIBERTADORES]: ["Paramount+", "SBT", "ESPN"],
-  [LEAGUE_IDS.SULAMERICANA]: ["Paramount+", "SBT", "ESPN"],
-  [LEAGUE_IDS.RECOPA_SULAMERICANA]: ["ESPN", "SBT"],
-  [LEAGUE_IDS.ELIMINATORIAS]: ["Globo", "SporTV", "CazéTV"],
-  [LEAGUE_IDS.AMISTOSOS]: ["Globo", "SporTV", "ESPN"],
+  71: ["Premiere", "Globo", "SporTV"],
+  72: ["Premiere", "SporTV", "TV Brasil"],
+  75: ["DAZN", "NSports"],
+  73: ["Premiere", "Globo", "SporTV", "Amazon Prime"],
+  475: ["SBT", "ESPN", "SporTV"],
+  606: ["SporTV", "Globo", "TV Brasil"],
+  625: ["Globo", "SporTV"],
+  352: ["Band", "SporTV", "Premiere"],
+  480: ["Record", "CazéTV", "Premiere"],
+  13: ["Paramount+", "SBT", "ESPN"],
+  11: ["Paramount+", "SBT", "ESPN"],
+  535: ["ESPN", "SBT"],
+  34: ["Globo", "SporTV", "CazéTV"],
+  10: ["Globo", "SporTV", "ESPN"],
 };
 
 Deno.serve(async (req) => {
@@ -57,11 +48,10 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get today's date in São Paulo timezone
-    const now = new Date();
-    const brDate = now.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+    // Get today in São Paulo timezone
+    const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-    // Check cache first
+    // Check cache
     const { data: cached } = await supabase
       .from("football_cache")
       .select("matches, fetched_at")
@@ -69,83 +59,78 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (cached) {
-      // Check if cache has live matches - if so, check if it's stale (>2 min old)
       const cacheAge = Date.now() - new Date(cached.fetched_at).getTime();
-      const hasLiveMatches = (cached.matches as any[]).some((m: any) =>
+      const matches = cached.matches as any[];
+      const hasLive = matches.some((m: any) =>
         ["1H", "HT", "2H", "AET", "PEN", "LIVE"].includes(m.status)
       );
-
-      // Return cache if: no live matches, OR cache is fresh (<2 min)
-      if (!hasLiveMatches || cacheAge < 120000) {
-        return new Response(JSON.stringify(cached.matches), {
+      // Fresh cache: return if no live matches or cache < 2 min old
+      if (!hasLive || cacheAge < 120000) {
+        console.log(`[Cache HIT] ${matches.length} matches, age: ${Math.round(cacheAge/1000)}s`);
+        return new Response(JSON.stringify(matches), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
-    // First, let's check API status
-    const statusRes = await fetch(`${API_BASE}/status`, {
-      headers: { "x-apisports-key": API_FOOTBALL_KEY },
-    });
-    const statusData = await statusRes.json();
-    console.log("[API-Football] Account status:", JSON.stringify(statusData));
+    // Single API call: get ALL fixtures for today (1 request instead of 28!)
+    console.log(`[API] Fetching all fixtures for ${brDate}...`);
+    const res = await fetch(
+      `${API_BASE}/fixtures?date=${brDate}&timezone=America/Sao_Paulo`,
+      { headers: { "x-apisports-key": API_FOOTBALL_KEY } }
+    );
+    const data = await res.json();
 
-    // Fetch from API-Football
-    const leagueIds = Object.values(LEAGUE_IDS);
-    const allMatches: any[] = [];
-
-    const currentYear = new Date().getFullYear();
-    const prevYear = currentYear - 1;
-
-    const fetches = leagueIds.map(async (leagueId) => {
-      // Try current year first, then previous year for cross-season leagues
-      for (const season of [currentYear, prevYear]) {
-        try {
-          const res = await fetch(
-            `${API_BASE}/fixtures?league=${leagueId}&date=${brDate}&season=${season}&timezone=America/Sao_Paulo`,
-            { headers: { "x-apisports-key": API_FOOTBALL_KEY } }
-          );
-          const data = await res.json();
-          console.log(`[API-Football] League ${leagueId} season ${season}: ${data.response?.length ?? 0} fixtures, errors: ${JSON.stringify(data.errors)}`);
-          if (data.response && data.response.length > 0) {
-            for (const fixture of data.response) {
-              allMatches.push({
-                id: fixture.fixture.id,
-                league: {
-                  id: fixture.league.id,
-                  name: fixture.league.name,
-                  logo: fixture.league.logo,
-                  round: fixture.league.round,
-                },
-                homeTeam: {
-                  id: fixture.teams.home.id,
-                  name: fixture.teams.home.name,
-                  logo: fixture.teams.home.logo,
-                },
-                awayTeam: {
-                  id: fixture.teams.away.id,
-                  name: fixture.teams.away.name,
-                  logo: fixture.teams.away.logo,
-                },
-                date: fixture.fixture.date,
-                status: fixture.fixture.status.short,
-                elapsed: fixture.fixture.status.elapsed,
-                goals: {
-                  home: fixture.goals.home,
-                  away: fixture.goals.away,
-                },
-                broadcast: BROADCAST_MAP[leagueId] || ["Premiere"],
-              });
-            }
-            break; // Found matches for this season, skip previous year
-          }
-        } catch (e) {
-          console.warn(`Failed to fetch league ${leagueId} season ${season}:`, e);
-        }
+    if (data.errors && Object.keys(data.errors).length > 0) {
+      console.error("[API] Errors:", JSON.stringify(data.errors));
+      // If rate limited or plan issue, return cache or empty
+      if (cached) {
+        return new Response(JSON.stringify(cached.matches), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-    });
+      throw new Error(`API error: ${JSON.stringify(data.errors)}`);
+    }
 
-    await Promise.all(fetches);
+    const allFixtures = data.response || [];
+    console.log(`[API] Got ${allFixtures.length} total fixtures, filtering for target leagues...`);
+
+    // Filter for our target leagues
+    const allMatches: any[] = [];
+    for (const fixture of allFixtures) {
+      const leagueId = fixture.league.id;
+      if (!TARGET_LEAGUE_IDS.has(leagueId)) continue;
+
+      allMatches.push({
+        id: fixture.fixture.id,
+        league: {
+          id: leagueId,
+          name: fixture.league.name,
+          logo: fixture.league.logo,
+          round: fixture.league.round,
+        },
+        homeTeam: {
+          id: fixture.teams.home.id,
+          name: fixture.teams.home.name,
+          logo: fixture.teams.home.logo,
+        },
+        awayTeam: {
+          id: fixture.teams.away.id,
+          name: fixture.teams.away.name,
+          logo: fixture.teams.away.logo,
+        },
+        date: fixture.fixture.date,
+        status: fixture.fixture.status.short,
+        elapsed: fixture.fixture.status.elapsed,
+        goals: {
+          home: fixture.goals.home,
+          away: fixture.goals.away,
+        },
+        broadcast: BROADCAST_MAP[leagueId] || ["Premiere"],
+      });
+    }
+
+    console.log(`[API] ${allMatches.length} matches in target leagues`);
 
     // Upsert cache
     await supabase.from("football_cache").upsert(
