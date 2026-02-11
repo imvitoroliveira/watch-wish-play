@@ -9,9 +9,10 @@ interface MovieCardProps {
   isWatched?: boolean;
   onToggleFavorite?: (e: React.MouseEvent) => void;
   onToggleWatched?: (e: React.MouseEvent) => void;
+  availability?: 'available' | 'soon' | 'unknown';
 }
 
-const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, onToggleWatched }: MovieCardProps) => {
+const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, onToggleWatched, availability }: MovieCardProps) => {
   const title = movie.title || movie.name || 'Sem título';
 
   return (
@@ -23,6 +24,18 @@ const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, on
       className="relative group cursor-pointer rounded-xl overflow-hidden bg-card border border-border transition-all hover:border-primary/30 hover:glow-red"
       onClick={onClick}
     >
+      {/* Availability badge */}
+      {availability === 'available' && (
+        <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-full bg-green-600 text-white text-[10px] font-bold uppercase tracking-wide shadow">
+          ✓ Disponível
+        </div>
+      )}
+      {availability === 'soon' && (
+        <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold uppercase tracking-wide shadow opacity-80">
+          Em breve
+        </div>
+      )}
+
       {/* Poster */}
       <div className="aspect-[2/3] bg-secondary overflow-hidden">
         <img

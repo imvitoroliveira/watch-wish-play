@@ -6,25 +6,38 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Groups to SKIP (live TV channels)
+const SKIP_GROUPS = /\b(canais?|tv|ao.?vivo|live|aberto|esporte|notícia|infantil|music|rádio|radio|adult|xxx|pay.?per.?view|ppv|24h)\b/i;
+
 function parseM3UTitles(content: string): string[] {
   const titles: string[] = [];
   const lines = content.split("\n");
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("#EXTINF:")) continue;
+  let currentGroup = "";
 
-    // Try tvg-name first
-    const tvgMatch = trimmed.match(/tvg-name="([^"]+)"/);
-    if (tvgMatch) {
-      titles.push(cleanTitle(tvgMatch[1]));
-      continue;
-    }
-    // Fallback: text after last comma
-    const commaIdx = trimmed.lastIndexOf(",");
-    if (commaIdx !== -1) {
-      const title = trimmed.substring(commaIdx + 1).trim();
-      if (title) titles.push(cleanTitle(title));
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+
+    // Track group
+    if (trimmed.startsWith("#EXTINF:")) {
+      const groupMatch = trimmed.match(/group-title="([^"]+)"/);
+      if (groupMatch) currentGroup = groupMatch[1];
+
+      // Skip live TV groups
+      if (currentGroup && SKIP_GROUPS.test(currentGroup)) continue;
+
+      // Extract title - try tvg-name first
+      const tvgMatch = trimmed.match(/tvg-name="([^"]+)"/);
+      if (tvgMatch) {
+        titles.push(cleanTitle(tvgMatch[1]));
+        continue;
+      }
+      // Fallback: text after last comma
+      const commaIdx = trimmed.lastIndexOf(",");
+      if (commaIdx !== -1) {
+        const title = trimmed.substring(commaIdx + 1).trim();
+        if (title) titles.push(cleanTitle(title));
+      }
     }
   }
 
@@ -33,11 +46,25 @@ function parseM3UTitles(content: string): string[] {
 
 function cleanTitle(title: string): string {
   return title
+    // Remove resolution/quality prefixes & suffixes
+    .replace(/^(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*[-–:]\s*/gi, "")
+    .replace(/\s*(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*/gi, " ")
+    // Remove VOD/FILME/SERIE prefixes
+    .replace(/^(VOD|FILME|FILMES|SERIE|SERIES|MOVIE|MOVIES)[:\s-]*/i, "")
+    // Remove language tags
+    .replace(/\s*\[(DUB|LEG|DUAL|NAC|PT|EN|SPA)\w*\]\s*/gi, "")
+    .replace(/\s*\((DUB|LEG|DUAL|NAC|DUBLADO|LEGENDADO)\)\s*/gi, "")
+    // Remove year in parens at end
     .replace(/\s*\(?\d{4}\)?\s*$/, "")
+    // Remove bracket content
     .replace(/\s*\[.*?\]\s*/g, "")
+    // Remove pipe and after
     .replace(/\s*\|.*$/, "")
-    .replace(/^(VOD|FILME|SERIE)[:\s-]*/i, "")
-    .replace(/\s*(HD|4K|FHD|SD|720p|1080p)\s*/gi, "")
+    // Remove season/episode markers for series
+    .replace(/\s*S\d{1,2}\s*E\d{1,3}.*$/i, "")
+    .replace(/\s*T\d{1,2}\s*E\d{1,3}.*$/i, "")
+    // Remove trailing dash content (often extra metadata)
+    .replace(/\s+[-–]\s*$/, "")
     .trim();
 }
 
@@ -52,7 +79,6 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     if (req.method === "GET") {
-      // Return cached catalog
       const { data } = await supabase
         .from("m3u_catalog")
         .select("titles, source_url, updated_at")
@@ -75,7 +101,6 @@ Deno.serve(async (req) => {
 
       let m3uContent = content || "";
 
-      // Fetch from URL if provided (no CORS issues on server)
       if (url && !m3uContent) {
         console.log(`[M3U] Fetching from URL: ${url}`);
         const res = await fetch(url, {
@@ -95,11 +120,10 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Parse titles
+      // Parse ALL titles (no limit)
       const titles = parseM3UTitles(m3uContent);
-      console.log(`[M3U] Parsed ${titles.length} unique titles`);
+      console.log(`[M3U] Parsed ${titles.length} unique VOD titles`);
 
-      // Save to DB
       await supabase.from("m3u_catalog").upsert(
         {
           id: "00000000-0000-0000-0000-000000000001",

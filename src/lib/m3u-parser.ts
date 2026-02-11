@@ -28,12 +28,39 @@ export function parseM3UTitles(content: string): string[] {
 
 function cleanTitle(title: string): string {
   return title
+    .replace(/^(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*[-–:]\s*/gi, '')
+    .replace(/\s*(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*/gi, ' ')
+    .replace(/^(VOD|FILME|FILMES|SERIE|SERIES|MOVIE|MOVIES)[:\s-]*/i, '')
+    .replace(/\s*\[(DUB|LEG|DUAL|NAC|PT|EN|SPA)\w*\]\s*/gi, '')
+    .replace(/\s*\((DUB|LEG|DUAL|NAC|DUBLADO|LEGENDADO)\)\s*/gi, '')
     .replace(/\s*\(?\d{4}\)?\s*$/, '')
     .replace(/\s*\[.*?\]\s*/g, '')
     .replace(/\s*\|.*$/, '')
-    .replace(/^(VOD|FILME|SERIE)[:\s-]*/i, '')
-    .replace(/\s*(HD|4K|FHD|SD|720p|1080p)\s*/gi, '')
+    .replace(/\s*S\d{1,2}\s*E\d{1,3}.*$/i, '')
+    .replace(/\s*T\d{1,2}\s*E\d{1,3}.*$/i, '')
+    .replace(/\s+[-–]\s*$/, '')
     .trim();
+}
+
+/** Normalize a title for fuzzy matching */
+export function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
+    .replace(/[^a-z0-9\s]/g, '') // keep only alphanumeric
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Check if a TMDB title matches any M3U title */
+export function isInM3UCatalog(tmdbTitle: string, m3uTitlesNormalized: Set<string>): boolean {
+  const normalized = normalizeTitle(tmdbTitle);
+  if (m3uTitlesNormalized.has(normalized)) return true;
+  // Partial match: check if any M3U title contains the TMDB title or vice-versa
+  for (const m3u of m3uTitlesNormalized) {
+    if (m3u.includes(normalized) || normalized.includes(m3u)) return true;
+  }
+  return false;
 }
 
 // Fetch catalog from backend (DB-cached)
@@ -44,7 +71,6 @@ export async function fetchM3UCatalog(): Promise<{ titles: string[]; source_url:
     });
     if (error) throw error;
     const titles = data?.titles || [];
-    // Cache locally as fallback
     if (titles.length > 0) {
       localStorage.setItem('msc_m3u_titles', JSON.stringify(titles));
     }
