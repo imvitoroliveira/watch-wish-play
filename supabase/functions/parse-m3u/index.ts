@@ -79,15 +79,32 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     if (req.method === "GET") {
+      const url = new URL(req.url);
+      const randomCount = parseInt(url.searchParams.get("random") || "0", 10);
+
       const { data } = await supabase
         .from("m3u_catalog")
         .select("titles, source_url, updated_at")
         .eq("id", "00000000-0000-0000-0000-000000000001")
         .maybeSingle();
 
+      let titles = (data?.titles as string[]) || [];
+
+      // If random param, return a random sample from the full catalog
+      if (randomCount > 0 && titles.length > 0) {
+        // Fisher-Yates shuffle on a copy, then slice
+        const shuffled = [...titles];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        titles = shuffled.slice(0, Math.min(randomCount, shuffled.length));
+      }
+
       return new Response(
         JSON.stringify({
-          titles: data?.titles || [],
+          titles,
+          total: (data?.titles as string[])?.length || 0,
           source_url: data?.source_url || null,
           updated_at: data?.updated_at || null,
         }),

@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { TMDBMovie, tmdbImg, getMovieVideos } from '@/lib/tmdb';
+import { TMDBMovie, tmdbImg, getMovieVideos, searchByTitles } from '@/lib/tmdb';
 import { GENRES } from '@/lib/tmdb';
+import { fetchRandomM3UTitles } from '@/lib/m3u-parser';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Dices, Sparkles, Star, Play, CheckCircle, X, Volume2, VolumeX } from 'lucide-react';
+import { Dices, Sparkles, Star, Play, CheckCircle, X, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface CineRoletaProps {
@@ -30,7 +31,7 @@ const playClickSound = (ctx: AudioContext) => {
 
 // Generate a success sound
 const playSuccessSound = (ctx: AudioContext) => {
-  const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+  const notes = [523.25, 659.25, 783.99, 1046.5];
   notes.forEach((freq, i) => {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -50,24 +51,33 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
   const [result, setResult] = useState<TMDBMovie | null>(null);
   const [spinning, setSpinning] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  const [carouselMovies, setCarouselMovies] = useState<TMDBMovie[]>(movies);
 
   const stripRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const animFrameRef = useRef<number>(0);
 
-  // Build a long repeated strip of posters for the carousel
-  const pool = useMemo(() => {
-    if (selectedGenre) {
-      const filtered = movies.filter(m => m.genre_ids?.some(g => g === selectedGenre));
-      return filtered.length > 0 ? filtered : movies;
+  // Update carousel movies when initial movies change
+  useEffect(() => {
+    if (movies.length > 0 && carouselMovies.length === 0) {
+      setCarouselMovies(movies);
     }
-    return movies;
-  }, [movies, selectedGenre]);
+  }, [movies]);
 
-  // Create a repeated array for the visual strip (needs enough items to look continuous)
+  // Build visual strip from current carousel movies
+  const pool = useMemo(() => {
+    const source = carouselMovies.length > 0 ? carouselMovies : movies;
+    if (selectedGenre) {
+      const filtered = source.filter(m => m.genre_ids?.some(g => g === selectedGenre));
+      return filtered.length > 0 ? filtered : source;
+    }
+    return source;
+  }, [carouselMovies, movies, selectedGenre]);
+
   const stripItems = useMemo(() => {
     if (pool.length === 0) return [];
     const repeated: TMDBMovie[] = [];
@@ -85,90 +95,107 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
     return audioCtxRef.current;
   }, []);
 
-  const spin = useCallback(() => {
-    if (pool.length === 0 || spinning) return;
+  const spin = useCallback(async () => {
+    if (spinning || loading) return;
 
-    setSpinning(true);
+    setLoading(true);
     setResult(null);
     setShowResult(false);
     setTrailerKey(null);
 
-    const ctx = getAudioCtx();
-    const strip = stripRef.current;
-    if (!strip) return;
-
-    // Pick winner
-    const winnerIndex = Math.floor(Math.random() * pool.length);
-    const winner = pool[winnerIndex];
-
-    // Card width + gap
-    const cardW = 140;
-    const gap = 12;
-    const step = cardW + gap;
-
-    // Target position: land on the winner somewhere in the middle of the strip
-    // We want to spin through many items, so pick an occurrence deep in the strip
-    const targetOccurrence = 40 + winnerIndex; // deep enough for a long spin
-    const targetOffset = targetOccurrence * step;
-    // Center the winner in the viewport
-    const containerW = strip.parentElement?.clientWidth || 600;
-    const finalX = -(targetOffset - containerW / 2 + cardW / 2);
-
-    // Reset position
-    strip.style.transition = 'none';
-    strip.style.transform = 'translateX(0)';
-
-    // Force reflow
-    void strip.offsetHeight;
-
-    // Animate with CSS transition (cubic-bezier for deceleration)
-    const duration = 4000 + Math.random() * 1000;
-    strip.style.transition = `transform ${duration}ms cubic-bezier(0.15, 0.85, 0.25, 1)`;
-    strip.style.transform = `translateX(${finalX}px)`;
-
-    // Click sounds during spin
-    let clickCount = 0;
-    const totalClicks = 30;
-    let lastClickX = 0;
-
-    const checkPosition = () => {
-      if (clickCount >= totalClicks) return;
-      const currentTransform = getComputedStyle(strip).transform;
-      const matrix = new DOMMatrix(currentTransform);
-      const currentX = Math.abs(matrix.m41);
-
-      // Play click every time we pass a card width
-      if (currentX - lastClickX > step) {
-        playClickSound(ctx);
-        lastClickX = currentX - (currentX % step);
-        clickCount++;
+    try {
+      // Fetch 30 fresh random titles from the FULL catalog
+      const randomTitles = await fetchRandomM3UTitles(30);
+      if (randomTitles.length === 0) {
+        setLoading(false);
+        return;
       }
 
+      // Search TMDB for these titles to get posters
+      const tmdbResults = await searchByTitles(randomTitles, randomTitles.length);
+      if (tmdbResults.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      // Filter by genre if selected
+      let filteredResults = tmdbResults;
+      if (selectedGenre) {
+        const genreFiltered = tmdbResults.filter(m => m.genre_ids?.some(g => g === selectedGenre));
+        if (genreFiltered.length > 0) filteredResults = genreFiltered;
+      }
+
+      // Update carousel with the fresh movies
+      setCarouselMovies(filteredResults);
+      setLoading(false);
+
+      // Wait for state update & DOM render
+      await new Promise(r => setTimeout(r, 100));
+
+      // Now spin
+      setSpinning(true);
+      const ctx = getAudioCtx();
+      const strip = stripRef.current;
+      if (!strip) { setSpinning(false); return; }
+
+      // Pick winner from filtered results
+      const winnerIndex = Math.floor(Math.random() * filteredResults.length);
+      const winner = filteredResults[winnerIndex];
+
+      const cardW = 140;
+      const gap = 12;
+      const step = cardW + gap;
+
+      const targetOccurrence = 40 + winnerIndex;
+      const targetOffset = targetOccurrence * step;
+      const containerW = strip.parentElement?.clientWidth || 600;
+      const finalX = -(targetOffset - containerW / 2 + cardW / 2);
+
+      strip.style.transition = 'none';
+      strip.style.transform = 'translateX(0)';
+      void strip.offsetHeight;
+
+      const duration = 4000 + Math.random() * 1000;
+      strip.style.transition = `transform ${duration}ms cubic-bezier(0.15, 0.85, 0.25, 1)`;
+      strip.style.transform = `translateX(${finalX}px)`;
+
+      let clickCount = 0;
+      const totalClicks = 30;
+      let lastClickX = 0;
+
+      const checkPosition = () => {
+        if (clickCount >= totalClicks) return;
+        const currentTransform = getComputedStyle(strip).transform;
+        const matrix = new DOMMatrix(currentTransform);
+        const currentX = Math.abs(matrix.m41);
+        if (currentX - lastClickX > step) {
+          playClickSound(ctx);
+          lastClickX = currentX - (currentX % step);
+          clickCount++;
+        }
+        animFrameRef.current = requestAnimationFrame(checkPosition);
+      };
       animFrameRef.current = requestAnimationFrame(checkPosition);
-    };
-    animFrameRef.current = requestAnimationFrame(checkPosition);
 
-    // When animation ends
-    setTimeout(() => {
-      cancelAnimationFrame(animFrameRef.current);
+      setTimeout(() => {
+        cancelAnimationFrame(animFrameRef.current);
+        setSpinning(false);
+        setResult(winner);
+        setShowResult(true);
+        playSuccessSound(ctx);
+
+        const type = winner.media_type === 'tv' ? 'tv' : 'movie';
+        getMovieVideos(winner.id, type).then(key => setTrailerKey(key));
+      }, duration + 100);
+    } catch (e) {
+      console.error('[CineRoleta] Error:', e);
+      setLoading(false);
       setSpinning(false);
-      setResult(winner);
-      setShowResult(true);
+    }
+  }, [spinning, loading, selectedGenre, getAudioCtx]);
 
-      // Success sound
-      playSuccessSound(ctx);
-
-      // Fetch trailer
-      const type = winner.media_type === 'tv' ? 'tv' : 'movie';
-      getMovieVideos(winner.id, type).then(key => setTrailerKey(key));
-    }, duration + 100);
-  }, [pool, spinning, getAudioCtx]);
-
-  // Cleanup
   useEffect(() => {
-    return () => {
-      cancelAnimationFrame(animFrameRef.current);
-    };
+    return () => { cancelAnimationFrame(animFrameRef.current); };
   }, []);
 
   const title = result ? (result.title || result.name || 'Sem título') : '';
@@ -192,7 +219,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
           {GENRES.map(g => (
             <button
               key={g.id}
-              onClick={() => { if (!spinning) setSelectedGenre(selectedGenre === g.id ? null : g.id); }}
+              onClick={() => { if (!spinning && !loading) setSelectedGenre(selectedGenre === g.id ? null : g.id); }}
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 selectedGenre === g.id
                   ? 'bg-primary text-primary-foreground'
@@ -207,23 +234,14 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
 
       {/* Carousel strip */}
       <div className="relative overflow-hidden rounded-2xl bg-card/50 border border-border py-6">
-        {/* Center indicator */}
         <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[148px] border-2 border-primary/60 rounded-xl z-10 pointer-events-none shadow-[0_0_30px_rgba(var(--primary),0.3)]" />
-        {/* Gradient edges */}
         <div className="absolute top-0 bottom-0 left-0 w-24 bg-gradient-to-r from-card/90 to-transparent z-10 pointer-events-none" />
         <div className="absolute top-0 bottom-0 right-0 w-24 bg-gradient-to-l from-card/90 to-transparent z-10 pointer-events-none" />
 
         <div className="overflow-hidden px-4">
-          <div
-            ref={stripRef}
-            className="flex gap-3"
-            style={{ willChange: 'transform' }}
-          >
+          <div ref={stripRef} className="flex gap-3" style={{ willChange: 'transform' }}>
             {stripItems.map((movie, i) => (
-              <div
-                key={`${movie.id}-${i}`}
-                className="flex-shrink-0 w-[140px] rounded-lg overflow-hidden"
-              >
+              <div key={`${movie.id}-${i}`} className="flex-shrink-0 w-[140px] rounded-lg overflow-hidden">
                 <img
                   src={tmdbImg(movie.poster_path, 'w200')}
                   alt={movie.title || movie.name || ''}
@@ -240,11 +258,16 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       <div className="text-center py-2">
         <button
           onClick={spin}
-          disabled={spinning || pool.length === 0}
+          disabled={spinning || loading}
           className="relative h-16 px-14 text-xl font-display rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/40 hover:shadow-primary/60 hover:scale-105 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100"
         >
-          <Dices className={`w-7 h-7 inline mr-3 ${spinning ? 'animate-spin' : ''}`} />
-          {spinning ? 'GIRANDO...' : '🎬 SORTEAR FILME!'}
+          {loading ? (
+            <><Loader2 className="w-7 h-7 inline mr-3 animate-spin" /> PREPARANDO...</>
+          ) : spinning ? (
+            <><Dices className="w-7 h-7 inline mr-3 animate-spin" /> GIRANDO...</>
+          ) : (
+            <><Dices className="w-7 h-7 inline mr-3" /> 🎬 SORTEAR FILME!</>
+          )}
         </button>
       </div>
 
@@ -259,7 +282,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
             transition={{ duration: 0.6, ease: 'easeOut' }}
             className="rounded-2xl bg-card border border-border overflow-hidden shadow-2xl"
           >
-            {/* Trailer or backdrop */}
             <div className="relative aspect-video bg-secondary">
               {trailerKey ? (
                 <div className="relative w-full h-full">
@@ -284,7 +306,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
                   className="w-full h-full object-cover"
                 />
               )}
-              {/* Close result */}
               <button
                 onClick={() => setShowResult(false)}
                 className="absolute top-4 right-4 w-10 h-10 rounded-full bg-background/80 flex items-center justify-center text-foreground hover:bg-background transition-colors z-10"
@@ -293,7 +314,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
               </button>
             </div>
 
-            {/* Movie info */}
             <div className="p-6 space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -303,9 +323,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
                       <Star className="w-4 h-4 text-accent fill-accent" />
                       <span className="text-sm font-semibold text-accent">{result.vote_average?.toFixed(1)}</span>
                     </div>
-                    {date && (
-                      <span className="text-sm text-muted-foreground">{new Date(date).getFullYear()}</span>
-                    )}
+                    {date && <span className="text-sm text-muted-foreground">{new Date(date).getFullYear()}</span>}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/15 text-green-400 text-xs font-semibold shrink-0">
@@ -319,10 +337,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
               </p>
 
               <div className="flex gap-3 pt-2">
-                <Button
-                  onClick={() => onMovieClick(result)}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                >
+                <Button onClick={() => onMovieClick(result)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                   <Play className="w-4 h-4 mr-2" /> Ver Detalhes
                 </Button>
                 <Button
