@@ -1,9 +1,9 @@
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
 
-// TMDB API key - this is a publishable read-only key
-// Get yours free at https://www.themoviedb.org/settings/api
-const API_KEY = ''; // User needs to add their TMDB API key
+// TMDB API - publishable read-only key
+const API_KEY = '21485546b51b79ae67c0037ae8ecb87e';
+const API_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiIyMTQ4NTU0NmI1MWI3OWFlNjdjMDAzN2FlOGVjYjg3ZSIsIm5iZiI6MTc3MDgxODE1MS44MDQsInN1YiI6IjY5OGM4YTY3MDllMGIwZWI2YWQzYTk2ZSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.MxbgU3akV6yH4ll5JKAr2yLhsTLRBpBXOHpVReXj57w';
 
 export const tmdbImg = (path: string | null, size: 'w200' | 'w300' | 'w500' | 'w780' | 'original' = 'w500') => {
   if (!path) return 'https://via.placeholder.com/500x750/1a1a1a/666?text=Sem+Imagem';
@@ -16,16 +16,20 @@ export const tmdbBackdrop = (path: string | null) => {
 };
 
 const fetchTMDB = async (endpoint: string, params: Record<string, string> = {}) => {
-  if (!API_KEY) {
+  if (!API_KEY && !API_TOKEN) {
     console.warn('TMDB API key not configured');
     return null;
   }
   const url = new URL(`${TMDB_BASE}${endpoint}`);
-  url.searchParams.set('api_key', API_KEY);
   url.searchParams.set('language', 'pt-BR');
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   
-  const res = await fetch(url.toString());
+  const res = await fetch(url.toString(), {
+    headers: {
+      'Authorization': `Bearer ${API_TOKEN}`,
+      'accept': 'application/json',
+    },
+  });
   if (!res.ok) return null;
   return res.json();
 };

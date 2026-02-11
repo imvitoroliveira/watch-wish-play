@@ -36,24 +36,30 @@ const AdminPanel = () => {
       if (file.name.endsWith('.json')) {
         data = JSON.parse(text);
       } else if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
-        // Parse HTML table - extract rows
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(text, 'text/html');
-        const rows = doc.querySelectorAll('tr');
-        data = [];
-        const headers: string[] = [];
-        rows.forEach((row, i) => {
-          const cells = row.querySelectorAll('td, th');
-          if (i === 0) {
-            cells.forEach(c => headers.push(c.textContent?.trim() || ''));
-          } else {
-            const obj: any = {};
-            cells.forEach((c, j) => {
-              obj[headers[j] || String(j)] = c.textContent?.trim() || '';
-            });
-            if (obj.u) data.push(obj);
-          }
-        });
+        // Parse HTML file - extract JSON data from var logs_data = [...] or var tabledata = [...]
+        const jsonMatch = text.match(/var\s+(?:logs_data|tabledata)\s*=\s*(\[[\s\S]*?\]);/);
+        if (jsonMatch) {
+          data = JSON.parse(jsonMatch[1]);
+        } else {
+          // Fallback: try parsing HTML table rows
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(text, 'text/html');
+          const rows = doc.querySelectorAll('tr');
+          data = [];
+          const headers: string[] = [];
+          rows.forEach((row, i) => {
+            const cells = row.querySelectorAll('td, th');
+            if (i === 0) {
+              cells.forEach(c => headers.push(c.textContent?.trim() || ''));
+            } else {
+              const obj: any = {};
+              cells.forEach((c, j) => {
+                obj[headers[j] || String(j)] = c.textContent?.trim() || '';
+              });
+              if (obj.u) data.push(obj);
+            }
+          });
+        }
       } else {
         toast({ title: 'Formato não suportado', description: 'Use arquivo JSON ou HTML', variant: 'destructive' });
         return;
