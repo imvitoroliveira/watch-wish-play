@@ -49,7 +49,7 @@ export interface TMDBMovie {
 }
 
 export const getTrending = async (): Promise<TMDBMovie[]> => {
-  const data = await fetchTMDB('/trending/all/week');
+  const data = await fetchTMDB('/trending/movie/week');
   return data?.results || getMockMovies();
 };
 

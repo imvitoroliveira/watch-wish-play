@@ -35,6 +35,7 @@ const Dashboard = () => {
   });
   const [m3uNormalized, setM3uNormalized] = useState<Set<string>>(new Set());
   const [hasM3U, setHasM3U] = useState(false);
+  const [m3uConfirmedMovies, setM3uConfirmedMovies] = useState<TMDBMovie[]>([]);
 
   useEffect(() => {
     if (!isClient) navigate('/');
@@ -42,18 +43,19 @@ const Dashboard = () => {
 
   useEffect(() => {
     const loadMovies = async () => {
+      // Always load trending from TMDB for "Em Alta"
+      const trending = await getTrending();
+      setMovies(trending);
+
+      // Load M3U catalog for availability badges & Cine-Roleta
       const { titles: m3uTitles } = await fetchM3UCatalog();
       if (m3uTitles.length > 0) {
         setHasM3U(true);
         setM3uNormalized(new Set(m3uTitles.map(normalizeTitle)));
-        const results = await searchByTitles(m3uTitles);
-        if (results.length > 0) {
-          setMovies(results);
-          return;
-        }
+        // Search TMDB for M3U titles to build Cine-Roleta pool
+        const m3uMovies = await searchByTitles(m3uTitles);
+        setM3uConfirmedMovies(m3uMovies);
       }
-      const trending = await getTrending();
-      setMovies(trending);
     };
     loadMovies();
   }, []);
@@ -245,7 +247,7 @@ const Dashboard = () => {
         {tab === 'roleta' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <CineRoleta
-              movies={movies}
+              movies={m3uConfirmedMovies.length > 0 ? m3uConfirmedMovies : movies}
               onMovieClick={setSelectedMovie}
               favorites={favorites}
               watched={watchedSet}
