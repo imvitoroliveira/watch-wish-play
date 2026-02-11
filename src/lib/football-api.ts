@@ -1,8 +1,8 @@
-// Football API integration for Brazilian leagues
-// Uses Sportmonks API (sportmonks.com)
+// Football API integration for Brazilian + South American leagues
+// Uses API-Football (api-football.com / api-sports.io) — free plan: 100 req/day, all leagues
 
-const SPORTMONKS_TOKEN = '6XTAKuADi9YCNeQoxVKpk3xrt1flB2oyvv2ZP4sASNRcflxRLAwk306QC6Ua';
-const API_BASE = 'https://api.sportmonks.com/v3/football';
+const API_FOOTBALL_KEY = ''; // User must add their API-Football key (from dashboard.api-football.com)
+const API_BASE = 'https://v3.football.api-sports.io';
 
 export interface Team {
   id: number;
@@ -32,26 +32,33 @@ export interface Match {
   broadcast: string[];
 }
 
-// League IDs in Sportmonks
+// API-Football league IDs
 const LEAGUE_IDS = {
   // Nacionais
-  SERIE_A: 462,
-  SERIE_B: 463,
-  COPA_DO_BRASIL: 475,
-  COPA_NORDESTE: 1360,
-  FEMININO: 648,
+  SERIE_A: 71,
+  SERIE_B: 72,
+  SERIE_C: 75,
+  COPA_DO_BRASIL: 73,
+  COPA_NORDESTE: 475,
+  FEMININO: 606,
+  SUPERCOPA: 625,
   // Estaduais
-  CARIOCA: 476,
-  PAULISTA: 477,
-  // Internacionais
-  LIBERTADORES: 1122,
-  ELIMINATORIAS: 848,
-  AMISTOSOS: 667,
+  CARIOCA: 352,
+  PAULISTA: 480,
+  // Internacionais / Continental
+  LIBERTADORES: 13,
+  SULAMERICANA: 11,
+  RECOPA_SULAMERICANA: 535,
+  // Seleções
+  ELIMINATORIAS: 34,
+  AMISTOSOS: 10,
 };
 
 const LEAGUE_PRIORITY = [
   LEAGUE_IDS.ELIMINATORIAS,
   LEAGUE_IDS.LIBERTADORES,
+  LEAGUE_IDS.SULAMERICANA,
+  LEAGUE_IDS.RECOPA_SULAMERICANA,
   LEAGUE_IDS.SERIE_A,
   LEAGUE_IDS.COPA_DO_BRASIL,
   LEAGUE_IDS.SERIE_B,
@@ -59,18 +66,24 @@ const LEAGUE_PRIORITY = [
   LEAGUE_IDS.PAULISTA,
   LEAGUE_IDS.COPA_NORDESTE,
   LEAGUE_IDS.FEMININO,
+  LEAGUE_IDS.SUPERCOPA,
+  LEAGUE_IDS.SERIE_C,
   LEAGUE_IDS.AMISTOSOS,
 ];
 
 const BROADCAST_MAP: Record<number, string[]> = {
   [LEAGUE_IDS.SERIE_A]: ['Premiere', 'Globo', 'SporTV'],
   [LEAGUE_IDS.SERIE_B]: ['Premiere', 'SporTV', 'TV Brasil'],
+  [LEAGUE_IDS.SERIE_C]: ['DAZN', 'NSports'],
   [LEAGUE_IDS.COPA_DO_BRASIL]: ['Premiere', 'Globo', 'SporTV', 'Amazon Prime'],
   [LEAGUE_IDS.COPA_NORDESTE]: ['SBT', 'ESPN', 'SporTV'],
   [LEAGUE_IDS.FEMININO]: ['SporTV', 'Globo', 'TV Brasil'],
+  [LEAGUE_IDS.SUPERCOPA]: ['Globo', 'SporTV'],
   [LEAGUE_IDS.CARIOCA]: ['Band', 'SporTV', 'Premiere'],
   [LEAGUE_IDS.PAULISTA]: ['Record', 'CazéTV', 'Premiere'],
   [LEAGUE_IDS.LIBERTADORES]: ['Paramount+', 'SBT', 'ESPN'],
+  [LEAGUE_IDS.SULAMERICANA]: ['Paramount+', 'SBT', 'ESPN'],
+  [LEAGUE_IDS.RECOPA_SULAMERICANA]: ['ESPN', 'SBT'],
   [LEAGUE_IDS.ELIMINATORIAS]: ['Globo', 'SporTV', 'CazéTV'],
   [LEAGUE_IDS.AMISTOSOS]: ['Globo', 'SporTV', 'ESPN'],
 };
@@ -96,237 +109,172 @@ function isLive(status: Match['status']): boolean {
   return ['1H', 'HT', '2H', 'AET', 'PEN', 'LIVE'].includes(status);
 }
 
-// Map Sportmonks state to our status
-function mapSportmonksState(stateId: number, stateName: string): Match['status'] {
-  // Sportmonks state IDs: 1=NS, 2=INPLAY_1ST, 3=HT, 4=INPLAY_2ND, 5=FT, 6=AET, 7=PEN, etc.
-  const stateMap: Record<number, Match['status']> = {
-    1: 'NS',    // Not Started
-    2: '1H',    // 1st Half
-    3: 'HT',    // Half Time
-    4: '2H',    // 2nd Half
-    5: 'FT',    // Full Time
-    6: 'AET',   // After Extra Time
-    7: 'PEN',   // Penalties
-    8: 'FT',    // FT after penalties
-    9: 'SUSP',  // Suspended
-    10: 'PST',  // Postponed
-    11: 'CANC', // Cancelled
-    13: 'LIVE', // Live (generic)
-    14: '2H',   // Extra Time
-    15: 'PEN',  // Penalty Shootout
-    21: 'FT',   // Finished after extra
-    22: 'CANC', // Cancelled
-  };
-
-  if (stateMap[stateId]) return stateMap[stateId];
-
-  // Fallback: check name
-  const lower = stateName?.toLowerCase() || '';
-  if (lower.includes('live') || lower.includes('inplay')) return 'LIVE';
-  if (lower.includes('finished') || lower.includes('ft')) return 'FT';
-  if (lower.includes('half')) return 'HT';
-  if (lower.includes('postponed')) return 'PST';
-  return 'NS';
-}
-
-// Extract current score from Sportmonks scores array
-function extractScores(scores: any[]): MatchGoals {
-  if (!scores || scores.length === 0) return { home: null, away: null };
-
-  // Find the CURRENT score entry, or fallback to 2ND_HALF, then 1ST_HALF
-  const current = scores.find((s: any) => s.description === 'CURRENT')
-    || scores.find((s: any) => s.description === '2ND_HALF')
-    || scores.find((s: any) => s.description === '1ST_HALF');
-
-  if (!current) return { home: null, away: null };
-
-  return {
-    home: current.score?.participant === 'home' ? current.score?.goals : null,
-    away: current.score?.participant === 'away' ? current.score?.goals : null,
-  };
-}
-
-function extractGoalsFromScores(scores: any[]): MatchGoals {
-  if (!scores || scores.length === 0) return { home: null, away: null };
-
-  let home: number | null = null;
-  let away: number | null = null;
-
-  // Sportmonks scores have participant = 'home' or 'away' with goals count
-  for (const s of scores) {
-    if (s.description === 'CURRENT' || s.description === '2ND_HALF' || s.description === '1ST_HALF') {
-      if (s.score?.participant === 'home') home = s.score?.goals ?? null;
-      if (s.score?.participant === 'away') away = s.score?.goals ?? null;
-    }
-  }
-
-  // If no CURRENT found, try any available
-  if (home === null && away === null) {
-    for (const s of scores) {
-      if (s.score?.participant === 'home' && home === null) home = s.score?.goals ?? null;
-      if (s.score?.participant === 'away' && away === null) away = s.score?.goals ?? null;
-    }
-  }
-
-  return { home, away };
-}
-
-// Fetch today's matches from Sportmonks
+// Fetch today's matches from API-Football
 async function fetchFromAPI(): Promise<Match[]> {
-  if (!SPORTMONKS_TOKEN) return [];
+  if (!API_FOOTBALL_KEY) return [];
 
   const today = new Date().toISOString().split('T')[0];
-  const leagueFilter = Object.values(LEAGUE_IDS).join(',');
+  const allMatches: Match[] = [];
+  const leagueIds = Object.values(LEAGUE_IDS);
 
-  try {
-    const url = `${API_BASE}/fixtures/date/${today}?api_token=${SPORTMONKS_TOKEN}&include=participants;scores;league;state&filters=fixtureLeagues:${leagueFilter}&timezone=America/Sao_Paulo`;
-    console.log('[Football API] Fetching:', url.replace(SPORTMONKS_TOKEN, '***'));
-
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (!res.ok) {
-      console.warn('[Football API] Error response:', data);
-      return [];
+  // Batch: fetch all leagues in parallel (each league = 1 request)
+  const fetches = leagueIds.map(async (leagueId) => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/fixtures?league=${leagueId}&date=${today}&season=2026&timezone=America/Sao_Paulo`,
+        { headers: { 'x-apisports-key': API_FOOTBALL_KEY } }
+      );
+      const data = await res.json();
+      if (data.response) {
+        for (const fixture of data.response) {
+          allMatches.push({
+            id: fixture.fixture.id,
+            league: {
+              id: fixture.league.id,
+              name: fixture.league.name,
+              logo: fixture.league.logo,
+              round: fixture.league.round,
+            },
+            homeTeam: {
+              id: fixture.teams.home.id,
+              name: fixture.teams.home.name,
+              logo: fixture.teams.home.logo,
+            },
+            awayTeam: {
+              id: fixture.teams.away.id,
+              name: fixture.teams.away.name,
+              logo: fixture.teams.away.logo,
+            },
+            date: fixture.fixture.date,
+            status: fixture.fixture.status.short as Match['status'],
+            elapsed: fixture.fixture.status.elapsed,
+            goals: {
+              home: fixture.goals.home,
+              away: fixture.goals.away,
+            },
+            broadcast: BROADCAST_MAP[leagueId] || ['Premiere'],
+          });
+        }
+      }
+    } catch (e) {
+      console.warn(`[Football API] Failed to fetch league ${leagueId}:`, e);
     }
+  });
 
-    if (!data.data || !Array.isArray(data.data)) {
-      console.log('[Football API] No fixtures found for today');
-      return [];
-    }
-
-    const matches: Match[] = [];
-
-    for (const fixture of data.data) {
-      const participants = fixture.participants || [];
-      const homeTeam = participants.find((p: any) => p.meta?.location === 'home');
-      const awayTeam = participants.find((p: any) => p.meta?.location === 'away');
-
-      if (!homeTeam || !awayTeam) continue;
-
-      const leagueId = fixture.league_id || fixture.league?.id;
-      const leagueName = fixture.league?.name || 'Liga Brasileira';
-      const leagueLogo = fixture.league?.image_path || '';
-
-      const stateId = fixture.state_id || 1;
-      const stateName = fixture.state?.name || '';
-      const status = mapSportmonksState(stateId, stateName);
-      const elapsed = fixture.state?.clock?.minute ?? fixture.minute ?? null;
-
-      const goals = extractGoalsFromScores(fixture.scores || []);
-
-      matches.push({
-        id: fixture.id,
-        league: {
-          id: leagueId,
-          name: leagueName,
-          logo: leagueLogo,
-          round: fixture.round?.name || undefined,
-        },
-        homeTeam: {
-          id: homeTeam.id,
-          name: homeTeam.name || homeTeam.short_code || 'Home',
-          logo: homeTeam.image_path || '/placeholder.svg',
-        },
-        awayTeam: {
-          id: awayTeam.id,
-          name: awayTeam.name || awayTeam.short_code || 'Away',
-          logo: awayTeam.image_path || '/placeholder.svg',
-        },
-        date: fixture.starting_at || today,
-        status,
-        elapsed,
-        goals,
-        broadcast: BROADCAST_MAP[leagueId] || ['Premiere'],
-      });
-    }
-
-    console.log(`[Football API] Loaded ${matches.length} fixtures from Sportmonks`);
-    return matches;
-  } catch (e) {
-    console.warn('[Football API] Fetch failed:', e);
-    return [];
-  }
+  await Promise.all(fetches);
+  console.log(`[Football API] Loaded ${allMatches.length} fixtures from API-Football`);
+  return allMatches;
 }
 
-// Generate realistic mock data for demo (fallback)
+// Generate mock data for demo (fallback when no API key)
 function generateMockMatches(): Match[] {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
 
   const teams = {
     serieA: [
-      { id: 1, name: 'Flamengo', logo: 'https://media.api-sports.io/football/teams/127.png' },
-      { id: 2, name: 'Palmeiras', logo: 'https://media.api-sports.io/football/teams/121.png' },
-      { id: 3, name: 'Corinthians', logo: 'https://media.api-sports.io/football/teams/131.png' },
-      { id: 4, name: 'São Paulo', logo: 'https://media.api-sports.io/football/teams/126.png' },
-      { id: 5, name: 'Fluminense', logo: 'https://media.api-sports.io/football/teams/124.png' },
-      { id: 6, name: 'Botafogo', logo: 'https://media.api-sports.io/football/teams/128.png' },
-      { id: 7, name: 'Vasco', logo: 'https://media.api-sports.io/football/teams/133.png' },
-      { id: 8, name: 'Grêmio', logo: 'https://media.api-sports.io/football/teams/130.png' },
-      { id: 9, name: 'Internacional', logo: 'https://media.api-sports.io/football/teams/119.png' },
-      { id: 10, name: 'Atlético-MG', logo: 'https://media.api-sports.io/football/teams/1062.png' },
-      { id: 11, name: 'Cruzeiro', logo: 'https://media.api-sports.io/football/teams/120.png' },
-      { id: 12, name: 'Santos', logo: 'https://media.api-sports.io/football/teams/132.png' },
+      { id: 127, name: 'Flamengo', logo: 'https://media.api-sports.io/football/teams/127.png' },
+      { id: 121, name: 'Palmeiras', logo: 'https://media.api-sports.io/football/teams/121.png' },
+      { id: 131, name: 'Corinthians', logo: 'https://media.api-sports.io/football/teams/131.png' },
+      { id: 126, name: 'São Paulo', logo: 'https://media.api-sports.io/football/teams/126.png' },
+      { id: 124, name: 'Fluminense', logo: 'https://media.api-sports.io/football/teams/124.png' },
+      { id: 128, name: 'Botafogo', logo: 'https://media.api-sports.io/football/teams/128.png' },
+      { id: 133, name: 'Vasco', logo: 'https://media.api-sports.io/football/teams/133.png' },
+      { id: 130, name: 'Grêmio', logo: 'https://media.api-sports.io/football/teams/130.png' },
+      { id: 119, name: 'Internacional', logo: 'https://media.api-sports.io/football/teams/119.png' },
+      { id: 1062, name: 'Atlético-MG', logo: 'https://media.api-sports.io/football/teams/1062.png' },
     ],
-    serieB: [
-      { id: 20, name: 'Sport', logo: 'https://media.api-sports.io/football/teams/2624.png' },
-      { id: 21, name: 'Ceará', logo: 'https://media.api-sports.io/football/teams/2323.png' },
+    libertadores: [
+      { id: 1020, name: 'River Plate', logo: 'https://media.api-sports.io/football/teams/1020.png' },
+      { id: 451, name: 'Boca Juniors', logo: 'https://media.api-sports.io/football/teams/451.png' },
     ],
-    nordeste: [
-      { id: 30, name: 'Bahia', logo: 'https://media.api-sports.io/football/teams/118.png' },
-      { id: 31, name: 'Fortaleza', logo: 'https://media.api-sports.io/football/teams/1191.png' },
+    selecoes: [
+      { id: 6, name: 'Brasil', logo: 'https://media.api-sports.io/football/teams/6.png' },
+      { id: 26, name: 'Argentina', logo: 'https://media.api-sports.io/football/teams/26.png' },
     ],
   };
 
   return [
+    // Série A — Ao Vivo
     {
       id: 1001,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: '', round: 'Rodada 5' },
+      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: 'https://media.api-sports.io/football/leagues/71.png', round: 'Rodada 5' },
       homeTeam: teams.serieA[0], awayTeam: teams.serieA[1],
       date: new Date(now.getTime() - 45 * 60000).toISOString(),
       status: '2H', elapsed: 67, goals: { home: 2, away: 1 },
       broadcast: ['Premiere', 'Globo'],
     },
+    // Série A — A iniciar
     {
       id: 1002,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: '', round: 'Rodada 5' },
+      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: 'https://media.api-sports.io/football/leagues/71.png', round: 'Rodada 5' },
       homeTeam: teams.serieA[2], awayTeam: teams.serieA[3],
       date: `${today}T21:30:00-03:00`,
       status: 'NS', elapsed: null, goals: { home: null, away: null },
       broadcast: ['Premiere', 'SporTV'],
     },
+    // Copa Libertadores — Ao Vivo
     {
-      id: 1003,
-      league: { id: LEAGUE_IDS.SERIE_A, name: 'Brasileirão Série A', logo: '', round: 'Rodada 5' },
-      homeTeam: teams.serieA[4], awayTeam: teams.serieA[5],
-      date: `${today}T19:00:00-03:00`,
-      status: 'FT', elapsed: 90, goals: { home: 0, away: 0 },
-      broadcast: ['Premiere'],
+      id: 1010,
+      league: { id: LEAGUE_IDS.LIBERTADORES, name: 'Copa Libertadores', logo: 'https://media.api-sports.io/football/leagues/13.png', round: 'Fase de Grupos - 4' },
+      homeTeam: teams.serieA[0], awayTeam: teams.libertadores[0],
+      date: new Date(now.getTime() - 30 * 60000).toISOString(),
+      status: '1H', elapsed: 30, goals: { home: 1, away: 0 },
+      broadcast: ['Paramount+', 'SBT'],
     },
+    // Copa Sul-Americana
+    {
+      id: 1011,
+      league: { id: LEAGUE_IDS.SULAMERICANA, name: 'Copa Sul-Americana', logo: 'https://media.api-sports.io/football/leagues/11.png', round: 'Fase de Grupos - 3' },
+      homeTeam: teams.serieA[4], awayTeam: teams.libertadores[1],
+      date: `${today}T19:15:00-03:00`,
+      status: 'FT', elapsed: 90, goals: { home: 2, away: 2 },
+      broadcast: ['Paramount+', 'ESPN'],
+    },
+    // Eliminatórias
+    {
+      id: 1020,
+      league: { id: LEAGUE_IDS.ELIMINATORIAS, name: 'Eliminatórias Copa do Mundo', logo: 'https://media.api-sports.io/football/leagues/34.png', round: 'Rodada 14' },
+      homeTeam: teams.selecoes[0], awayTeam: teams.selecoes[1],
+      date: `${today}T21:45:00-03:00`,
+      status: 'NS', elapsed: null, goals: { home: null, away: null },
+      broadcast: ['Globo', 'SporTV', 'CazéTV'],
+    },
+    // Copa do Brasil
     {
       id: 1004,
-      league: { id: LEAGUE_IDS.COPA_DO_BRASIL, name: 'Copa do Brasil', logo: '', round: 'Oitavas de Final' },
+      league: { id: LEAGUE_IDS.COPA_DO_BRASIL, name: 'Copa do Brasil', logo: 'https://media.api-sports.io/football/leagues/73.png', round: 'Oitavas de Final' },
       homeTeam: teams.serieA[6], awayTeam: teams.serieA[7],
       date: `${today}T20:00:00-03:00`,
-      status: '1H', elapsed: 23, goals: { home: 0, away: 1 },
+      status: 'HT', elapsed: 45, goals: { home: 0, away: 1 },
       broadcast: ['Globo', 'SporTV', 'Amazon Prime'],
     },
+    // Paulista
     {
-      id: 1005,
-      league: { id: LEAGUE_IDS.SERIE_B, name: 'Brasileirão Série B', logo: '', round: 'Rodada 8' },
-      homeTeam: teams.serieB[0], awayTeam: teams.serieB[1],
+      id: 1030,
+      league: { id: LEAGUE_IDS.PAULISTA, name: 'Campeonato Paulista', logo: 'https://media.api-sports.io/football/leagues/480.png', round: 'Rodada 10' },
+      homeTeam: teams.serieA[2], awayTeam: teams.serieA[1],
       date: `${today}T16:00:00-03:00`,
-      status: 'FT', elapsed: 90, goals: { home: 3, away: 2 },
-      broadcast: ['Premiere', 'SporTV'],
+      status: 'FT', elapsed: 90, goals: { home: 1, away: 3 },
+      broadcast: ['Record', 'CazéTV'],
     },
+    // Carioca
     {
-      id: 1006,
-      league: { id: LEAGUE_IDS.COPA_NORDESTE, name: 'Copa do Nordeste', logo: '', round: 'Semifinal' },
-      homeTeam: teams.nordeste[0], awayTeam: teams.nordeste[1],
-      date: `${today}T22:00:00-03:00`,
+      id: 1031,
+      league: { id: LEAGUE_IDS.CARIOCA, name: 'Campeonato Carioca', logo: 'https://media.api-sports.io/football/leagues/352.png', round: 'Rodada 8' },
+      homeTeam: teams.serieA[0], awayTeam: teams.serieA[6],
+      date: `${today}T18:00:00-03:00`,
+      status: 'FT', elapsed: 90, goals: { home: 3, away: 0 },
+      broadcast: ['Band', 'SporTV'],
+    },
+    // Amistosos
+    {
+      id: 1040,
+      league: { id: LEAGUE_IDS.AMISTOSOS, name: 'Amistosos Internacionais', logo: 'https://media.api-sports.io/football/leagues/10.png' },
+      homeTeam: teams.selecoes[0], awayTeam: { id: 16, name: 'Uruguai', logo: 'https://media.api-sports.io/football/teams/16.png' },
+      date: `${today}T20:00:00-03:00`,
       status: 'NS', elapsed: null, goals: { home: null, away: null },
-      broadcast: ['SBT', 'ESPN'],
+      broadcast: ['Globo', 'SporTV'],
     },
   ];
 }
@@ -345,7 +293,7 @@ function sortByPriority(matches: Match[]): Match[] {
 
     const aPrio = LEAGUE_PRIORITY.indexOf(a.league.id);
     const bPrio = LEAGUE_PRIORITY.indexOf(b.league.id);
-    if (aPrio !== bPrio) return aPrio - bPrio;
+    if (aPrio !== bPrio) return (aPrio === -1 ? 99 : aPrio) - (bPrio === -1 ? 99 : bPrio);
 
     return new Date(a.date).getTime() - new Date(b.date).getTime();
   });
@@ -365,16 +313,12 @@ export function toggleReminder(matchId: number): Set<number> {
     reminders.delete(matchId);
   } else {
     reminders.add(matchId);
-    scheduleNotification(matchId);
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
   }
   localStorage.setItem(REMINDERS_KEY, JSON.stringify([...reminders]));
   return new Set(reminders);
-}
-
-function scheduleNotification(matchId: number) {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
 }
 
 export function checkAndFireReminders(matches: Match[]) {
