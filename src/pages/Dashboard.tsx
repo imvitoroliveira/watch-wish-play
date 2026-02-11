@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTrending, TMDBMovie, searchMovies, searchByTitles } from '@/lib/tmdb';
-import { getStoredM3UTitles } from '@/lib/m3u-parser';
+import { fetchM3UCatalog } from '@/lib/m3u-parser';
 import { motion } from 'framer-motion';
 import { Film, Search, Heart, Clock, Dices, Signal, HelpCircle, LogOut, Wallet, Trophy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -39,15 +39,19 @@ const Dashboard = () => {
   }, [isClient, navigate]);
 
   useEffect(() => {
-    const m3uTitles = getStoredM3UTitles();
-    if (m3uTitles.length > 0) {
-      searchByTitles(m3uTitles).then(results => {
-        if (results.length > 0) setMovies(results);
-        else getTrending().then(setMovies);
-      });
-    } else {
-      getTrending().then(setMovies);
-    }
+    const loadMovies = async () => {
+      const { titles: m3uTitles } = await fetchM3UCatalog();
+      if (m3uTitles.length > 0) {
+        const results = await searchByTitles(m3uTitles);
+        if (results.length > 0) {
+          setMovies(results);
+          return;
+        }
+      }
+      const trending = await getTrending();
+      setMovies(trending);
+    };
+    loadMovies();
   }, []);
 
   useEffect(() => {
