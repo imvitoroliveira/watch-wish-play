@@ -71,22 +71,25 @@ export const searchMovies = async (query: string): Promise<TMDBMovie[]> => {
 };
 
 // Search TMDB for a list of titles and return matched movies
-export const searchByTitles = async (titles: string[]): Promise<TMDBMovie[]> => {
-  // Pick up to 20 random titles to avoid too many API calls
-  const sample = titles.length <= 20 ? titles : titles.sort(() => Math.random() - 0.5).slice(0, 20);
+export const searchByTitles = async (titles: string[], maxSample = 20): Promise<TMDBMovie[]> => {
+  const sample = titles.length <= maxSample ? titles : titles.sort(() => Math.random() - 0.5).slice(0, maxSample);
   const results: TMDBMovie[] = [];
   const seenIds = new Set<number>();
 
-  const searches = sample.map(async (title) => {
-    const data = await fetchTMDB('/search/movie', { query: title });
-    const first = data?.results?.[0];
-    if (first && !seenIds.has(first.id)) {
-      seenIds.add(first.id);
-      results.push({ ...first, media_type: 'movie' });
-    }
-  });
+  // Process in batches of 10 to avoid overwhelming the API
+  for (let i = 0; i < sample.length; i += 10) {
+    const batch = sample.slice(i, i + 10);
+    const searches = batch.map(async (title) => {
+      const data = await fetchTMDB('/search/movie', { query: title });
+      const first = data?.results?.[0];
+      if (first && !seenIds.has(first.id)) {
+        seenIds.add(first.id);
+        results.push({ ...first, media_type: 'movie' });
+      }
+    });
+    await Promise.all(searches);
+  }
 
-  await Promise.all(searches);
   return results;
 };
 
