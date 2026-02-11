@@ -234,18 +234,19 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
 
       {/* Carousel strip */}
       <div className="relative overflow-hidden rounded-2xl bg-card/50 border border-border py-6">
-        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[148px] border-2 border-primary/60 rounded-xl z-10 pointer-events-none shadow-[0_0_30px_rgba(var(--primary),0.3)]" />
-        <div className="absolute top-0 bottom-0 left-0 w-24 bg-gradient-to-r from-card/90 to-transparent z-10 pointer-events-none" />
-        <div className="absolute top-0 bottom-0 right-0 w-24 bg-gradient-to-l from-card/90 to-transparent z-10 pointer-events-none" />
+        {/* Center indicator - matches card exactly: 140px wide, 210px tall, centered */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[144px] h-[214px] border-2 border-primary rounded-xl z-10 pointer-events-none shadow-[0_0_20px_hsl(var(--primary)/0.4),0_0_40px_hsl(var(--primary)/0.2)]" />
+        <div className="absolute top-0 bottom-0 left-0 w-24 bg-gradient-to-r from-card to-transparent z-10 pointer-events-none" />
+        <div className="absolute top-0 bottom-0 right-0 w-24 bg-gradient-to-l from-card to-transparent z-10 pointer-events-none" />
 
         <div className="overflow-hidden px-4">
-          <div ref={stripRef} className="flex gap-3" style={{ willChange: 'transform' }}>
+          <div ref={stripRef} className="flex items-center" style={{ willChange: 'transform', gap: '12px' }}>
             {stripItems.map((movie, i) => (
               <div key={`${movie.id}-${i}`} className="flex-shrink-0 w-[140px] rounded-lg overflow-hidden">
                 <img
                   src={tmdbImg(movie.poster_path, 'w200')}
                   alt={movie.title || movie.name || ''}
-                  className="w-full h-[210px] object-cover rounded-lg"
+                  className="w-[140px] h-[210px] object-cover rounded-lg"
                   loading="lazy"
                 />
               </div>

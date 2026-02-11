@@ -85,14 +85,19 @@ export async function fetchM3UCatalog(): Promise<{ titles: string[]; total: numb
 // Fetch a random sample of titles from the full catalog
 export async function fetchRandomM3UTitles(count: number): Promise<string[]> {
   try {
-    const { data, error } = await supabase.functions.invoke(`parse-m3u?random=${count}`, {
-      method: 'GET',
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const res = await fetch(`${supabaseUrl}/functions/v1/parse-m3u?random=${count}`, {
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'apikey': supabaseKey,
+      },
     });
-    if (error) throw error;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
     return data?.titles || [];
   } catch (e) {
     console.warn('[M3U] Failed to fetch random titles:', e);
-    // Fallback: pick random from local cache
     const cached = getStoredM3UTitles();
     const shuffled = [...cached].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, Math.min(count, shuffled.length));
