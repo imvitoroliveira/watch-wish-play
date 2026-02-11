@@ -1,1 +1,7 @@
 project_id = "gtjxdvmwiglnnquyruzf"
+
+[functions.manage-clients]
+verify_jwt = false
+
+[functions.parse-m3u]
+verify_jwt = false

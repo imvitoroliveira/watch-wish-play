@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2 } from 'lucide-react';
+import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -20,10 +20,27 @@ const AdminPanel = () => {
   const [m3uContent, setM3uContent] = useState('');
   const [m3uLoading, setM3uLoading] = useState(false);
   const [m3uTitleCount, setM3uTitleCount] = useState(0);
+  const [m3uLastUpdate, setM3uLastUpdate] = useState<string | null>(null);
 
-  // Load catalog count on mount
+  // Load catalog info on mount
   useEffect(() => {
-    fetchM3UCatalog().then(({ titles }) => setM3uTitleCount(titles.length));
+    const loadCatalogInfo = async () => {
+      try {
+        const { data } = await (await import('@/integrations/supabase/client')).supabase
+          .from('m3u_catalog')
+          .select('titles, updated_at')
+          .eq('id', '00000000-0000-0000-0000-000000000001')
+          .maybeSingle();
+        if (data) {
+          const titles = Array.isArray(data.titles) ? data.titles : [];
+          setM3uTitleCount(titles.length);
+          setM3uLastUpdate(data.updated_at);
+        }
+      } catch {
+        fetchM3UCatalog().then(({ titles }) => setM3uTitleCount(titles.length));
+      }
+    };
+    loadCatalogInfo();
   }, []);
 
   const handleM3uProcess = async () => {
@@ -36,6 +53,7 @@ const AdminPanel = () => {
 
     if (result.success) {
       setM3uTitleCount(result.count);
+      setM3uLastUpdate(new Date().toISOString());
       localStorage.setItem('msc_m3u_url', m3uUrl.trim());
       toast({ title: 'M3U processado!', description: `${result.count} títulos VOD extraídos.` });
     } else {
@@ -48,6 +66,7 @@ const AdminPanel = () => {
     setM3uUrl('');
     setM3uContent('');
     setM3uTitleCount(0);
+    setM3uLastUpdate(null);
     toast({ title: 'Lista M3U removida', description: 'O catálogo voltará a exibir tendências.' });
   };
 
@@ -176,14 +195,14 @@ const AdminPanel = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-card rounded-xl p-5 border border-border">
             <Users className="w-6 h-6 text-muted-foreground mb-2" />
             <p className="text-3xl font-bold text-foreground">{clientList.length}</p>
             <p className="text-sm text-muted-foreground">Total de Clientes</p>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-card rounded-xl p-5 border border-border">
-            <CheckCircle className="w-6 h-6 text-green-500 mb-2" />
+            <CheckCircle className="w-6 h-6 text-accent mb-2" />
             <p className="text-3xl font-bold text-foreground">{activeClients}</p>
             <p className="text-sm text-muted-foreground">Ativos</p>
           </motion.div>
@@ -191,6 +210,16 @@ const AdminPanel = () => {
             <AlertTriangle className="w-6 h-6 text-primary mb-2" />
             <p className="text-3xl font-bold text-foreground">{expiredClients}</p>
             <p className="text-sm text-muted-foreground">Expirados</p>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-card rounded-xl p-5 border border-border">
+            <Clock className="w-6 h-6 text-accent mb-2" />
+            <p className="text-lg font-bold text-foreground">
+              {m3uLastUpdate
+                ? new Date(m3uLastUpdate).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : 'Nunca'}
+            </p>
+            <p className="text-sm text-muted-foreground">Última Atualização M3U</p>
+            {m3uTitleCount > 0 && <p className="text-xs text-accent mt-1">{m3uTitleCount} títulos</p>}
           </motion.div>
         </div>
 
