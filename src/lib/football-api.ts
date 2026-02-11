@@ -32,21 +32,34 @@ export interface Match {
   broadcast: string[];
 }
 
-// Brazilian league IDs in Sportmonks
+// League IDs in Sportmonks
 const LEAGUE_IDS = {
+  // Nacionais
   SERIE_A: 462,
   SERIE_B: 463,
   COPA_DO_BRASIL: 475,
   COPA_NORDESTE: 1360,
   FEMININO: 648,
+  // Estaduais
+  CARIOCA: 476,
+  PAULISTA: 477,
+  // Internacionais
+  LIBERTADORES: 1122,
+  ELIMINATORIAS: 848,
+  AMISTOSOS: 667,
 };
 
 const LEAGUE_PRIORITY = [
+  LEAGUE_IDS.ELIMINATORIAS,
+  LEAGUE_IDS.LIBERTADORES,
   LEAGUE_IDS.SERIE_A,
   LEAGUE_IDS.COPA_DO_BRASIL,
   LEAGUE_IDS.SERIE_B,
+  LEAGUE_IDS.CARIOCA,
+  LEAGUE_IDS.PAULISTA,
   LEAGUE_IDS.COPA_NORDESTE,
   LEAGUE_IDS.FEMININO,
+  LEAGUE_IDS.AMISTOSOS,
 ];
 
 const BROADCAST_MAP: Record<number, string[]> = {
@@ -55,6 +68,11 @@ const BROADCAST_MAP: Record<number, string[]> = {
   [LEAGUE_IDS.COPA_DO_BRASIL]: ['Premiere', 'Globo', 'SporTV', 'Amazon Prime'],
   [LEAGUE_IDS.COPA_NORDESTE]: ['SBT', 'ESPN', 'SporTV'],
   [LEAGUE_IDS.FEMININO]: ['SporTV', 'Globo', 'TV Brasil'],
+  [LEAGUE_IDS.CARIOCA]: ['Band', 'SporTV', 'Premiere'],
+  [LEAGUE_IDS.PAULISTA]: ['Record', 'CazéTV', 'Premiere'],
+  [LEAGUE_IDS.LIBERTADORES]: ['Paramount+', 'SBT', 'ESPN'],
+  [LEAGUE_IDS.ELIMINATORIAS]: ['Globo', 'SporTV', 'CazéTV'],
+  [LEAGUE_IDS.AMISTOSOS]: ['Globo', 'SporTV', 'ESPN'],
 };
 
 function getStatusLabel(status: Match['status']): string {
