@@ -35,6 +35,27 @@ export type Database = {
         }
         Relationships: []
       }
+      m3u_catalog: {
+        Row: {
+          id: string
+          source_url: string | null
+          titles: Json
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          source_url?: string | null
+          titles?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          source_url?: string | null
+          titles?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

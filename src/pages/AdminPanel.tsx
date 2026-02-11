@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
@@ -6,7 +6,7 @@ import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { parseM3UTitles, storeM3UTitles, getStoredM3UTitles } from '@/lib/m3u-parser';
+import { processM3UViaBackend, clearM3UCatalog, fetchM3UCatalog } from '@/lib/m3u-parser';
 
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList } = useAuth();
@@ -19,48 +19,32 @@ const AdminPanel = () => {
   const [m3uUrl, setM3uUrl] = useState(() => localStorage.getItem('msc_m3u_url') || '');
   const [m3uContent, setM3uContent] = useState('');
   const [m3uLoading, setM3uLoading] = useState(false);
-  const [m3uTitleCount, setM3uTitleCount] = useState(() => getStoredM3UTitles().length);
+  const [m3uTitleCount, setM3uTitleCount] = useState(0);
+
+  // Load catalog count on mount
+  useEffect(() => {
+    fetchM3UCatalog().then(({ titles }) => setM3uTitleCount(titles.length));
+  }, []);
 
   const handleM3uProcess = async () => {
-    let content = m3uContent;
-
-    // If URL provided, try to fetch
-    if (m3uUrl.trim() && !content.trim()) {
-      setM3uLoading(true);
-      try {
-        const res = await fetch(m3uUrl.trim());
-        content = await res.text();
-      } catch {
-        // CORS fallback: ask to paste content
-        toast({ title: 'Erro ao acessar URL', description: 'Cole o conteúdo M3U diretamente no campo abaixo.', variant: 'destructive' });
-        setM3uLoading(false);
-        return;
-      }
-    }
-
-    if (!content.trim()) {
-      toast({ title: 'Sem conteúdo', description: 'Informe a URL ou cole o conteúdo M3U.', variant: 'destructive' });
-      setM3uLoading(false);
-      return;
-    }
-
-    const titles = parseM3UTitles(content);
-    if (titles.length === 0) {
-      toast({ title: 'Nenhum título encontrado', description: 'Verifique se o conteúdo M3U é válido.', variant: 'destructive' });
-      setM3uLoading(false);
-      return;
-    }
-
-    storeM3UTitles(titles);
-    localStorage.setItem('msc_m3u_url', m3uUrl.trim());
-    setM3uTitleCount(titles.length);
+    setM3uLoading(true);
+    const result = await processM3UViaBackend(
+      m3uUrl.trim() || undefined,
+      m3uContent.trim() || undefined
+    );
     setM3uLoading(false);
-    toast({ title: 'M3U processado!', description: `${titles.length} títulos VOD extraídos.` });
+
+    if (result.success) {
+      setM3uTitleCount(result.count);
+      localStorage.setItem('msc_m3u_url', m3uUrl.trim());
+      toast({ title: 'M3U processado!', description: `${result.count} títulos VOD extraídos.` });
+    } else {
+      toast({ title: 'Erro ao processar M3U', description: result.error || 'Tente colar o conteúdo diretamente.', variant: 'destructive' });
+    }
   };
 
-  const clearM3u = () => {
-    storeM3UTitles([]);
-    localStorage.removeItem('msc_m3u_url');
+  const clearM3u = async () => {
+    await clearM3UCatalog();
     setM3uUrl('');
     setM3uContent('');
     setM3uTitleCount(0);
