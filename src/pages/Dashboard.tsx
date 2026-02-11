@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTrending, TMDBMovie, searchMovies, searchByTitles } from '@/lib/tmdb';
-import { fetchM3UCatalog } from '@/lib/m3u-parser';
+import { fetchM3UCatalog, normalizeTitle, isInM3UCatalog } from '@/lib/m3u-parser';
 import { motion } from 'framer-motion';
 import { Film, Search, Heart, Clock, Dices, Signal, HelpCircle, LogOut, Wallet, Trophy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,8 @@ const Dashboard = () => {
     const saved = localStorage.getItem('msc_watched');
     return new Set(saved ? JSON.parse(saved) : []);
   });
+  const [m3uNormalized, setM3uNormalized] = useState<Set<string>>(new Set());
+  const [hasM3U, setHasM3U] = useState(false);
 
   useEffect(() => {
     if (!isClient) navigate('/');
@@ -42,6 +44,8 @@ const Dashboard = () => {
     const loadMovies = async () => {
       const { titles: m3uTitles } = await fetchM3UCatalog();
       if (m3uTitles.length > 0) {
+        setHasM3U(true);
+        setM3uNormalized(new Set(m3uTitles.map(normalizeTitle)));
         const results = await searchByTitles(m3uTitles);
         if (results.length > 0) {
           setMovies(results);
@@ -53,7 +57,6 @@ const Dashboard = () => {
     };
     loadMovies();
   }, []);
-
   useEffect(() => {
     if (!searchQuery.trim()) { setSearchResults([]); return; }
     const timeout = setTimeout(() => {
@@ -79,6 +82,12 @@ const Dashboard = () => {
       return next;
     });
   }, []);
+
+  const getAvailability = useCallback((movie: TMDBMovie): 'available' | 'soon' | 'unknown' => {
+    if (!hasM3U) return 'unknown';
+    const title = movie.title || movie.name || '';
+    return isInM3UCatalog(title, m3uNormalized) ? 'available' : 'soon';
+  }, [hasM3U, m3uNormalized]);
 
   const displayMovies = searchQuery.trim() ? searchResults : movies;
   const favoriteMovies = movies.filter(m => favorites.has(m.id));
@@ -179,6 +188,7 @@ const Dashboard = () => {
                     isWatched={watchedSet.has(movie.id)}
                     onToggleFavorite={(e) => { e.stopPropagation(); toggleFavorite(movie.id); }}
                     onToggleWatched={(e) => { e.stopPropagation(); toggleWatched(movie.id); }}
+                    availability={getAvailability(movie)}
                   />
                 ))}
               </div>
