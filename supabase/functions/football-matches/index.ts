@@ -83,57 +83,65 @@ Deno.serve(async (req) => {
       }
     }
 
+    // First, let's check API status
+    const statusRes = await fetch(`${API_BASE}/status`, {
+      headers: { "x-apisports-key": API_FOOTBALL_KEY },
+    });
+    const statusData = await statusRes.json();
+    console.log("[API-Football] Account status:", JSON.stringify(statusData));
+
     // Fetch from API-Football
     const leagueIds = Object.values(LEAGUE_IDS);
     const allMatches: any[] = [];
 
+    const currentYear = new Date().getFullYear();
+    const prevYear = currentYear - 1;
+
     const fetches = leagueIds.map(async (leagueId) => {
-      try {
-        // Use current year for season; some leagues may span years (e.g. 2025/2026)
-        const currentYear = new Date().getFullYear();
-        const prevYear = currentYear - 1;
-        
-        // Try current year first, then previous year (for leagues like Libertadores that span seasons)
-        const seasons = [currentYear, prevYear];
-        for (const season of seasons) {
+      // Try current year first, then previous year for cross-season leagues
+      for (const season of [currentYear, prevYear]) {
+        try {
           const res = await fetch(
             `${API_BASE}/fixtures?league=${leagueId}&date=${brDate}&season=${season}&timezone=America/Sao_Paulo`,
-          { headers: { "x-apisports-key": API_FOOTBALL_KEY } }
-        );
-        const data = await res.json();
-        if (data.response) {
-          for (const fixture of data.response) {
-            allMatches.push({
-              id: fixture.fixture.id,
-              league: {
-                id: fixture.league.id,
-                name: fixture.league.name,
-                logo: fixture.league.logo,
-                round: fixture.league.round,
-              },
-              homeTeam: {
-                id: fixture.teams.home.id,
-                name: fixture.teams.home.name,
-                logo: fixture.teams.home.logo,
-              },
-              awayTeam: {
-                id: fixture.teams.away.id,
-                name: fixture.teams.away.name,
-                logo: fixture.teams.away.logo,
-              },
-              date: fixture.fixture.date,
-              status: fixture.fixture.status.short,
-              elapsed: fixture.fixture.status.elapsed,
-              goals: {
-                home: fixture.goals.home,
-                away: fixture.goals.away,
-              },
-              broadcast: BROADCAST_MAP[leagueId] || ["Premiere"],
-            });
+            { headers: { "x-apisports-key": API_FOOTBALL_KEY } }
+          );
+          const data = await res.json();
+          console.log(`[API-Football] League ${leagueId} season ${season}: ${data.response?.length ?? 0} fixtures, errors: ${JSON.stringify(data.errors)}`);
+          if (data.response && data.response.length > 0) {
+            for (const fixture of data.response) {
+              allMatches.push({
+                id: fixture.fixture.id,
+                league: {
+                  id: fixture.league.id,
+                  name: fixture.league.name,
+                  logo: fixture.league.logo,
+                  round: fixture.league.round,
+                },
+                homeTeam: {
+                  id: fixture.teams.home.id,
+                  name: fixture.teams.home.name,
+                  logo: fixture.teams.home.logo,
+                },
+                awayTeam: {
+                  id: fixture.teams.away.id,
+                  name: fixture.teams.away.name,
+                  logo: fixture.teams.away.logo,
+                },
+                date: fixture.fixture.date,
+                status: fixture.fixture.status.short,
+                elapsed: fixture.fixture.status.elapsed,
+                goals: {
+                  home: fixture.goals.home,
+                  away: fixture.goals.away,
+                },
+                broadcast: BROADCAST_MAP[leagueId] || ["Premiere"],
+              });
+            }
+            break; // Found matches for this season, skip previous year
           }
+        } catch (e) {
+          console.warn(`Failed to fetch league ${leagueId} season ${season}:`, e);
         }
-      } catch (e) {
-        console.warn(`Failed to fetch league ${leagueId}:`, e);
       }
     });
 
