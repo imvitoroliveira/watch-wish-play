@@ -52,8 +52,8 @@ const Dashboard = () => {
       if (m3uTitles.length > 0) {
         setHasM3U(true);
         setM3uNormalized(new Set(m3uTitles.map(normalizeTitle)));
-        // Search TMDB for M3U titles to build Cine-Roleta pool
-        const m3uMovies = await searchByTitles(m3uTitles);
+        // Search TMDB for M3U titles to build Cine-Roleta pool (larger sample)
+        const m3uMovies = await searchByTitles(m3uTitles, 80);
         setM3uConfirmedMovies(m3uMovies);
       }
     };
