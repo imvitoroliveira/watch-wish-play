@@ -14,7 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      football_cache: {
+        Row: {
+          cache_date: string
+          fetched_at: string
+          id: string
+          matches: Json
+        }
+        Insert: {
+          cache_date?: string
+          fetched_at?: string
+          id?: string
+          matches?: Json
+        }
+        Update: {
+          cache_date?: string
+          fetched_at?: string
+          id?: string
+          matches?: Json
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
