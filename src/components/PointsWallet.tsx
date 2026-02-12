@@ -6,28 +6,34 @@ const PointsWallet = () => {
   const { currentClient } = useAuth();
 
   // Calculate points based on account data
-  const favorites = JSON.parse(localStorage.getItem('msc_favorites') || '[]').length;
   const watched = JSON.parse(localStorage.getItem('msc_watched') || '[]').length;
   const tickets = JSON.parse(localStorage.getItem('msc_tickets') || '[]').length;
 
-  // Points breakdown
-  const loyaltyPoints = 100; // Base points for being active
-  const watchPoints = watched * 5;
-  const favoritePoints = favorites * 2;
-  const supportPoints = tickets * 10;
-  const totalPoints = loyaltyPoints + watchPoints + favoritePoints + supportPoints;
+  // Points per activity
+  const loyaltyPoints = 100;
+  const rawWatchPoints = watched * 1;
+  const rawSupportPoints = tickets * 2;
+
+  // Anti-spam: max 30 pts/day from watch + support
+  const dailyKey = `msc_daily_pts_${new Date().toISOString().slice(0, 10)}`;
+  const dailyUsed = parseInt(localStorage.getItem(dailyKey) || '0', 10);
+  const dailyCap = 30;
+  const activityPoints = Math.min(rawWatchPoints + rawSupportPoints, dailyCap);
+  const watchPoints = Math.min(rawWatchPoints, activityPoints);
+  const supportPoints = Math.min(rawSupportPoints, activityPoints - watchPoints);
+
+  const totalPoints = loyaltyPoints + activityPoints;
 
   const rewards = [
-    { name: '1 Mês Grátis', cost: 500, icon: <Gift className="w-5 h-5" /> },
+    { name: '1 Mês Grátis', cost: 800, icon: <Gift className="w-5 h-5" /> },
     { name: 'Upgrade HD → 4K', cost: 300, icon: <TrendingUp className="w-5 h-5" /> },
     { name: 'Tela Extra', cost: 200, icon: <Award className="w-5 h-5" /> },
   ];
 
   const breakdown = [
     { label: 'Fidelidade (base)', points: loyaltyPoints, desc: 'Bônus por ser assinante ativo' },
-    { label: 'Filmes assistidos', points: watchPoints, desc: `${watched} filmes × 5 pts` },
-    { label: 'Favoritos salvos', points: favoritePoints, desc: `${favorites} favoritos × 2 pts` },
-    { label: 'Tickets de suporte', points: supportPoints, desc: `${tickets} tickets × 10 pts` },
+    { label: 'Filmes assistidos', points: watchPoints, desc: `${watched} filmes × 1 pt` },
+    { label: 'Tickets de suporte', points: supportPoints, desc: `${tickets} tickets × 2 pts` },
   ];
 
   return (
@@ -118,6 +124,7 @@ const PointsWallet = () => {
         <p className="text-sm text-muted-foreground mt-1">
           Cada amigo que assinar gera <span className="text-accent font-bold">200 pontos</span> para você!
         </p>
+        <p className="text-xs text-muted-foreground/70 mt-1 italic">Crédito após confirmação do Gestor</p>
         <button
           onClick={() => {
             const msg = encodeURIComponent('Eu uso o Meu Stream e recomendo! Assine agora e ganhe benefícios.');
