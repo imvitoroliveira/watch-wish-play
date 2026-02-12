@@ -153,12 +153,36 @@ Deno.serve(async (req: Request) => {
 
     console.log("[Monitor] Checked " + results.length + " channels");
 
+    // Save results to database
+    const now = new Date().toISOString();
+    await supabase.from("channel_monitor_results").insert({
+      channels: results,
+      total_live: uniqueChannels.length,
+      checked: results.length,
+      checked_at: now,
+    });
+
+    // Keep only last 10 results - delete older ones
+    const { data: allResults } = await supabase
+      .from("channel_monitor_results")
+      .select("id")
+      .order("checked_at", { ascending: false });
+
+    if (allResults && allResults.length > 10) {
+      const idsToDelete = allResults.slice(10).map((r) => r.id);
+      await supabase
+        .from("channel_monitor_results")
+        .delete()
+        .in("id", idsToDelete);
+      console.log("[Monitor] Cleaned up " + idsToDelete.length + " old results");
+    }
+
     return new Response(
       JSON.stringify({
         channels: results,
         total_live: uniqueChannels.length,
         checked: results.length,
-        timestamp: new Date().toISOString(),
+        timestamp: now,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

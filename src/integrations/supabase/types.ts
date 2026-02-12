@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      channel_monitor_results: {
+        Row: {
+          channels: Json
+          checked: number
+          checked_at: string
+          id: string
+          total_live: number
+        }
+        Insert: {
+          channels?: Json
+          checked?: number
+          checked_at?: string
+          id?: string
+          total_live?: number
+        }
+        Update: {
+          channels?: Json
+          checked?: number
+          checked_at?: string
+          id?: string
+          total_live?: number
+        }
+        Relationships: []
+      }
       clients_list: {
         Row: {
           clients: Json
