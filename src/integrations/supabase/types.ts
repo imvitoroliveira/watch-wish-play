@@ -74,6 +74,63 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          body: string
+          expires_at: string | null
+          id: string
+          sent_at: string
+          target_user: string | null
+          title: string
+          type: string
+        }
+        Insert: {
+          body: string
+          expires_at?: string | null
+          id?: string
+          sent_at?: string
+          target_user?: string | null
+          title: string
+          type?: string
+        }
+        Update: {
+          body?: string
+          expires_at?: string | null
+          id?: string
+          sent_at?: string
+          target_user?: string | null
+          title?: string
+          type?: string
+        }
+        Relationships: []
+      }
+      user_push_subscriptions: {
+        Row: {
+          auth: string
+          client_username: string
+          created_at: string
+          endpoint: string
+          id: string
+          p256dh: string
+        }
+        Insert: {
+          auth: string
+          client_username: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          p256dh: string
+        }
+        Update: {
+          auth?: string
+          client_username?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          p256dh?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
