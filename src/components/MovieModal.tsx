@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { TMDBMovie, tmdbImg, tmdbBackdrop, getMovieVideos } from '@/lib/tmdb';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Play, Star, Heart, Check, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface MovieModalProps {
   movie: TMDBMovie | null;
@@ -11,19 +13,50 @@ interface MovieModalProps {
   isWatched?: boolean;
   onToggleFavorite?: () => void;
   onToggleWatched?: () => void;
+  onTrailerWatched?: () => void;
 }
 
-const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, onToggleWatched }: MovieModalProps) => {
+const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, onToggleWatched, onTrailerWatched }: MovieModalProps) => {
+  const { currentClient } = useAuth();
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [showTrailer, setShowTrailer] = useState(false);
+  const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trailerCreditedRef = useRef(false);
 
   useEffect(() => {
     if (movie) {
       const type = movie.media_type === 'tv' ? 'tv' : 'movie';
       getMovieVideos(movie.id, type).then(key => setTrailerKey(key));
     }
-    return () => { setTrailerKey(null); setShowTrailer(false); };
+    return () => {
+      setTrailerKey(null);
+      setShowTrailer(false);
+      if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
+      trailerCreditedRef.current = false;
+    };
   }, [movie]);
+
+  const handlePlayTrailer = useCallback(() => {
+    setShowTrailer(true);
+    trailerCreditedRef.current = false;
+    // Start 30-second timer for trailer watch validation
+    trailerTimerRef.current = setTimeout(async () => {
+      if (trailerCreditedRef.current) return;
+      trailerCreditedRef.current = true;
+      // Record trailer watch via edge function
+      if (currentClient?.u) {
+        try {
+          await supabase.functions.invoke('trailer-challenge', {
+            method: 'POST',
+            body: { username: currentClient.u, action: 'watch_trailer' },
+          });
+          onTrailerWatched?.();
+        } catch {
+          // silent
+        }
+      }
+    }, 30000); // 30 seconds
+  }, [currentClient?.u, onTrailerWatched]);
 
   if (!movie) return null;
 
@@ -68,7 +101,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
                 <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent" />
                 {trailerKey && (
                   <button
-                    onClick={() => setShowTrailer(true)}
+                    onClick={handlePlayTrailer}
                     className="absolute inset-0 flex items-center justify-center group"
                   >
                     <div className="w-20 h-20 rounded-full bg-primary/90 flex items-center justify-center glow-red group-hover:scale-110 transition-transform">
@@ -112,7 +145,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
 
             <div className="flex gap-3">
               {trailerKey && !showTrailer && (
-                <Button onClick={() => setShowTrailer(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
+                <Button onClick={handlePlayTrailer} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
                   <Play className="w-4 h-4 mr-2" /> Assistir Trailer
                 </Button>
               )}

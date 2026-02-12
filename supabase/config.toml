@@ -11,3 +11,12 @@ verify_jwt = false
 
 [functions.football-matches]
 verify_jwt = false
+
+[functions.trailer-challenge]
+verify_jwt = false
+
+[functions.match-reminders]
+verify_jwt = false
+
+[functions.content-alerts]
+verify_jwt = false

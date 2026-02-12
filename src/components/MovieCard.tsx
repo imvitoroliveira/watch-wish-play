@@ -1,6 +1,6 @@
 import { TMDBMovie, tmdbImg } from '@/lib/tmdb';
 import { motion } from 'framer-motion';
-import { Star, Heart, Check } from 'lucide-react';
+import { Star, Heart, Check, BellPlus, BellOff } from 'lucide-react';
 
 interface MovieCardProps {
   movie: TMDBMovie;
@@ -10,9 +10,11 @@ interface MovieCardProps {
   onToggleFavorite?: (e: React.MouseEvent) => void;
   onToggleWatched?: (e: React.MouseEvent) => void;
   availability?: 'available' | 'soon' | 'unknown';
+  hasContentAlert?: boolean;
+  onToggleContentAlert?: (e: React.MouseEvent) => void;
 }
 
-const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, onToggleWatched, availability }: MovieCardProps) => {
+const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, onToggleWatched, availability, hasContentAlert, onToggleContentAlert }: MovieCardProps) => {
   const title = movie.title || movie.name || 'Sem título';
 
   return (
@@ -31,8 +33,10 @@ const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, on
         </div>
       )}
       {availability === 'soon' && (
-        <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold uppercase tracking-wide shadow opacity-80">
-          Em breve
+        <div className="absolute top-2 left-2 z-10 flex items-center gap-1">
+          <span className="px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-[10px] font-bold uppercase tracking-wide shadow opacity-80">
+            Em breve
+          </span>
         </div>
       )}
 
@@ -75,6 +79,17 @@ const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, on
             }`}
           >
             <Check className="w-4 h-4" />
+          </button>
+        )}
+        {availability === 'soon' && onToggleContentAlert && (
+          <button
+            onClick={onToggleContentAlert}
+            className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+              hasContentAlert ? 'bg-accent text-accent-foreground' : 'bg-background/80 text-foreground hover:bg-accent/80'
+            }`}
+            title={hasContentAlert ? 'Remover alerta' : 'Me avise ao chegar'}
+          >
+            {hasContentAlert ? <BellOff className="w-4 h-4" /> : <BellPlus className="w-4 h-4" />}
           </button>
         )}
       </div>

@@ -32,6 +32,33 @@ export type Database = {
         }
         Relationships: []
       }
+      content_alerts: {
+        Row: {
+          client_username: string
+          created_at: string
+          id: string
+          movie_id: number
+          movie_title: string
+          notified: boolean
+        }
+        Insert: {
+          client_username: string
+          created_at?: string
+          id?: string
+          movie_id: number
+          movie_title: string
+          notified?: boolean
+        }
+        Update: {
+          client_username?: string
+          created_at?: string
+          id?: string
+          movie_id?: number
+          movie_title?: string
+          notified?: boolean
+        }
+        Relationships: []
+      }
       football_cache: {
         Row: {
           cache_date: string
@@ -74,6 +101,42 @@ export type Database = {
         }
         Relationships: []
       }
+      match_reminders: {
+        Row: {
+          away_team: string
+          client_username: string
+          created_at: string
+          home_team: string
+          id: string
+          league_name: string
+          match_date: string
+          match_id: number
+          notified: boolean
+        }
+        Insert: {
+          away_team: string
+          client_username: string
+          created_at?: string
+          home_team: string
+          id?: string
+          league_name: string
+          match_date: string
+          match_id: number
+          notified?: boolean
+        }
+        Update: {
+          away_team?: string
+          client_username?: string
+          created_at?: string
+          home_team?: string
+          id?: string
+          league_name?: string
+          match_date?: string
+          match_id?: number
+          notified?: boolean
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           body: string
@@ -101,6 +164,63 @@ export type Database = {
           target_user?: string | null
           title?: string
           type?: string
+        }
+        Relationships: []
+      }
+      trailer_challenge: {
+        Row: {
+          challenge_date: string
+          client_username: string
+          created_at: string
+          id: string
+          point_earned: boolean
+          trailers_watched: number
+        }
+        Insert: {
+          challenge_date?: string
+          client_username: string
+          created_at?: string
+          id?: string
+          point_earned?: boolean
+          trailers_watched?: number
+        }
+        Update: {
+          challenge_date?: string
+          client_username?: string
+          created_at?: string
+          id?: string
+          point_earned?: boolean
+          trailers_watched?: number
+        }
+        Relationships: []
+      }
+      trailer_challenge_completions: {
+        Row: {
+          challenge_month: string
+          client_username: string
+          completed: boolean
+          completed_at: string | null
+          created_at: string
+          id: string
+          total_points: number
+        }
+        Insert: {
+          challenge_month: string
+          client_username: string
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          total_points?: number
+        }
+        Update: {
+          challenge_month?: string
+          client_username?: string
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          total_points?: number
         }
         Relationships: []
       }

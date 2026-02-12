@@ -1,13 +1,33 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw } from 'lucide-react';
-import { Match, getTodayMatches, isLive, getStatusLabel, getReminders, toggleReminder, checkAndFireReminders } from '@/lib/football-api';
+import { Match, getTodayMatches, isLive, getStatusLabel } from '@/lib/football-api';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 const AgendaJogos = () => {
+  const { currentClient } = useAuth();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reminders, setReminders] = useState<Set<number>>(getReminders());
+  const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
+
+  // Load reminders from DB
+  useEffect(() => {
+    if (!currentClient?.u) return;
+    const loadReminders = async () => {
+      try {
+        const { data } = await supabase.functions.invoke('match-reminders', {
+          method: 'POST',
+          body: { username: currentClient.u, action: 'list' },
+        });
+        if (data?.reminders) setReminders(new Set(data.reminders));
+      } catch {
+        // silent
+      }
+    };
+    loadReminders();
+  }, [currentClient?.u]);
 
   const loadMatches = useCallback(async () => {
     setLoading(true);
@@ -18,25 +38,36 @@ const AgendaJogos = () => {
 
   useEffect(() => {
     loadMatches();
-    // Auto-refresh every 60 seconds for live scores
     const interval = setInterval(loadMatches, 60000);
     return () => clearInterval(interval);
   }, [loadMatches]);
 
-  // Check reminders every 30s
-  useEffect(() => {
-    const interval = setInterval(() => {
-      checkAndFireReminders(matches);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [matches]);
-
-  const handleToggleReminder = (matchId: number) => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+  const handleToggleReminder = async (match: Match) => {
+    if (!currentClient?.u) return;
+    try {
+      const { data } = await supabase.functions.invoke('match-reminders', {
+        method: 'POST',
+        body: {
+          username: currentClient.u,
+          action: 'toggle',
+          match_id: match.id,
+          match_date: match.date,
+          home_team: match.homeTeam.name,
+          away_team: match.awayTeam.name,
+          league_name: match.league.name,
+        },
+      });
+      if (data) {
+        setReminders(prev => {
+          const next = new Set(prev);
+          if (data.active) next.add(match.id);
+          else next.delete(match.id);
+          return next;
+        });
+      }
+    } catch {
+      // silent
     }
-    const updated = toggleReminder(matchId);
-    setReminders(new Set(updated));
   };
 
   const leagues = [...new Set(matches.map(m => m.league.name))];
@@ -106,7 +137,7 @@ const AgendaJogos = () => {
                 <MatchCard
                   match={match}
                   hasReminder={reminders.has(match.id)}
-                  onToggleReminder={() => handleToggleReminder(match.id)}
+                  onToggleReminder={() => handleToggleReminder(match)}
                   formatTime={formatTime}
                 />
               </motion.div>
