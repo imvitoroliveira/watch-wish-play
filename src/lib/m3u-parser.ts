@@ -105,7 +105,7 @@ export async function fetchRandomM3UTitles(count: number): Promise<string[]> {
 }
 
 // Process M3U via backend edge function
-export async function processM3UViaBackend(url?: string, content?: string): Promise<{ success: boolean; count: number; error?: string }> {
+export async function processM3UViaBackend(url?: string, content?: string): Promise<{ success: boolean; count: number; rawCount?: number; error?: string }> {
   try {
     const { data, error } = await supabase.functions.invoke('parse-m3u', {
       method: 'POST',
@@ -115,7 +115,7 @@ export async function processM3UViaBackend(url?: string, content?: string): Prom
     if (data?.titles) {
       localStorage.setItem('msc_m3u_titles', JSON.stringify(data.titles));
     }
-    return { success: true, count: data?.count || 0 };
+    return { success: true, count: data?.count || 0, rawCount: data?.raw_count || 0 };
   } catch (e: any) {
     return { success: false, count: 0, error: e.message || 'Erro ao processar M3U' };
   }
