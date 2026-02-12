@@ -12,14 +12,13 @@ const SKIP_GROUPS = /\b(canais?|tv|ao.?vivo|live|aberto|esporte|notícia|infanti
 function parseM3UTitles(content: string): string[] {
   const titles: string[] = [];
   const lines = content.split("\n");
-
   let currentGroup = "";
 
   for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
+    try {
+      const trimmed = lines[i].trim();
+      if (!trimmed || !trimmed.startsWith("#EXTINF:")) continue;
 
-    // Track group
-    if (trimmed.startsWith("#EXTINF:")) {
       const groupMatch = trimmed.match(/group-title="([^"]+)"/);
       if (groupMatch) currentGroup = groupMatch[1];
 
@@ -29,43 +28,70 @@ function parseM3UTitles(content: string): string[] {
       // Extract title - try tvg-name first
       const tvgMatch = trimmed.match(/tvg-name="([^"]+)"/);
       if (tvgMatch) {
-        titles.push(cleanTitle(tvgMatch[1]));
+        const cleaned = cleanTitle(tvgMatch[1]);
+        if (cleaned.length > 1) titles.push(cleaned);
         continue;
       }
       // Fallback: text after last comma
       const commaIdx = trimmed.lastIndexOf(",");
       if (commaIdx !== -1) {
         const title = trimmed.substring(commaIdx + 1).trim();
-        if (title) titles.push(cleanTitle(title));
+        if (title) {
+          const cleaned = cleanTitle(title);
+          if (cleaned.length > 1) titles.push(cleaned);
+        }
       }
+    } catch {
+      // Skip malformed lines, continue processing
+      continue;
     }
   }
 
-  return [...new Set(titles)].filter((t) => t.length > 1);
+  return [...new Set(titles)];
 }
 
 function cleanTitle(title: string): string {
   return title
-    // Remove resolution/quality prefixes & suffixes
     .replace(/^(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*[-–:]\s*/gi, "")
     .replace(/\s*(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*/gi, " ")
-    // Remove VOD/FILME/SERIE prefixes
     .replace(/^(VOD|FILME|FILMES|SERIE|SERIES|MOVIE|MOVIES)[:\s-]*/i, "")
-    // Remove language tags
     .replace(/\s*\[(DUB|LEG|DUAL|NAC|PT|EN|SPA)\w*\]\s*/gi, "")
     .replace(/\s*\((DUB|LEG|DUAL|NAC|DUBLADO|LEGENDADO)\)\s*/gi, "")
-    // Remove year in parens at end
     .replace(/\s*\(?\d{4}\)?\s*$/, "")
-    // Remove bracket content
     .replace(/\s*\[.*?\]\s*/g, "")
-    // Remove pipe and after
     .replace(/\s*\|.*$/, "")
-    // Remove season/episode markers for series
     .replace(/\s*S\d{1,2}\s*E\d{1,3}.*$/i, "")
     .replace(/\s*T\d{1,2}\s*E\d{1,3}.*$/i, "")
-    // Remove trailing dash content (often extra metadata)
     .replace(/\s+[-–]\s*$/, "")
     .trim();
+}
+
+// Fetch with retry and exponential backoff
+async function fetchWithRetry(url: string, retries = 3, delayMs = 2000): Promise<string> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+      
+      const res = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      }
+      return await res.text();
+    } catch (err) {
+      console.error(`Attempt ${attempt}/${retries} failed: ${(err as Error).message}`);
+      if (attempt === retries) {
+        throw new Error(`Failed after ${retries} attempts: ${(err as Error).message}`);
+      }
+      await new Promise(r => setTimeout(r, delayMs * attempt));
+    }
+  }
+  throw new Error("Unreachable");
 }
 
 Deno.serve(async (req) => {
@@ -90,9 +116,7 @@ Deno.serve(async (req) => {
 
       let titles = (data?.titles as string[]) || [];
 
-      // If random param, return a random sample from the full catalog
       if (randomCount > 0 && titles.length > 0) {
-        // Fisher-Yates shuffle on a copy, then slice
         const shuffled = [...titles];
         for (let i = shuffled.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
@@ -118,13 +142,7 @@ Deno.serve(async (req) => {
       let m3uContent = content || "";
 
       if (url && !m3uContent) {
-        const res = await fetch(url, {
-          headers: { "User-Agent": "Mozilla/5.0" },
-        });
-        if (!res.ok) {
-          throw new Error(`Failed to fetch M3U: ${res.status} ${res.statusText}`);
-        }
-        m3uContent = await res.text();
+        m3uContent = await fetchWithRetry(url);
       }
 
       if (!m3uContent) {
@@ -134,9 +152,21 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Parse ALL titles (no limit)
+      // Clear previous catalog BEFORE processing new one
+      await supabase.from("m3u_catalog").upsert(
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          titles: [],
+          source_url: null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+
+      // Parse ALL titles
       const titles = parseM3UTitles(m3uContent);
 
+      // Save new catalog
       await supabase.from("m3u_catalog").upsert(
         {
           id: "00000000-0000-0000-0000-000000000001",
@@ -173,7 +203,7 @@ Deno.serve(async (req) => {
     return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   } catch (error) {
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
