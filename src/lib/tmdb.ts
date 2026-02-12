@@ -58,11 +58,27 @@ export const getMovieDetails = async (id: number, type: 'movie' | 'tv' = 'movie'
 };
 
 export const getMovieVideos = async (id: number, type: 'movie' | 'tv' = 'movie') => {
+  // Try pt-BR first, then fallback to en-US
   const data = await fetchTMDB(`/${type}/${id}/videos`);
-  if (!data?.results) return null;
-  const trailer = data.results.find((v: any) => v.type === 'Trailer' && v.site === 'YouTube') 
-    || data.results.find((v: any) => v.site === 'YouTube');
-  return trailer?.key || null;
+  const findTrailer = (results: any[]) =>
+    results.find((v: any) => v.type === 'Trailer' && v.site === 'YouTube')
+    || results.find((v: any) => v.site === 'YouTube');
+
+  if (data?.results?.length) {
+    const t = findTrailer(data.results);
+    if (t?.key) return t.key;
+  }
+
+  // Fallback: fetch en-US videos
+  const url = new URL(`${TMDB_BASE}/${type}/${id}/videos`);
+  url.searchParams.set('language', 'en-US');
+  const res = await fetch(url.toString(), {
+    headers: { 'Authorization': `Bearer ${API_TOKEN}`, 'accept': 'application/json' },
+  });
+  if (!res.ok) return null;
+  const enData = await res.json();
+  const t = findTrailer(enData?.results || []);
+  return t?.key || null;
 };
 
 export const searchMovies = async (query: string): Promise<TMDBMovie[]> => {
