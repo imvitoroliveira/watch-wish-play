@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.parse-m3u]
 verify_jwt = false
+
+[functions.channel-monitor]
+verify_jwt = false

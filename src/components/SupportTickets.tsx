@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HelpCircle, ChevronRight, MessageCircle, CheckCircle, ExternalLink } from 'lucide-react';
+import { HelpCircle, ChevronRight, MessageCircle, CheckCircle, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
+import { useChannelStatus } from '@/hooks/useChannelStatus';
 
 interface Ticket {
   id: string;
@@ -55,6 +56,7 @@ const COMMON_ISSUES = [
   {
     label: 'Canal Fora do Ar',
     suggestion: 'Alguns canais podem ter instabilidade temporária. Aguarde 15 minutos e tente novamente.',
+    channelRelated: true,
     faq: [
       'Aguarde 15 minutos e tente novamente',
       'Atualize a lista de canais no player',
@@ -101,6 +103,9 @@ const SupportTickets = () => {
   const [checked, setChecked] = useState(false);
   const [seconds, setSeconds] = useState(30);
 
+  const { offlineChannels } = useChannelStatus();
+  const hasOfflineChannels = offlineChannels.length > 0;
+
   // 30s countdown when modal opens with video
   useEffect(() => {
     if (!modalOpen || !selectedIssue?.videoId) return;
@@ -124,6 +129,11 @@ const SupportTickets = () => {
 
   const selectIssue = (issue: typeof COMMON_ISSUES[0]) => {
     setSelectedIssue(issue);
+    // If it's "Canal Fora do Ar" and there are known offline channels, show blocking alert
+    if (issue.channelRelated && hasOfflineChannels) {
+      setModalOpen(true);
+      return;
+    }
     if (issue.videoId) {
       setModalOpen(true);
     }
@@ -161,6 +171,38 @@ const SupportTickets = () => {
         <p className="text-muted-foreground text-sm">Selecione o problema e receba a solução na hora</p>
       </div>
 
+      {/* Offline channels global alert */}
+      {hasOfflineChannels && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-950/30 border border-red-500/30 rounded-xl p-4"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-red-400">Canais em manutenção detectados</p>
+              <p className="text-xs text-red-400/70 mt-1">
+                Nossa equipe já está ciente dos seguintes canais com instabilidade:
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {offlineChannels.slice(0, 8).map(name => (
+                  <span key={name} className="text-xs bg-red-500/10 text-red-400 px-2 py-0.5 rounded-full">
+                    {name}
+                  </span>
+                ))}
+                {offlineChannels.length > 8 && (
+                  <span className="text-xs text-red-400/50">+{offlineChannels.length - 8} mais</span>
+                )}
+              </div>
+              <p className="text-xs text-red-400/50 mt-2">
+                Não é necessário abrir ticket para estes canais. A equipe já está trabalhando na resolução.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Issue selection grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {COMMON_ISSUES.map(issue => (
@@ -172,12 +214,15 @@ const SupportTickets = () => {
             <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
               {issue.label}
             </span>
+            {issue.channelRelated && hasOfflineChannels && (
+              <span className="block text-[10px] text-red-400 mt-1">⚠ manutenção detectada</span>
+            )}
             <ChevronRight className="w-4 h-4 text-muted-foreground mt-2 group-hover:text-primary transition-colors" />
           </button>
         ))}
       </div>
 
-      {/* Video tutorial modal */}
+      {/* Video tutorial / Channel alert modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent className="sm:max-w-2xl bg-card border-border p-0 gap-0 overflow-hidden">
           <DialogHeader className="p-5 pb-3">
@@ -187,8 +232,35 @@ const SupportTickets = () => {
             </DialogDescription>
           </DialogHeader>
 
-          {selectedIssue?.videoId && (
+          {/* Offline channel blocking alert */}
+          {selectedIssue?.channelRelated && hasOfflineChannels && (
             <div className="px-5">
+              <div className="bg-red-950/40 border border-red-500/30 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-red-400">Canais em manutenção — ticket bloqueado</p>
+                    <p className="text-xs text-red-400/70 mt-1">
+                      Já identificamos instabilidade nos seguintes canais. Nossa equipe está trabalhando para normalizar o serviço:
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {offlineChannels.map(name => (
+                        <span key={name} className="text-xs bg-red-500/15 text-red-400 px-2 py-0.5 rounded-full border border-red-500/20">
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-xs text-red-400/50 mt-3">
+                      Se o seu canal específico não está na lista acima, fale conosco pelo WhatsApp.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedIssue?.videoId && (
+            <div className="px-5 pt-3">
               <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ paddingBottom: '56.25%' }}>
                 <iframe
                   className="absolute inset-0 w-full h-full"
@@ -202,7 +274,7 @@ const SupportTickets = () => {
           )}
 
           {/* FAQ steps */}
-          {selectedIssue?.faq && (
+          {selectedIssue?.faq && !(selectedIssue.channelRelated && hasOfflineChannels) && (
             <div className="px-5 pt-3">
               <div className="bg-secondary/50 rounded-lg p-3">
                 <p className="text-xs font-semibold text-accent mb-2 uppercase tracking-wide">📖 Passos Recomendados</p>
@@ -220,35 +292,59 @@ const SupportTickets = () => {
 
           {/* Blocking flow */}
           <div className="p-5 space-y-3">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <Checkbox
-                checked={checked}
-                onCheckedChange={(v) => setChecked(v === true)}
-              />
-              <span className="text-sm text-muted-foreground">Assisti ao vídeo e realizei os procedimentos</span>
-            </label>
+            {/* Only show ticket button if NOT a channel issue with known offline channels */}
+            {!(selectedIssue?.channelRelated && hasOfflineChannels) && (
+              <>
+                {selectedIssue?.videoId && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(v) => setChecked(v === true)}
+                    />
+                    <span className="text-sm text-muted-foreground">Assisti ao vídeo e realizei os procedimentos</span>
+                  </label>
+                )}
 
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                onClick={createTicket}
-                disabled={!canProceed}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground flex-1"
-              >
-                <MessageCircle className="w-4 h-4 mr-2" />
-                {canProceed ? 'Ainda preciso de ajuda / Abrir Ticket' : `Aguarde ${seconds}s ou marque acima`}
-              </Button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button
+                    onClick={createTicket}
+                    disabled={selectedIssue?.videoId ? !canProceed : false}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground flex-1"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    {selectedIssue?.videoId
+                      ? (canProceed ? 'Ainda preciso de ajuda / Abrir Ticket' : `Aguarde ${seconds}s ou marque acima`)
+                      : 'Abrir Ticket'
+                    }
+                  </Button>
 
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="border-green-600 text-green-500 hover:bg-green-600/10 hover:text-green-400"
+                  >
+                    <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
+                      <WhatsAppIcon />
+                      <span className="ml-2">Falar no WhatsApp</span>
+                    </a>
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* For blocked channel issues, only show WhatsApp */}
+            {selectedIssue?.channelRelated && hasOfflineChannels && (
               <Button
                 asChild
                 variant="outline"
-                className="border-green-600 text-green-500 hover:bg-green-600/10 hover:text-green-400"
+                className="w-full border-green-600 text-green-500 hover:bg-green-600/10 hover:text-green-400"
               >
                 <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
                   <WhatsAppIcon />
-                  <span className="ml-2">Falar no WhatsApp</span>
+                  <span className="ml-2">Meu canal não está na lista — falar no WhatsApp</span>
                 </a>
               </Button>
-            </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
