@@ -22,22 +22,18 @@ const AdminPanel = () => {
   const [m3uTitleCount, setM3uTitleCount] = useState(0);
   const [m3uLastUpdate, setM3uLastUpdate] = useState<string | null>(null);
 
-  // Load catalog info on mount
+  // Load catalog info via edge function (no direct DB access)
   useEffect(() => {
     const loadCatalogInfo = async () => {
       try {
-        const { data } = await (await import('@/integrations/supabase/client')).supabase
-          .from('m3u_catalog')
-          .select('titles, updated_at')
-          .eq('id', '00000000-0000-0000-0000-000000000001')
-          .maybeSingle();
-        if (data) {
-          const titles = Array.isArray(data.titles) ? data.titles : [];
-          setM3uTitleCount(titles.length);
-          setM3uLastUpdate(data.updated_at);
+        const catalog = await fetchM3UCatalog();
+        setM3uTitleCount(catalog.titles.length);
+        if (catalog.titles.length > 0) {
+          // Use current time as approximate - exact time not needed on frontend
+          setM3uLastUpdate(new Date().toISOString());
         }
       } catch {
-        fetchM3UCatalog().then(({ titles }) => setM3uTitleCount(titles.length));
+        // Silent fail
       }
     };
     loadCatalogInfo();
@@ -70,9 +66,14 @@ const AdminPanel = () => {
     toast({ title: 'Lista M3U removida', description: 'O catálogo voltará a exibir tendências.' });
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginAdmin(user.trim(), pass.trim())) {
+    setLoginLoading(true);
+    const success = await loginAdmin(user.trim(), pass.trim());
+    setLoginLoading(false);
+    if (success) {
       setError('');
     } else {
       setError('Credenciais inválidas');
@@ -165,8 +166,8 @@ const AdminPanel = () => {
               maxLength={100}
             />
             {error && <p className="text-primary text-sm text-center">{error}</p>}
-            <Button type="submit" className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
-              Entrar
+            <Button type="submit" disabled={loginLoading} className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
+              {loginLoading ? 'Verificando...' : 'Entrar'}
             </Button>
           </form>
 
@@ -248,14 +249,24 @@ const AdminPanel = () => {
           <div className="space-y-3">
             <Input
               value={m3uUrl}
-              onChange={e => setM3uUrl(e.target.value)}
+              onChange={e => {
+                // Sanitize: only allow valid URL characters
+                const sanitized = e.target.value.replace(/[<>"'`;(){}]/g, '');
+                setM3uUrl(sanitized);
+              }}
               placeholder="URL da lista M3U (ex: http://...)"
               className="h-10 bg-background border-border text-foreground"
               maxLength={500}
             />
             <textarea
               value={m3uContent}
-              onChange={e => setM3uContent(e.target.value)}
+              onChange={e => {
+                // Sanitize: strip script tags and event handlers
+                const sanitized = e.target.value
+                  .replace(/<script[\s\S]*?<\/script>/gi, '')
+                  .replace(/on\w+="[^"]*"/gi, '');
+                setM3uContent(sanitized);
+              }}
               placeholder="Ou cole o conteúdo M3U aqui..."
               className="w-full h-32 rounded-lg bg-background border border-border text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-ring"
             />

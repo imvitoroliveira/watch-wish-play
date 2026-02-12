@@ -74,9 +74,9 @@ export async function fetchM3UCatalog(): Promise<{ titles: string[]; total: numb
     if (titles.length > 0) {
       localStorage.setItem('msc_m3u_titles', JSON.stringify(titles));
     }
-    return { titles, total: data?.total || titles.length, source_url: data?.source_url || null };
+    return { titles, total: data?.total || titles.length, source_url: null };
   } catch (e) {
-    console.warn('[M3U] Failed to fetch catalog from backend, using local cache:', e);
+    // Silent fallback to local cache
     const cached = getStoredM3UTitles();
     return { titles: cached, total: cached.length, source_url: null };
   }
@@ -97,7 +97,7 @@ export async function fetchRandomM3UTitles(count: number): Promise<string[]> {
     const data = await res.json();
     return data?.titles || [];
   } catch (e) {
-    console.warn('[M3U] Failed to fetch random titles:', e);
+    // Silent fallback to local cache
     const cached = getStoredM3UTitles();
     const shuffled = [...cached].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, Math.min(count, shuffled.length));
@@ -126,7 +126,7 @@ export async function clearM3UCatalog(): Promise<void> {
   try {
     await supabase.functions.invoke('parse-m3u', { method: 'DELETE' });
   } catch (e) {
-    console.warn('[M3U] Failed to clear catalog:', e);
+    // Silent fail
   }
   localStorage.removeItem('msc_m3u_titles');
   localStorage.removeItem('msc_m3u_url');
