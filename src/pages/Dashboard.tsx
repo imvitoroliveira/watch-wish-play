@@ -6,6 +6,7 @@ import { fetchM3UCatalog, normalizeTitle, isInM3UCatalog } from '@/lib/m3u-parse
 import { motion } from 'framer-motion';
 import { Film, Search, Heart, Clock, Dices, HelpCircle, LogOut, Wallet, Trophy } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import MovieCard from '@/components/MovieCard';
 import MovieModal from '@/components/MovieModal';
 import CineRoleta from '@/components/CineRoleta';
@@ -176,9 +177,17 @@ const Dashboard = () => {
               {searchQuery.trim() ? 'RESULTADOS DA BUSCA' : 'EM ALTA ESTA SEMANA'}
             </h2>
             {displayMovies.length === 0 ? (
-              <p className="text-muted-foreground text-center py-12">
-                {searchQuery.trim() ? 'Nenhum resultado encontrado.' : 'Carregando...'}
-              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div key={i} className="rounded-xl overflow-hidden bg-card border border-border">
+                    <Skeleton className="aspect-[2/3] w-full" />
+                    <div className="p-2.5 space-y-1.5">
+                      <Skeleton className="h-3 w-3/4" />
+                      <Skeleton className="h-3 w-1/3" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {displayMovies.map(movie => (
