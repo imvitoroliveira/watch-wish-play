@@ -6,6 +6,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Dices, Sparkles, Star, Play, CheckCircle, X, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/hooks/use-toast';
 
 interface CineRoletaProps {
   movies: TMDBMovie[];
@@ -14,6 +17,7 @@ interface CineRoletaProps {
   watched: Set<number>;
   onToggleFavorite: (id: number) => void;
   onToggleWatched: (id: number) => void;
+  onTrailerWatched?: () => void;
 }
 
 const CARD_W = 140;
@@ -61,7 +65,8 @@ function dedupeMovies(movies: TMDBMovie[]): TMDBMovie[] {
   });
 }
 
-const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite, onToggleWatched }: CineRoletaProps) => {
+const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite, onToggleWatched, onTrailerWatched }: CineRoletaProps) => {
+  const { currentClient } = useAuth();
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
   const [result, setResult] = useState<TMDBMovie | null>(null);
   const [spinning, setSpinning] = useState(false);
@@ -69,7 +74,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
-  // The actual pool used for current spin (rendered directly, not via state for timing)
   const [displayPool, setDisplayPool] = useState<TMDBMovie[]>([]);
   const [showIndicator, setShowIndicator] = useState(false);
 
@@ -77,6 +81,8 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
   const containerRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const animFrameRef = useRef<number>(0);
+  const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trailerCreditedRef = useRef(false);
 
   // Initialize display pool from trending
   useEffect(() => {
@@ -216,17 +222,50 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         playSuccessSound(ctx);
 
         const type = winner.media_type === 'tv' ? 'tv' : 'movie';
-        getMovieVideos(winner.id, type).then(key => setTrailerKey(key));
+        getMovieVideos(winner.id, type).then(key => {
+          setTrailerKey(key);
+          // Start 30s timer for challenge credit when trailer autoplays
+          if (key) {
+            trailerCreditedRef.current = false;
+            if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
+            trailerTimerRef.current = setTimeout(async () => {
+              if (trailerCreditedRef.current) return;
+              trailerCreditedRef.current = true;
+              if (currentClient?.u) {
+                try {
+                  const { data } = await supabase.functions.invoke('trailer-challenge', {
+                    method: 'POST',
+                    body: { username: currentClient.u, action: 'watch_trailer' },
+                  });
+                  if (data) {
+                    const watched = data.trailers_watched || 0;
+                    const earned = data.point_earned;
+                    toast({
+                      title: '🎬 Trailer assistido!',
+                      description: earned
+                        ? '🔥 +1 ponto! Meta diária completa!'
+                        : `${watched}/3 para completar o desafio de hoje`,
+                    });
+                    onTrailerWatched?.();
+                  }
+                } catch { /* silent */ }
+              }
+            }, 30000);
+          }
+        });
       }, duration + 100);
     } catch (e) {
       console.error('[CineRoleta] Error:', e);
       setLoading(false);
       setSpinning(false);
     }
-  }, [spinning, loading, selectedGenre, movies, getAudioCtx]);
+  }, [spinning, loading, selectedGenre, movies, getAudioCtx, currentClient?.u, onTrailerWatched]);
 
   useEffect(() => {
-    return () => { cancelAnimationFrame(animFrameRef.current); };
+    return () => {
+      cancelAnimationFrame(animFrameRef.current);
+      if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
+    };
   }, []);
 
   const title = result ? (result.title || result.name || 'Sem título') : '';

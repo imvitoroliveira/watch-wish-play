@@ -279,6 +279,7 @@ const Dashboard = () => {
               watched={watchedSet}
               onToggleFavorite={toggleFavorite}
               onToggleWatched={toggleWatched}
+              onTrailerWatched={() => setChallengeKey(k => k + 1)}
             />
           </motion.div>
         )}
