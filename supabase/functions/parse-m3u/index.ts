@@ -105,7 +105,6 @@ Deno.serve(async (req) => {
         JSON.stringify({
           titles,
           total: (data?.titles as string[])?.length || 0,
-          source_url: data?.source_url || null,
           updated_at: data?.updated_at || null,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -119,7 +118,6 @@ Deno.serve(async (req) => {
       let m3uContent = content || "";
 
       if (url && !m3uContent) {
-        console.log(`[M3U] Fetching from URL: ${url}`);
         const res = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0" },
         });
@@ -127,7 +125,6 @@ Deno.serve(async (req) => {
           throw new Error(`Failed to fetch M3U: ${res.status} ${res.statusText}`);
         }
         m3uContent = await res.text();
-        console.log(`[M3U] Fetched ${m3uContent.length} bytes`);
       }
 
       if (!m3uContent) {
@@ -139,7 +136,6 @@ Deno.serve(async (req) => {
 
       // Parse ALL titles (no limit)
       const titles = parseM3UTitles(m3uContent);
-      console.log(`[M3U] Parsed ${titles.length} unique VOD titles`);
 
       await supabase.from("m3u_catalog").upsert(
         {
@@ -176,7 +172,6 @@ Deno.serve(async (req) => {
 
     return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   } catch (error) {
-    console.error("[M3U] Error:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

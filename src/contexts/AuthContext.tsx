@@ -15,7 +15,7 @@ interface AuthContextType {
   isClient: boolean;
   currentClient: ClientData | null;
   clientList: ClientData[];
-  loginAdmin: (user: string, pass: string) => boolean;
+  loginAdmin: (user: string, pass: string) => Promise<boolean>;
   loginClient: (user: string, pass: string) => { success: boolean; reason?: string };
   logout: () => void;
   uploadClientList: (data: ClientData[]) => void;
@@ -31,11 +31,11 @@ export const useAuth = () => {
   return ctx;
 };
 
-const ADMIN_USER = 'ovitoroliveira';
-const ADMIN_PASS = '5AaMmNn665789';
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('msc_admin') === 'true');
+  const [isAdmin, setIsAdmin] = useState(() => {
+    const token = localStorage.getItem('msc_admin_token');
+    return !!token;
+  });
   const [currentClient, setCurrentClient] = useState<ClientData | null>(() => {
     const saved = localStorage.getItem('msc_client');
     return saved ? JSON.parse(saved) : null;
@@ -59,8 +59,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setClientList(data.clients);
           localStorage.setItem('msc_clients', JSON.stringify(data.clients));
         }
-      } catch (e) {
-        console.warn('[Auth] Failed to load clients from DB, using local cache:', e);
+      } catch {
+        // Use local cache silently
       } finally {
         setClientsLoading(false);
       }
@@ -68,13 +68,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     loadClients();
   }, []);
 
-  const loginAdmin = (user: string, pass: string) => {
-    if (user === ADMIN_USER && pass === ADMIN_PASS) {
+  const loginAdmin = async (user: string, pass: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-login', {
+        method: 'POST',
+        body: { user: user.trim(), pass: pass.trim() },
+      });
+      if (error || !data?.success) return false;
       setIsAdmin(true);
-      localStorage.setItem('msc_admin', 'true');
+      localStorage.setItem('msc_admin_token', data.token);
       return true;
+    } catch {
+      return false;
     }
-    return false;
   };
 
   const loginClient = (user: string, pass: string): { success: boolean; reason?: string } => {
@@ -94,7 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = () => {
     setIsAdmin(false);
     setCurrentClient(null);
-    localStorage.removeItem('msc_admin');
+    localStorage.removeItem('msc_admin_token');
     localStorage.removeItem('msc_client');
   };
 
@@ -102,14 +108,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setClientList(data);
     localStorage.setItem('msc_clients', JSON.stringify(data));
     
-    // Persist to database
     try {
       await supabase.functions.invoke('manage-clients', {
         method: 'POST',
         body: { clients: data },
       });
-    } catch (e) {
-      console.warn('[Auth] Failed to persist clients to DB:', e);
+    } catch {
+      // Silent fail, data saved locally
     }
   };
 
