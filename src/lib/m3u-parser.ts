@@ -52,15 +52,11 @@ export function normalizeTitle(title: string): string {
     .trim();
 }
 
-/** Check if a TMDB title matches any M3U title */
+/** Check if a TMDB title matches any M3U title (strict exact match only) */
 export function isInM3UCatalog(tmdbTitle: string, m3uTitlesNormalized: Set<string>): boolean {
   const normalized = normalizeTitle(tmdbTitle);
-  if (m3uTitlesNormalized.has(normalized)) return true;
-  // Partial match: check if any M3U title contains the TMDB title or vice-versa
-  for (const m3u of m3uTitlesNormalized) {
-    if (m3u.includes(normalized) || normalized.includes(m3u)) return true;
-  }
-  return false;
+  if (!normalized || normalized.length < 2) return false;
+  return m3uTitlesNormalized.has(normalized);
 }
 
 // Fetch catalog from backend (DB-cached)
