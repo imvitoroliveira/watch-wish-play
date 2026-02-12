@@ -5,6 +5,7 @@ import { X, Play, Star, Heart, Check, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from '@/hooks/use-toast';
 
 interface MovieModalProps {
   movie: TMDBMovie | null;
@@ -43,19 +44,26 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     trailerTimerRef.current = setTimeout(async () => {
       if (trailerCreditedRef.current) return;
       trailerCreditedRef.current = true;
-      // Record trailer watch via edge function
       if (currentClient?.u) {
         try {
-          await supabase.functions.invoke('trailer-challenge', {
+          const { data } = await supabase.functions.invoke('trailer-challenge', {
             method: 'POST',
             body: { username: currentClient.u, action: 'watch_trailer' },
           });
-          onTrailerWatched?.();
-        } catch {
-          // silent
-        }
+          if (data) {
+            const watched = data.trailers_watched || 0;
+            const earned = data.point_earned;
+            toast({
+              title: '🎬 Trailer assistido!',
+              description: earned
+                ? '🔥 +1 ponto! Meta diária completa!'
+                : `${watched}/3 para completar o desafio de hoje`,
+            });
+            onTrailerWatched?.();
+          }
+        } catch { /* silent */ }
       }
-    }, 30000); // 30 seconds
+    }, 30000);
   }, [currentClient?.u, onTrailerWatched]);
 
   if (!movie) return null;
