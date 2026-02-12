@@ -9,47 +9,6 @@ const corsHeaders = {
 // Groups to SKIP (live TV channels)
 const SKIP_GROUPS = /\b(canais?|tv|ao.?vivo|live|aberto|esporte|notícia|infantil|music|rádio|radio|adult|xxx|pay.?per.?view|ppv|24h)\b/i;
 
-function parseM3UTitles(content: string): string[] {
-  const titles: string[] = [];
-  const lines = content.split("\n");
-  let currentGroup = "";
-
-  for (let i = 0; i < lines.length; i++) {
-    try {
-      const trimmed = lines[i].trim();
-      if (!trimmed || !trimmed.startsWith("#EXTINF:")) continue;
-
-      const groupMatch = trimmed.match(/group-title="([^"]+)"/);
-      if (groupMatch) currentGroup = groupMatch[1];
-
-      // Skip live TV groups
-      if (currentGroup && SKIP_GROUPS.test(currentGroup)) continue;
-
-      // Extract title - try tvg-name first
-      const tvgMatch = trimmed.match(/tvg-name="([^"]+)"/);
-      if (tvgMatch) {
-        const cleaned = cleanTitle(tvgMatch[1]);
-        if (cleaned.length > 1) titles.push(cleaned);
-        continue;
-      }
-      // Fallback: text after last comma
-      const commaIdx = trimmed.lastIndexOf(",");
-      if (commaIdx !== -1) {
-        const title = trimmed.substring(commaIdx + 1).trim();
-        if (title) {
-          const cleaned = cleanTitle(title);
-          if (cleaned.length > 1) titles.push(cleaned);
-        }
-      }
-    } catch {
-      // Skip malformed lines, continue processing
-      continue;
-    }
-  }
-
-  return [...new Set(titles)];
-}
-
 function cleanTitle(title: string): string {
   return title
     .replace(/^(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*[-–:]\s*/gi, "")
@@ -66,29 +25,133 @@ function cleanTitle(title: string): string {
     .trim();
 }
 
-// Fetch with retry and exponential backoff
-async function fetchWithRetry(url: string, retries = 3, delayMs = 2000): Promise<string> {
+// Stream-parse M3U from a ReadableStream, processing line by line
+async function streamParseM3U(stream: ReadableStream<Uint8Array>): Promise<string[]> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  const titlesSet = new Set<string>();
+  let buffer = "";
+  let currentGroup = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    // Process complete lines from the buffer
+    const lines = buffer.split("\n");
+    // Keep the last partial line in the buffer
+    buffer = lines.pop() || "";
+
+    for (const rawLine of lines) {
+      try {
+        const trimmed = rawLine.trim();
+        if (!trimmed || !trimmed.startsWith("#EXTINF:")) continue;
+
+        const groupMatch = trimmed.match(/group-title="([^"]+)"/);
+        if (groupMatch) currentGroup = groupMatch[1];
+
+        if (currentGroup && SKIP_GROUPS.test(currentGroup)) continue;
+
+        const tvgMatch = trimmed.match(/tvg-name="([^"]+)"/);
+        if (tvgMatch) {
+          const cleaned = cleanTitle(tvgMatch[1]);
+          if (cleaned.length > 1) titlesSet.add(cleaned);
+          continue;
+        }
+
+        const commaIdx = trimmed.lastIndexOf(",");
+        if (commaIdx !== -1) {
+          const title = trimmed.substring(commaIdx + 1).trim();
+          if (title) {
+            const cleaned = cleanTitle(title);
+            if (cleaned.length > 1) titlesSet.add(cleaned);
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  // Process any remaining content in the buffer
+  if (buffer.trim().startsWith("#EXTINF:")) {
+    try {
+      const trimmed = buffer.trim();
+      const groupMatch = trimmed.match(/group-title="([^"]+)"/);
+      if (groupMatch) currentGroup = groupMatch[1];
+      if (!(currentGroup && SKIP_GROUPS.test(currentGroup))) {
+        const tvgMatch = trimmed.match(/tvg-name="([^"]+)"/);
+        if (tvgMatch) {
+          const cleaned = cleanTitle(tvgMatch[1]);
+          if (cleaned.length > 1) titlesSet.add(cleaned);
+        } else {
+          const commaIdx = trimmed.lastIndexOf(",");
+          if (commaIdx !== -1) {
+            const title = trimmed.substring(commaIdx + 1).trim();
+            if (title) {
+              const cleaned = cleanTitle(title);
+              if (cleaned.length > 1) titlesSet.add(cleaned);
+            }
+          }
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  return [...titlesSet];
+}
+
+// Parse from string (for content passed directly)
+function parseM3UTitles(content: string): string[] {
+  const titlesSet = new Set<string>();
+  const lines = content.split("\n");
+  let currentGroup = "";
+
+  for (const rawLine of lines) {
+    try {
+      const trimmed = rawLine.trim();
+      if (!trimmed || !trimmed.startsWith("#EXTINF:")) continue;
+
+      const groupMatch = trimmed.match(/group-title="([^"]+)"/);
+      if (groupMatch) currentGroup = groupMatch[1];
+      if (currentGroup && SKIP_GROUPS.test(currentGroup)) continue;
+
+      const tvgMatch = trimmed.match(/tvg-name="([^"]+)"/);
+      if (tvgMatch) {
+        const cleaned = cleanTitle(tvgMatch[1]);
+        if (cleaned.length > 1) titlesSet.add(cleaned);
+        continue;
+      }
+      const commaIdx = trimmed.lastIndexOf(",");
+      if (commaIdx !== -1) {
+        const title = trimmed.substring(commaIdx + 1).trim();
+        if (title) {
+          const cleaned = cleanTitle(title);
+          if (cleaned.length > 1) titlesSet.add(cleaned);
+        }
+      }
+    } catch { continue; }
+  }
+
+  return [...titlesSet];
+}
+
+// Fetch with retry and streaming support
+async function fetchM3UStream(url: string, retries = 3): Promise<ReadableStream<Uint8Array>> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
-      
       const res = await fetch(url, {
         headers: { "User-Agent": "Mozilla/5.0" },
-        signal: controller.signal,
       });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status} ${res.statusText}`);
-      }
-      return await res.text();
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.body) throw new Error("No response body");
+      return res.body;
     } catch (err) {
-      console.error(`Attempt ${attempt}/${retries} failed: ${(err as Error).message}`);
-      if (attempt === retries) {
-        throw new Error(`Failed after ${retries} attempts: ${(err as Error).message}`);
-      }
-      await new Promise(r => setTimeout(r, delayMs * attempt));
+      console.error(`Fetch attempt ${attempt}/${retries}: ${(err as Error).message}`);
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, 2000 * attempt));
     }
   }
   throw new Error("Unreachable");
@@ -139,20 +202,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const { url, content } = body;
 
-      let m3uContent = content || "";
-
-      if (url && !m3uContent) {
-        m3uContent = await fetchWithRetry(url);
-      }
-
-      if (!m3uContent) {
-        return new Response(
-          JSON.stringify({ error: "Provide a URL or content" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Clear previous catalog BEFORE processing new one
+      // Clear previous catalog first
       await supabase.from("m3u_catalog").upsert(
         {
           id: "00000000-0000-0000-0000-000000000001",
@@ -163,14 +213,29 @@ Deno.serve(async (req) => {
         { onConflict: "id" }
       );
 
-      // Parse ALL titles
-      const titles = parseM3UTitles(m3uContent);
+      let titles: string[];
 
-      // Save new catalog
+      if (content) {
+        // Content passed directly - parse from string
+        titles = parseM3UTitles(content);
+      } else if (url) {
+        // URL provided - stream and parse without loading entire file in memory
+        const stream = await fetchM3UStream(url);
+        titles = await streamParseM3U(stream);
+      } else {
+        return new Response(
+          JSON.stringify({ error: "Provide a URL or content" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      console.log(`Parsed ${titles.length} unique titles`);
+
+      // Save to DB
       await supabase.from("m3u_catalog").upsert(
         {
           id: "00000000-0000-0000-0000-000000000001",
-          titles: titles,
+          titles,
           source_url: url || null,
           updated_at: new Date().toISOString(),
         },
@@ -202,6 +267,7 @@ Deno.serve(async (req) => {
 
     return new Response("Method not allowed", { status: 405, headers: corsHeaders });
   } catch (error) {
+    console.error("parse-m3u error:", (error as Error).message);
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
