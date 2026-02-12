@@ -5,6 +5,7 @@ import { fetchRandomM3UTitles } from '@/lib/m3u-parser';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dices, Sparkles, Star, Play, CheckCircle, X, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface CineRoletaProps {
   movies: TMDBMovie[];
@@ -290,20 +291,33 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
             className="flex items-center"
             style={{ willChange: 'transform', gap: GAP }}
           >
-            {stripItems.map((movie, i) => (
-              <div
-                key={`${movie.id}-${i}`}
-                className="flex-shrink-0 rounded-lg overflow-hidden"
-                style={{ width: CARD_W, height: CARD_H }}
-              >
-                <img
-                  src={tmdbImg(movie.poster_path, 'w200')}
-                  alt={movie.title || movie.name || ''}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              </div>
-            ))}
+            {stripItems.length === 0 ? (
+              // Skeleton loading for carousel
+              Array.from({ length: 12 }).map((_, i) => (
+                <div
+                  key={`skel-${i}`}
+                  className="flex-shrink-0 rounded-lg overflow-hidden"
+                  style={{ width: CARD_W, height: CARD_H }}
+                >
+                  <Skeleton className="w-full h-full" />
+                </div>
+              ))
+            ) : (
+              stripItems.map((movie, i) => (
+                <div
+                  key={`${movie.id}-${i}`}
+                  className="flex-shrink-0 rounded-lg overflow-hidden"
+                  style={{ width: CARD_W, height: CARD_H }}
+                >
+                  <img
+                    src={tmdbImg(movie.poster_path, 'w200')}
+                    alt={movie.title || movie.name || ''}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

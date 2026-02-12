@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { HelpCircle, ChevronRight, MessageCircle, CheckCircle, ExternalLink } from 'lucide-react';
+import { HelpCircle, ChevronRight, MessageCircle, CheckCircle, ExternalLink, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -298,6 +298,14 @@ const SupportTickets = () => {
           </div>
         </div>
       )}
+
+      {/* Security footer */}
+      <div className="flex items-center justify-center gap-2 pt-4 pb-2">
+        <ShieldCheck className="w-4 h-4 text-muted-foreground/60" />
+        <p className="text-xs text-muted-foreground/60">
+          Conexão Blindada: Seus dados estão protegidos por criptografia de ponta a ponta.
+        </p>
+      </div>
     </div>
   );
 };
