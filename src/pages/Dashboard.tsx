@@ -10,11 +10,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import MovieCard from '@/components/MovieCard';
 import MovieModal from '@/components/MovieModal';
 import CineRoleta from '@/components/CineRoleta';
-
 import SupportTickets from '@/components/SupportTickets';
 import ExpirationBanner from '@/components/ExpirationBanner';
-
 import AgendaJogos from '@/components/AgendaJogos';
+import CineTrailerChallenge from '@/components/CineTrailerChallenge';
+import { supabase } from '@/integrations/supabase/client';
 
 type Tab = 'home' | 'watchlist' | 'history' | 'roleta' | 'jogos' | 'support';
 
@@ -37,29 +37,43 @@ const Dashboard = () => {
   const [m3uNormalized, setM3uNormalized] = useState<Set<string>>(new Set());
   const [hasM3U, setHasM3U] = useState(false);
   const [m3uConfirmedMovies, setM3uConfirmedMovies] = useState<TMDBMovie[]>([]);
+  const [contentAlerts, setContentAlerts] = useState<Set<number>>(new Set());
+  const [challengeKey, setChallengeKey] = useState(0);
 
   useEffect(() => {
     if (!isClient) navigate('/');
   }, [isClient, navigate]);
 
+  // Load content alerts from DB
+  useEffect(() => {
+    if (!currentClient?.u) return;
+    const loadAlerts = async () => {
+      try {
+        const { data } = await supabase.functions.invoke('content-alerts', {
+          method: 'POST',
+          body: { username: currentClient.u, action: 'list' },
+        });
+        if (data?.alerts) setContentAlerts(new Set(data.alerts));
+      } catch { /* silent */ }
+    };
+    loadAlerts();
+  }, [currentClient?.u]);
+
   useEffect(() => {
     const loadMovies = async () => {
-      // Always load trending from TMDB for "Em Alta"
       const trending = await getTrending();
       setMovies(trending);
-
-      // Load M3U catalog for availability badges & Cine-Roleta
       const { titles: m3uTitles } = await fetchM3UCatalog();
       if (m3uTitles.length > 0) {
         setHasM3U(true);
         setM3uNormalized(new Set(m3uTitles.map(normalizeTitle)));
-        // Search TMDB for M3U titles to build Cine-Roleta pool (larger sample)
         const m3uMovies = await searchByTitles(m3uTitles, 80);
         setM3uConfirmedMovies(m3uMovies);
       }
     };
     loadMovies();
   }, []);
+
   useEffect(() => {
     if (!searchQuery.trim()) { setSearchResults([]); return; }
     const timeout = setTimeout(() => {
@@ -86,6 +100,24 @@ const Dashboard = () => {
     });
   }, []);
 
+  const toggleContentAlert = useCallback(async (movie: TMDBMovie) => {
+    if (!currentClient?.u) return;
+    const title = movie.title || movie.name || '';
+    try {
+      const { data } = await supabase.functions.invoke('content-alerts', {
+        method: 'POST',
+        body: { username: currentClient.u, action: 'toggle', movie_title: title, movie_id: movie.id },
+      });
+      if (data) {
+        setContentAlerts(prev => {
+          const next = new Set(prev);
+          if (data.active) next.add(movie.id); else next.delete(movie.id);
+          return next;
+        });
+      }
+    } catch { /* silent */ }
+  }, [currentClient?.u]);
+
   const getAvailability = useCallback((movie: TMDBMovie): 'available' | 'soon' | 'unknown' => {
     if (!hasM3U) return 'unknown';
     const title = movie.title || movie.name || '';
@@ -102,9 +134,23 @@ const Dashboard = () => {
     { id: 'history', label: 'Assistidos', icon: <Clock className="w-4 h-4" /> },
     { id: 'roleta', label: 'Cine-Roleta', icon: <Dices className="w-4 h-4" /> },
     { id: 'jogos', label: 'Jogos VIP', icon: <Trophy className="w-4 h-4" /> },
-    
     { id: 'support', label: 'Suporte', icon: <HelpCircle className="w-4 h-4" /> },
   ];
+
+  const renderMovieCard = (movie: TMDBMovie) => (
+    <MovieCard
+      key={movie.id}
+      movie={movie}
+      onClick={() => setSelectedMovie(movie)}
+      isFavorite={favorites.has(movie.id)}
+      isWatched={watchedSet.has(movie.id)}
+      onToggleFavorite={(e) => { e.stopPropagation(); toggleFavorite(movie.id); }}
+      onToggleWatched={(e) => { e.stopPropagation(); toggleWatched(movie.id); }}
+      availability={getAvailability(movie)}
+      hasContentAlert={contentAlerts.has(movie.id)}
+      onToggleContentAlert={(e) => { e.stopPropagation(); toggleContentAlert(movie); }}
+    />
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -172,6 +218,9 @@ const Dashboard = () => {
       <main className="max-w-7xl mx-auto px-4 py-6">
         {tab === 'home' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {/* Cine-Trailer Challenge Widget */}
+            <CineTrailerChallenge key={challengeKey} />
+
             <h2 className="text-2xl font-display text-foreground mb-4">
               {searchQuery.trim() ? 'RESULTADOS DA BUSCA' : 'EM ALTA ESTA SEMANA'}
             </h2>
@@ -189,18 +238,7 @@ const Dashboard = () => {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {displayMovies.map(movie => (
-                  <MovieCard
-                    key={movie.id}
-                    movie={movie}
-                    onClick={() => setSelectedMovie(movie)}
-                    isFavorite={favorites.has(movie.id)}
-                    isWatched={watchedSet.has(movie.id)}
-                    onToggleFavorite={(e) => { e.stopPropagation(); toggleFavorite(movie.id); }}
-                    onToggleWatched={(e) => { e.stopPropagation(); toggleWatched(movie.id); }}
-                    availability={getAvailability(movie)}
-                  />
-                ))}
+                {displayMovies.map(renderMovieCard)}
               </div>
             )}
           </motion.div>
@@ -210,20 +248,10 @@ const Dashboard = () => {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <h2 className="text-2xl font-display text-foreground mb-4">MEUS FAVORITOS</h2>
             {favoriteMovies.length === 0 ? (
-              <p className="text-muted-foreground text-center py-12">Você ainda não adicionou favoritos. Explore e adicione filmes que quer assistir!</p>
+              <p className="text-muted-foreground text-center py-12">Você ainda não adicionou favoritos.</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {favoriteMovies.map(movie => (
-                  <MovieCard
-                    key={movie.id}
-                    movie={movie}
-                    onClick={() => setSelectedMovie(movie)}
-                    isFavorite={true}
-                    isWatched={watchedSet.has(movie.id)}
-                    onToggleFavorite={(e) => { e.stopPropagation(); toggleFavorite(movie.id); }}
-                    onToggleWatched={(e) => { e.stopPropagation(); toggleWatched(movie.id); }}
-                  />
-                ))}
+                {favoriteMovies.map(renderMovieCard)}
               </div>
             )}
           </motion.div>
@@ -236,17 +264,7 @@ const Dashboard = () => {
               <p className="text-muted-foreground text-center py-12">Marque filmes como assistidos para acompanhar seu histórico.</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {watchedMovies.map(movie => (
-                  <MovieCard
-                    key={movie.id}
-                    movie={movie}
-                    onClick={() => setSelectedMovie(movie)}
-                    isFavorite={favorites.has(movie.id)}
-                    isWatched={true}
-                    onToggleFavorite={(e) => { e.stopPropagation(); toggleFavorite(movie.id); }}
-                    onToggleWatched={(e) => { e.stopPropagation(); toggleWatched(movie.id); }}
-                  />
-                ))}
+                {watchedMovies.map(renderMovieCard)}
               </div>
             )}
           </motion.div>
@@ -271,13 +289,11 @@ const Dashboard = () => {
           </motion.div>
         )}
 
-
         {tab === 'support' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <SupportTickets />
           </motion.div>
         )}
-
       </main>
 
       {/* Movie Modal */}
@@ -289,6 +305,7 @@ const Dashboard = () => {
           isWatched={watchedSet.has(selectedMovie.id)}
           onToggleFavorite={() => toggleFavorite(selectedMovie.id)}
           onToggleWatched={() => toggleWatched(selectedMovie.id)}
+          onTrailerWatched={() => setChallengeKey(k => k + 1)}
         />
       )}
     </div>
