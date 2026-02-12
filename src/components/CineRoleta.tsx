@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { TMDBMovie, tmdbImg, getMovieVideos, searchByTitles, getByGenre } from '@/lib/tmdb';
+import { TMDBMovie, tmdbImg, getMovieVideos, searchByTitles } from '@/lib/tmdb';
 import { GENRES } from '@/lib/tmdb';
 import { fetchRandomM3UTitles } from '@/lib/m3u-parser';
 import { Dices, Sparkles, Star, Play, Volume2, VolumeX, Loader2, X } from 'lucide-react';
@@ -123,33 +123,27 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
     setShowIndicator(true);
 
     try {
-      // 1. Fetch 50 random titles from the full M3U catalog
-      const randomTitles = await fetchRandomM3UTitles(50);
+      // 1. Fetch random titles from the M3U catalog (ONLY source for roulette)
+      const randomTitles = await fetchRandomM3UTitles(100);
 
-      // 2. Search TMDB for those titles
-      const m3uMovies = randomTitles.length > 0
-        ? await searchByTitles(randomTitles, randomTitles.length)
-        : [];
-
-      // 3. Get trending movies (already have them as prop)
-      let trendingPool = [...movies];
-
-      // 4. If genre selected, also fetch TMDB discover for that genre
-      if (selectedGenre) {
-        const genreMovies = await getByGenre(selectedGenre);
-        trendingPool = [...trendingPool, ...genreMovies];
+      if (randomTitles.length === 0) {
+        toast({ title: '⚠️ Catálogo vazio', description: 'Nenhum título encontrado no catálogo M3U.' });
+        setLoading(false);
+        return;
       }
 
-      // 5. Combine and filter by genre if selected
-      let combined = dedupeMovies([...m3uMovies, ...trendingPool]);
+      // 2. Search TMDB for those M3U titles to get metadata (posters, etc.)
+      let combined = await searchByTitles(randomTitles, randomTitles.length);
 
+      // 3. Filter by genre if selected
       if (selectedGenre) {
         const genreFiltered = combined.filter(m => m.genre_ids?.some(g => g === selectedGenre));
-        if (genreFiltered.length >= 5) combined = genreFiltered;
+        if (genreFiltered.length >= 3) combined = genreFiltered;
       }
 
-      // Filter out movies without posters
+      // 4. Filter out movies without posters
       combined = combined.filter(m => m.poster_path);
+      combined = dedupeMovies(combined);
 
       if (combined.length === 0) {
         setLoading(false);
