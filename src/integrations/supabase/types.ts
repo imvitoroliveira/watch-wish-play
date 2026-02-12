@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      canal_status: {
+        Row: {
+          channel_group: string | null
+          channel_name: string
+          created_at: string
+          id: string
+          updated_at: string
+          votes_down: number
+          votes_up: number
+        }
+        Insert: {
+          channel_group?: string | null
+          channel_name: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          votes_down?: number
+          votes_up?: number
+        }
+        Update: {
+          channel_group?: string | null
+          channel_name?: string
+          created_at?: string
+          id?: string
+          updated_at?: string
+          votes_down?: number
+          votes_up?: number
+        }
+        Relationships: []
+      }
       channel_monitor_results: {
         Row: {
           channels: Json

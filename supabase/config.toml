@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.channel-monitor]
 verify_jwt = false
+
+[functions.channel-votes]
+verify_jwt = false
