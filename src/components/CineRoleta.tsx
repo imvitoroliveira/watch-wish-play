@@ -271,16 +271,19 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       >
         {/* Center indicator — perfectly sized to frame one card */}
         <div
-          className="absolute z-20 pointer-events-none border-2 border-primary rounded-xl transition-opacity duration-300"
+          className="absolute z-20 pointer-events-none border-2 border-primary rounded-xl transition-all duration-300"
           style={{
-            width: CARD_W + 4,
-            height: CARD_H + 4,
-            top: '50%',
-            left: '50%',
-            marginTop: -(CARD_H + 4) / 2,
-            marginLeft: -(CARD_W + 4) / 2,
-            opacity: showIndicator ? 1 : 0,
-            boxShadow: '0 0 15px hsl(var(--primary) / 0.5), 0 0 30px hsl(var(--primary) / 0.25), inset 0 0 15px hsl(var(--primary) / 0.1)',
+            width: CARD_W,
+            height: CARD_H,
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            margin: 'auto',
+            opacity: spinning || showResult ? 1 : 0,
+            boxShadow: spinning || showResult
+              ? '0 0 20px hsl(var(--primary) / 0.6), 0 0 40px hsl(var(--primary) / 0.3), inset 0 0 15px hsl(var(--primary) / 0.1)'
+              : 'none',
           }}
         />
         {/* Gradient edges */}
