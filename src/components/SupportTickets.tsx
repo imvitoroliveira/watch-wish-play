@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HelpCircle, ChevronRight, MessageCircle, CheckCircle } from 'lucide-react';
+import { HelpCircle, ChevronRight, MessageCircle, CheckCircle, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 
 interface Ticket {
   id: string;
@@ -11,69 +15,80 @@ interface Ticket {
   suggestion?: string;
 }
 
+const WHATSAPP_URL = 'https://wa.me/5534984242845?text=Vitor%20tentei%20as%20op%C3%A7%C3%B5es%20de%20suporte%20no%20aplicativo%20mas%20n%C3%A3o%20resolveu.%20Pode%20me%20ajudar%3F';
+
 const COMMON_ISSUES = [
-  { 
-    label: 'Tela Preta', 
-    suggestion: 'Tente limpar o cache do seu player e reiniciar o app. Se persistir, verifique sua conexão de internet.',
+  {
+    label: 'Tela Preta',
+    suggestion: 'Muitas vezes, a tela preta é apenas cache acumulado ou player incompatível. Siga o vídeo ao lado.',
+    videoId: 'oVBPjcGne5s',
     faq: [
       'Vá em Configurações > Apps > Seu Player > Limpar cache',
       'Reinicie o roteador e aguarde 30 segundos',
       'Teste com outro player (VLC, TiviMate, XCIPTV)',
       'Verifique se o Wi-Fi está na banda 5GHz para melhor desempenho',
-    ]
+    ],
   },
-  { 
-    label: 'Travamento', 
-    suggestion: 'Verifique se sua internet está estável (mín. 10 Mbps). Tente mudar o DNS para 8.8.8.8 / 8.8.4.4.',
+  {
+    label: 'Travamento',
+    suggestion: 'Configure seu DNS e otimize seu Wi-Fi para acabar com o buffering.',
+    videoId: 'hBEJWiSTwz8',
     faq: [
       'Faça um teste de velocidade em fast.com',
       'Configure DNS: Configurações > Rede > DNS Manual > 8.8.8.8 / 8.8.4.4',
       'Desative VPN se estiver usando',
       'Reinicie a TV Box / Smart TV',
       'Conecte via cabo Ethernet em vez de Wi-Fi',
-    ]
+    ],
   },
-  { 
-    label: 'Áudio Dessincronizado', 
-    suggestion: 'Reinicie o player. Se usar TV Box, verifique as configurações de áudio (PCM/Passthrough).',
+  {
+    label: 'Áudio Dessincronizado',
+    suggestion: 'Ajuste o modo PCM/Passthrough como mostrado no tutorial.',
+    videoId: 'V6hctMyZ8y0',
     faq: [
       'No player: Configurações > Áudio > Modo: PCM',
       'Desative o Passthrough de áudio se estiver ativo',
       'Teste com fones de ouvido para isolar o problema',
       'Atualize o firmware da sua TV Box',
-    ]
+    ],
   },
-  { 
-    label: 'Canal Fora do Ar', 
+  {
+    label: 'Canal Fora do Ar',
     suggestion: 'Alguns canais podem ter instabilidade temporária. Aguarde 15 minutos e tente novamente.',
     faq: [
       'Aguarde 15 minutos e tente novamente',
       'Atualize a lista de canais no player',
       'Verifique se outros canais estão funcionando',
       'Tente reiniciar o aplicativo completamente',
-    ]
+    ],
   },
-  { 
-    label: 'Erro de Login', 
+  {
+    label: 'Erro de Login',
     suggestion: 'Verifique se seu usuário e senha estão corretos. Se o problema persistir, entre em contato.',
     faq: [
       'Verifique se não há espaços extras no usuário/senha',
       'Confira se o Caps Lock está desativado',
       'Tente copiar e colar o usuário e senha',
       'Verifique se sua assinatura está ativa',
-    ]
+    ],
   },
-  { 
-    label: 'Qualidade Baixa', 
+  {
+    label: 'Qualidade Baixa',
     suggestion: 'Ative a opção de qualidade HD/4K no seu player. Mín. 25 Mbps para 4K.',
     faq: [
       'No player: Configurações > Qualidade > HD ou 4K',
       'Velocidade mínima: 10 Mbps (HD), 25 Mbps (4K)',
       'Use conexão cabeada para 4K estável',
       'Verifique se o canal oferece opção HD/FHD',
-    ]
+    ],
   },
 ];
+
+const WhatsAppIcon = () => (
+  <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+  </svg>
+);
 
 const SupportTickets = () => {
   const [tickets, setTickets] = useState<Ticket[]>(() => {
@@ -81,11 +96,37 @@ const SupportTickets = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [selectedIssue, setSelectedIssue] = useState<typeof COMMON_ISSUES[0] | null>(null);
-  const [showSuggestion, setShowSuggestion] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [timerDone, setTimerDone] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [seconds, setSeconds] = useState(30);
+
+  // 30s countdown when modal opens with video
+  useEffect(() => {
+    if (!modalOpen || !selectedIssue?.videoId) return;
+    setTimerDone(false);
+    setChecked(false);
+    setSeconds(30);
+    const interval = setInterval(() => {
+      setSeconds(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setTimerDone(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [modalOpen, selectedIssue]);
+
+  const canProceed = timerDone || checked;
 
   const selectIssue = (issue: typeof COMMON_ISSUES[0]) => {
     setSelectedIssue(issue);
-    setShowSuggestion(true);
+    if (issue.videoId) {
+      setModalOpen(true);
+    }
   };
 
   const createTicket = () => {
@@ -100,8 +141,8 @@ const SupportTickets = () => {
     const updated = [ticket, ...tickets];
     setTickets(updated);
     localStorage.setItem('msc_tickets', JSON.stringify(updated));
+    setModalOpen(false);
     setSelectedIssue(null);
-    setShowSuggestion(false);
   };
 
   const resolveTicket = (id: string) => {
@@ -120,66 +161,111 @@ const SupportTickets = () => {
         <p className="text-muted-foreground text-sm">Selecione o problema e receba a solução na hora</p>
       </div>
 
-      {/* Issue selection */}
-      {!showSuggestion && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {COMMON_ISSUES.map(issue => (
-            <button
-              key={issue.label}
-              onClick={() => selectIssue(issue)}
-              className="bg-card border border-border rounded-xl p-4 text-left hover:border-primary/30 hover:bg-card/80 transition-all group"
-            >
-              <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                {issue.label}
-              </span>
-              <ChevronRight className="w-4 h-4 text-muted-foreground mt-2 group-hover:text-primary transition-colors" />
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Suggestion */}
-      <AnimatePresence>
-        {showSuggestion && selectedIssue && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="bg-card border border-border rounded-xl p-6"
+      {/* Issue selection grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {COMMON_ISSUES.map(issue => (
+          <button
+            key={issue.label}
+            onClick={() => selectIssue(issue)}
+            className="bg-card border border-border rounded-xl p-4 text-left hover:border-primary/30 hover:bg-card/80 transition-all group"
           >
-            <h3 className="font-semibold text-foreground mb-1">{selectedIssue.label}</h3>
-            <p className="text-muted-foreground text-sm mb-3">{selectedIssue.suggestion}</p>
+            <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+              {issue.label}
+            </span>
+            <ChevronRight className="w-4 h-4 text-muted-foreground mt-2 group-hover:text-primary transition-colors" />
+          </button>
+        ))}
+      </div>
 
-            {/* FAQ Knowledge Base */}
-            {'faq' in selectedIssue && selectedIssue.faq && (
-              <div className="mb-4 bg-secondary/50 rounded-lg p-4">
-                <p className="text-xs font-semibold text-accent mb-2 uppercase tracking-wide">📖 Base de Conhecimento</p>
-                <ul className="space-y-1.5">
-                  {(selectedIssue as any).faq.map((step: string, i: number) => (
-                    <li key={i} className="text-sm text-muted-foreground flex gap-2">
+      {/* Video tutorial modal */}
+      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
+        <DialogContent className="sm:max-w-2xl bg-card border-border p-0 gap-0 overflow-hidden">
+          <DialogHeader className="p-5 pb-3">
+            <DialogTitle className="text-foreground">{selectedIssue?.label}</DialogTitle>
+            <DialogDescription className="text-muted-foreground text-sm">
+              {selectedIssue?.suggestion}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedIssue?.videoId && (
+            <div className="px-5">
+              <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ paddingBottom: '56.25%' }}>
+                <iframe
+                  className="absolute inset-0 w-full h-full"
+                  src={`https://www.youtube.com/embed/${selectedIssue.videoId}?rel=0&modestbranding=1&theme=dark`}
+                  title={selectedIssue.label}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+          )}
+
+          {/* FAQ steps */}
+          {selectedIssue?.faq && (
+            <div className="px-5 pt-3">
+              <div className="bg-secondary/50 rounded-lg p-3">
+                <p className="text-xs font-semibold text-accent mb-2 uppercase tracking-wide">📖 Passos Recomendados</p>
+                <ul className="space-y-1">
+                  {selectedIssue.faq.map((step, i) => (
+                    <li key={i} className="text-xs text-muted-foreground flex gap-2">
                       <span className="text-accent font-medium shrink-0">{i + 1}.</span>
                       {step}
                     </li>
                   ))}
                 </ul>
               </div>
-            )}
+            </div>
+          )}
 
-            <div className="flex gap-3">
+          {/* Blocking flow */}
+          <div className="p-5 space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={checked}
+                onCheckedChange={(v) => setChecked(v === true)}
+              />
+              <span className="text-sm text-muted-foreground">Assisti ao vídeo e realizei os procedimentos</span>
+            </label>
+
+            <div className="flex flex-col sm:flex-row gap-2">
               <Button
-                variant="outline"
-                onClick={() => { setSelectedIssue(null); setShowSuggestion(false); }}
-                className="border-border text-foreground"
+                onClick={createTicket}
+                disabled={!canProceed}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground flex-1"
               >
-                ✅ Resolvido!
+                <MessageCircle className="w-4 h-4 mr-2" />
+                {canProceed ? 'Ainda preciso de ajuda / Abrir Ticket' : `Aguarde ${seconds}s ou marque acima`}
               </Button>
-              <Button onClick={createTicket} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                <MessageCircle className="w-4 h-4 mr-2" /> Abrir Ticket
+
+              <Button
+                asChild
+                variant="outline"
+                className="border-green-600 text-green-500 hover:bg-green-600/10 hover:text-green-400"
+              >
+                <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
+                  <WhatsAppIcon />
+                  <span className="ml-2">Falar no WhatsApp</span>
+                </a>
               </Button>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* WhatsApp floating link */}
+      <div className="flex justify-center">
+        <a
+          href={WHATSAPP_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-green-600/10 border border-green-600/30 text-green-500 hover:bg-green-600/20 transition-colors text-sm"
+        >
+          <WhatsAppIcon />
+          Não resolveu? Fale comigo no WhatsApp
+          <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+      </div>
 
       {/* Ticket history */}
       {tickets.length > 0 && (
