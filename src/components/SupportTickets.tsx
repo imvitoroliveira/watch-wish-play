@@ -7,6 +7,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { useChannelStatus } from '@/hooks/useChannelStatus';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Ticket {
   id: string;
@@ -102,9 +103,35 @@ const SupportTickets = () => {
   const [timerDone, setTimerDone] = useState(false);
   const [checked, setChecked] = useState(false);
   const [seconds, setSeconds] = useState(30);
+  const [unstableChannels, setUnstableChannels] = useState<string[]>([]);
 
   const { offlineChannels } = useChannelStatus();
   const hasOfflineChannels = offlineChannels.length > 0;
+
+  // Fetch channels below 50% quality from DB
+  useEffect(() => {
+    const fetchUnstable = async () => {
+      try {
+        const { data } = await supabase
+          .from('canal_status')
+          .select('channel_name, votes_up, votes_down')
+          .order('votes_up', { ascending: true });
+
+        if (data) {
+          const unstable = (data as unknown as { channel_name: string; votes_up: number; votes_down: number }[])
+            .filter(ch => {
+              const total = ch.votes_up + ch.votes_down;
+              return total > 0 && (ch.votes_up / total) * 100 < 50;
+            })
+            .map(ch => ch.channel_name);
+          setUnstableChannels(unstable);
+        }
+      } catch (e) {
+        console.warn('[Support] Failed to fetch unstable channels:', e);
+      }
+    };
+    fetchUnstable();
+  }, []);
 
   // 30s countdown when modal opens with video
   useEffect(() => {
@@ -198,6 +225,35 @@ const SupportTickets = () => {
               <p className="text-xs text-red-400/50 mt-2">
                 Não é necessário abrir ticket para estes canais. A equipe já está trabalhando na resolução.
               </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Unstable channels alert (below 50% quality) */}
+      {unstableChannels.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-yellow-950/20 border border-yellow-500/30 rounded-xl p-4"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-yellow-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-yellow-400">Canais instáveis no servidor</p>
+              <p className="text-xs text-yellow-400/70 mt-1">
+                Os seguintes canais foram reportados com qualidade abaixo de 50% pelos usuários:
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {unstableChannels.slice(0, 6).map(name => (
+                  <span key={name} className="text-xs bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded-full">
+                    ⚠ {name}
+                  </span>
+                ))}
+                {unstableChannels.length > 6 && (
+                  <span className="text-xs text-yellow-400/50">+{unstableChannels.length - 6} mais</span>
+                )}
+              </div>
             </div>
           </div>
         </motion.div>
