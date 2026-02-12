@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Film, Flame } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface ChallengeData {
@@ -17,13 +16,6 @@ const CineTrailerChallenge = () => {
     if (!currentClient?.u) return;
     const load = async () => {
       try {
-        const { data: result } = await supabase.functions.invoke('trailer-challenge', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          body: undefined,
-        });
-        // Workaround: GET with query params via POST-like invoke doesn't work well,
-        // so we use fetch directly
         const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trailer-challenge?username=${encodeURIComponent(currentClient.u)}`;
         const res = await fetch(url, {
           headers: {
