@@ -2,10 +2,10 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { TMDBMovie, tmdbImg, getMovieVideos, searchByTitles, getByGenre } from '@/lib/tmdb';
 import { GENRES } from '@/lib/tmdb';
 import { fetchRandomM3UTitles } from '@/lib/m3u-parser';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Dices, Sparkles, Star, Play, CheckCircle, X, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { Dices, Sparkles, Star, Play, Volume2, VolumeX, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
@@ -76,6 +76,8 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
   const [isMuted, setIsMuted] = useState(true);
   const [displayPool, setDisplayPool] = useState<TMDBMovie[]>([]);
   const [showIndicator, setShowIndicator] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [showTrailer, setShowTrailer] = useState(false);
 
   const stripRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -221,38 +223,9 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         setShowResult(true);
         playSuccessSound(ctx);
 
+        // Pre-fetch trailer key
         const type = winner.media_type === 'tv' ? 'tv' : 'movie';
-        getMovieVideos(winner.id, type).then(key => {
-          setTrailerKey(key);
-          // Start 30s timer for challenge credit when trailer autoplays
-          if (key) {
-            trailerCreditedRef.current = false;
-            if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
-            trailerTimerRef.current = setTimeout(async () => {
-              if (trailerCreditedRef.current) return;
-              trailerCreditedRef.current = true;
-              if (currentClient?.u) {
-                try {
-                  const { data } = await supabase.functions.invoke('trailer-challenge', {
-                    method: 'POST',
-                    body: { username: currentClient.u, action: 'watch_trailer' },
-                  });
-                  if (data) {
-                    const watched = data.trailers_watched || 0;
-                    const earned = data.point_earned;
-                    toast({
-                      title: '🎬 Trailer assistido!',
-                      description: earned
-                        ? '🔥 +1 ponto! Meta diária completa!'
-                        : `${watched}/3 para completar o desafio de hoje`,
-                    });
-                    onTrailerWatched?.();
-                  }
-                } catch { /* silent */ }
-              }
-            }, 30000);
-          }
-        });
+        getMovieVideos(winner.id, type).then(key => setTrailerKey(key));
       }, duration + 100);
     } catch (e) {
       console.error('[CineRoleta] Error:', e);
@@ -308,9 +281,10 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         className="relative overflow-hidden rounded-2xl bg-card/50 border border-border"
         style={{ height: CARD_H + 48 }} /* card + vertical padding */
       >
-        {/* Center indicator — perfectly sized to frame one card */}
+        {/* Center indicator — clickable when result is shown */}
         <div
-          className="absolute z-20 pointer-events-none border-2 border-primary rounded-xl transition-all duration-300"
+          onClick={() => { if (showResult && result) { setModalOpen(true); setShowTrailer(false); } }}
+          className={`absolute z-20 border-2 border-primary rounded-xl transition-all duration-300 ${showResult && result ? 'cursor-pointer' : 'pointer-events-none'}`}
           style={{
             width: CARD_W,
             height: CARD_H,
@@ -325,6 +299,12 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
               : 'none',
           }}
         />
+        {/* Tap hint */}
+        {showResult && result && (
+          <div className="absolute z-30 left-1/2 -translate-x-1/2 bottom-1 text-[10px] text-primary font-semibold animate-pulse pointer-events-none">
+            Toque para ver detalhes
+          </div>
+        )}
         {/* Gradient edges */}
         <div className="absolute top-0 bottom-0 left-0 w-24 bg-gradient-to-r from-card to-transparent z-10 pointer-events-none" />
         <div className="absolute top-0 bottom-0 right-0 w-24 bg-gradient-to-l from-card to-transparent z-10 pointer-events-none" />
@@ -385,54 +365,48 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         </button>
       </div>
 
-      {/* Result section with trailer */}
-      <AnimatePresence mode="wait">
-        {showResult && result && (
-          <motion.div
-            key={result.id}
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.6, ease: 'easeOut' }}
-            className="rounded-2xl bg-card border border-border overflow-hidden shadow-2xl"
-          >
-            <div className="relative aspect-video bg-secondary">
-              {trailerKey ? (
-                <div className="relative w-full h-full">
-                  <iframe
-                    src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=${isMuted ? 1 : 0}&rel=0&modestbranding=1`}
-                    className="w-full h-full"
-                    allow="autoplay; encrypted-media"
-                    allowFullScreen
-                    title={`Trailer - ${title}`}
+      {/* Modal for result details */}
+      <Dialog open={modalOpen} onOpenChange={(open) => {
+        setModalOpen(open);
+        if (!open) {
+          setShowTrailer(false);
+          if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
+        }
+      }}>
+        <DialogContent className="max-w-lg p-0 overflow-hidden bg-card border-border">
+          <DialogTitle className="sr-only">{title}</DialogTitle>
+          {result && (
+            <>
+              <div className="relative aspect-video bg-secondary">
+                {showTrailer && trailerKey ? (
+                  <div className="relative w-full h-full">
+                    <iframe
+                      src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=${isMuted ? 1 : 0}&rel=0&modestbranding=1`}
+                      className="w-full h-full"
+                      allow="autoplay; encrypted-media"
+                      allowFullScreen
+                      title={`Trailer - ${title}`}
+                    />
+                    <button
+                      onClick={() => setIsMuted(!isMuted)}
+                      className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-full bg-background/80 flex items-center justify-center text-foreground hover:bg-background transition-colors"
+                    >
+                      {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                    </button>
+                  </div>
+                ) : (
+                  <img
+                    src={tmdbImg(result.backdrop_path || result.poster_path, 'w780')}
+                    alt={title}
+                    className="w-full h-full object-cover"
                   />
-                  <button
-                    onClick={() => setIsMuted(!isMuted)}
-                    className="absolute bottom-4 right-4 z-10 w-10 h-10 rounded-full bg-background/80 flex items-center justify-center text-foreground hover:bg-background transition-colors"
-                  >
-                    {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                  </button>
-                </div>
-              ) : (
-                <img
-                  src={tmdbImg(result.backdrop_path || result.poster_path, 'w780')}
-                  alt={title}
-                  className="w-full h-full object-cover"
-                />
-              )}
-              <button
-                onClick={() => setShowResult(false)}
-                className="absolute top-4 right-4 w-10 h-10 rounded-full bg-background/80 flex items-center justify-center text-foreground hover:bg-background transition-colors z-10"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+                )}
+              </div>
 
-            <div className="p-6 space-y-4">
-              <div className="flex items-start justify-between gap-4">
+              <div className="p-5 space-y-3">
                 <div>
-                  <h3 className="text-2xl font-display text-foreground">{title}</h3>
-                  <div className="flex items-center gap-3 mt-2">
+                  <h3 className="text-xl font-display text-foreground">{title}</h3>
+                  <div className="flex items-center gap-3 mt-1.5">
                     <div className="flex items-center gap-1">
                       <Star className="w-4 h-4 text-accent fill-accent" />
                       <span className="text-sm font-semibold text-accent">{result.vote_average?.toFixed(1)}</span>
@@ -440,32 +414,61 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
                     {date && <span className="text-sm text-muted-foreground">{new Date(date).getFullYear()}</span>}
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent/15 text-accent text-xs font-semibold shrink-0">
-                  <CheckCircle className="w-4 h-4" />
-                  Disponível no seu Aplicativo
+
+                <p className="text-muted-foreground text-sm leading-relaxed line-clamp-4">
+                  {result.overview || 'Sem descrição disponível.'}
+                </p>
+
+                <div className="flex gap-3 pt-1">
+                  {trailerKey && !showTrailer && (
+                    <Button
+                      onClick={() => {
+                        setShowTrailer(true);
+                        // Start 30s challenge timer
+                        trailerCreditedRef.current = false;
+                        if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
+                        trailerTimerRef.current = setTimeout(async () => {
+                          if (trailerCreditedRef.current) return;
+                          trailerCreditedRef.current = true;
+                          if (currentClient?.u) {
+                            try {
+                              const { data } = await supabase.functions.invoke('trailer-challenge', {
+                                method: 'POST',
+                                body: { username: currentClient.u, action: 'watch_trailer' },
+                              });
+                              if (data) {
+                                const w = data.trailers_watched || 0;
+                                const earned = data.point_earned;
+                                toast({
+                                  title: '🎬 Trailer assistido!',
+                                  description: earned
+                                    ? '🔥 +1 ponto! Meta diária completa!'
+                                    : `${w}/3 para completar o desafio de hoje`,
+                                });
+                                onTrailerWatched?.();
+                              }
+                            } catch { /* silent */ }
+                          }
+                        }, 30000);
+                      }}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                    >
+                      <Play className="w-4 h-4 mr-2" /> Assistir Trailer
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => onToggleFavorite(result.id)}
+                    className={`border-border ${favorites.has(result.id) ? 'bg-primary/10 text-primary border-primary/30' : 'text-foreground'}`}
+                  >
+                    {favorites.has(result.id) ? '❤️ Favoritado' : '🤍 Favoritar'}
+                  </Button>
                 </div>
               </div>
-
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                {result.overview || 'Sem descrição disponível.'}
-              </p>
-
-              <div className="flex gap-3 pt-2">
-                <Button onClick={() => onMovieClick(result)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                  <Play className="w-4 h-4 mr-2" /> Ver Detalhes
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => onToggleFavorite(result.id)}
-                  className={`border-border ${favorites.has(result.id) ? 'bg-primary/10 text-primary border-primary/30' : 'text-foreground'}`}
-                >
-                  {favorites.has(result.id) ? '❤️ Favoritado' : '🤍 Favoritar'}
-                </Button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
