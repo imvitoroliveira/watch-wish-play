@@ -26,12 +26,13 @@ function cleanTitle(title: string): string {
 }
 
 // Stream-parse M3U from a ReadableStream, processing line by line
-async function streamParseM3U(stream: ReadableStream<Uint8Array>): Promise<string[]> {
+async function streamParseM3U(stream: ReadableStream<Uint8Array>): Promise<{ titles: string[]; rawCount: number }> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   const titlesSet = new Set<string>();
   let buffer = "";
   let currentGroup = "";
+  let rawCount = 0;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -48,6 +49,7 @@ async function streamParseM3U(stream: ReadableStream<Uint8Array>): Promise<strin
       try {
         const trimmed = rawLine.trim();
         if (!trimmed || !trimmed.startsWith("#EXTINF:")) continue;
+        rawCount++;
 
         const groupMatch = trimmed.match(/group-title="([^"]+)"/);
         if (groupMatch) currentGroup = groupMatch[1];
@@ -100,19 +102,21 @@ async function streamParseM3U(stream: ReadableStream<Uint8Array>): Promise<strin
     } catch { /* skip */ }
   }
 
-  return [...titlesSet];
+  return { titles: [...titlesSet], rawCount };
 }
 
 // Parse from string (for content passed directly)
-function parseM3UTitles(content: string): string[] {
+function parseM3UTitles(content: string): { titles: string[]; rawCount: number } {
   const titlesSet = new Set<string>();
   const lines = content.split("\n");
   let currentGroup = "";
+  let rawCount = 0;
 
   for (const rawLine of lines) {
     try {
       const trimmed = rawLine.trim();
       if (!trimmed || !trimmed.startsWith("#EXTINF:")) continue;
+      rawCount++;
 
       const groupMatch = trimmed.match(/group-title="([^"]+)"/);
       if (groupMatch) currentGroup = groupMatch[1];
@@ -135,7 +139,7 @@ function parseM3UTitles(content: string): string[] {
     } catch { continue; }
   }
 
-  return [...titlesSet];
+  return { titles: [...titlesSet], rawCount };
 }
 
 // Fetch with retry and streaming support
@@ -214,14 +218,17 @@ Deno.serve(async (req) => {
       );
 
       let titles: string[];
+      let rawCount = 0;
 
       if (content) {
-        // Content passed directly - parse from string
-        titles = parseM3UTitles(content);
+        const result = parseM3UTitles(content);
+        titles = result.titles;
+        rawCount = result.rawCount;
       } else if (url) {
-        // URL provided - stream and parse without loading entire file in memory
         const stream = await fetchM3UStream(url);
-        titles = await streamParseM3U(stream);
+        const result = await streamParseM3U(stream);
+        titles = result.titles;
+        rawCount = result.rawCount;
       } else {
         return new Response(
           JSON.stringify({ error: "Provide a URL or content" }),
@@ -229,7 +236,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      console.log(`Parsed ${titles.length} unique titles`);
+      console.log(`Parsed ${rawCount} raw entries -> ${titles.length} unique titles`);
 
       // Save to DB
       await supabase.from("m3u_catalog").upsert(
@@ -243,7 +250,7 @@ Deno.serve(async (req) => {
       );
 
       return new Response(
-        JSON.stringify({ success: true, count: titles.length, titles }),
+        JSON.stringify({ success: true, count: titles.length, raw_count: rawCount, titles }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

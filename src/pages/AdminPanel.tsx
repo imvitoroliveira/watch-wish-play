@@ -51,7 +51,7 @@ const AdminPanel = () => {
       setM3uTitleCount(result.count);
       setM3uLastUpdate(new Date().toISOString());
       localStorage.setItem('msc_m3u_url', m3uUrl.trim());
-      toast({ title: 'M3U processado!', description: `${result.count} títulos VOD extraídos.` });
+      toast({ title: 'M3U processado!', description: `${result.rawCount || result.count} entradas → ${result.count} títulos únicos VOD.` });
     } else {
       toast({ title: 'Erro ao processar M3U', description: result.error || 'Tente colar o conteúdo diretamente.', variant: 'destructive' });
     }
