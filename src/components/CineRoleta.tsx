@@ -71,6 +71,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
   const [isMuted, setIsMuted] = useState(true);
   // The actual pool used for current spin (rendered directly, not via state for timing)
   const [displayPool, setDisplayPool] = useState<TMDBMovie[]>([]);
+  const [showIndicator, setShowIndicator] = useState(false);
 
   const stripRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -111,6 +112,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
     setResult(null);
     setShowResult(false);
     setTrailerKey(null);
+    setShowIndicator(true);
 
     try {
       // 1. Fetch 50 random titles from the full M3U catalog
@@ -269,13 +271,15 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       >
         {/* Center indicator — perfectly sized to frame one card */}
         <div
-          className="absolute z-20 pointer-events-none border-2 border-primary rounded-xl"
+          className="absolute z-20 pointer-events-none border-2 border-primary rounded-xl transition-opacity duration-300"
           style={{
             width: CARD_W + 4,
             height: CARD_H + 4,
             top: '50%',
             left: '50%',
-            transform: 'translate(-50%, -50%)',
+            marginTop: -(CARD_H + 4) / 2,
+            marginLeft: -(CARD_W + 4) / 2,
+            opacity: showIndicator ? 1 : 0,
             boxShadow: '0 0 15px hsl(var(--primary) / 0.5), 0 0 30px hsl(var(--primary) / 0.25), inset 0 0 15px hsl(var(--primary) / 0.1)',
           }}
         />
