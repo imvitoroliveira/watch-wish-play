@@ -189,7 +189,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       strip.style.transform = 'translateX(0)';
       void strip.offsetHeight;
 
-      const duration = 4000 + Math.random() * 1500;
+      const duration = 6000 + Math.random() * 1500;
       strip.style.transition = `transform ${duration}ms cubic-bezier(0.12, 0.8, 0.2, 1)`;
       strip.style.transform = `translateX(${finalX}px)`;
 
@@ -198,7 +198,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       let lastClickX = 0;
 
       const checkPosition = () => {
-        if (clickCount >= 40) return;
+        if (clickCount >= 60) return;
         const currentTransform = getComputedStyle(strip).transform;
         const matrix = new DOMMatrix(currentTransform);
         const currentX = Math.abs(matrix.m41);
@@ -370,19 +370,22 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       </div>
 
       {/* Spin button */}
-      <div className="text-center py-2">
+      <div className="flex justify-center py-4">
         <button
           onClick={spin}
           disabled={spinning || loading}
-          className="relative h-16 px-14 text-xl font-display rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/40 hover:shadow-primary/60 hover:scale-105 active:scale-95 transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100"
+          className="group relative h-14 px-10 text-lg font-display rounded-full bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/50 hover:scale-105 active:scale-95 transition-all duration-300 disabled:opacity-50 disabled:hover:scale-100 overflow-hidden"
         >
-          {loading ? (
-            <><Loader2 className="w-7 h-7 inline mr-3 animate-spin" /> PREPARANDO...</>
-          ) : spinning ? (
-            <><Dices className="w-7 h-7 inline mr-3 animate-spin" /> GIRANDO...</>
-          ) : (
-          <><Dices className="w-7 h-7 inline mr-3" /> 🎬 {mediaType === 'tv' ? 'SORTEAR SÉRIE!' : 'SORTEAR FILME!'}</>
-          )}
+          <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700" />
+          <span className="relative flex items-center gap-3">
+            {loading ? (
+              <><Loader2 className="w-6 h-6 animate-spin" /> PREPARANDO...</>
+            ) : spinning ? (
+              <><Dices className="w-6 h-6 animate-spin" /> GIRANDO...</>
+            ) : (
+              <><Dices className="w-6 h-6" /> {mediaType === 'tv' ? 'SORTEAR SÉRIE' : 'SORTEAR FILME'}</>
+            )}
+          </span>
         </button>
       </div>
 
