@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock } from 'lucide-react';
+import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Megaphone, Bell } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { processM3UViaBackend, clearM3UCatalog, fetchM3UCatalog } from '@/lib/m3u-parser';
 
@@ -21,6 +22,14 @@ const AdminPanel = () => {
   const [m3uLoading, setM3uLoading] = useState(false);
   const [m3uTitleCount, setM3uTitleCount] = useState(0);
   const [m3uLastUpdate, setM3uLastUpdate] = useState<string | null>(null);
+  
+  // Webhook states
+  const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('msc_webhook_url') || '');
+  const [webhookLoading, setWebhookLoading] = useState(false);
+  const [campaignTitle, setCampaignTitle] = useState('');
+  const [campaignMessage, setCampaignMessage] = useState('');
+  const [campaignWebhookUrl, setCampaignWebhookUrl] = useState(() => localStorage.getItem('msc_campaign_webhook_url') || '');
+  const [campaignLoading, setCampaignLoading] = useState(false);
 
   // Load catalog info via edge function (no direct DB access)
   useEffect(() => {
@@ -64,6 +73,61 @@ const AdminPanel = () => {
     setM3uTitleCount(0);
     setM3uLastUpdate(null);
     toast({ title: 'Lista M3U removida', description: 'O catálogo voltará a exibir tendências.' });
+  };
+
+  const handleCheckExpiring = async () => {
+    if (!webhookUrl.trim()) {
+      toast({ title: 'URL não definida', description: 'Configure a URL do webhook primeiro.', variant: 'destructive' });
+      return;
+    }
+    setWebhookLoading(true);
+    try {
+      const now = new Date();
+      const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+      const expiring = clientList.filter(c => {
+        if (!c.e) return false;
+        const exp = new Date(c.e);
+        return exp >= now && exp <= threeDaysLater;
+      });
+      const res = await fetch(webhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'expiring_clients', clients: expiring, total: expiring.length }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      localStorage.setItem('msc_webhook_url', webhookUrl.trim());
+      toast({ title: 'Webhook disparado!', description: `${expiring.length} clientes com vencimento em 3 dias enviados.` });
+    } catch (e: any) {
+      toast({ title: 'Erro ao disparar webhook', description: e.message, variant: 'destructive' });
+    }
+    setWebhookLoading(false);
+  };
+
+  const handleSendCampaign = async () => {
+    if (!campaignWebhookUrl.trim()) {
+      toast({ title: 'URL não definida', description: 'Configure a URL do webhook de campanhas.', variant: 'destructive' });
+      return;
+    }
+    if (!campaignTitle.trim() || !campaignMessage.trim()) {
+      toast({ title: 'Campos obrigatórios', description: 'Preencha o título e a mensagem.', variant: 'destructive' });
+      return;
+    }
+    setCampaignLoading(true);
+    try {
+      const res = await fetch(campaignWebhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'campaign', title: campaignTitle.trim(), message: campaignMessage.trim() }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      localStorage.setItem('msc_campaign_webhook_url', campaignWebhookUrl.trim());
+      toast({ title: 'Campanha disparada!', description: 'Mensagem enviada via webhook.' });
+      setCampaignTitle('');
+      setCampaignMessage('');
+    } catch (e: any) {
+      toast({ title: 'Erro ao disparar campanha', description: e.message, variant: 'destructive' });
+    }
+    setCampaignLoading(false);
   };
 
   const [loginLoading, setLoginLoading] = useState(false);
@@ -224,109 +288,168 @@ const AdminPanel = () => {
           </motion.div>
         </div>
 
-        {/* Upload */}
-        <div className="bg-card rounded-xl border border-border p-6 mb-8">
-          <h2 className="text-xl font-display text-foreground mb-3">IMPORTAR LISTA DE CLIENTES</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            Faça upload do arquivo JSON ou HTML extraído do painel. O sistema lerá os campos <code className="text-accent">u</code>, <code className="text-accent">p</code>, <code className="text-accent">e</code> e <code className="text-accent">t</code>.
-          </p>
-          <input ref={fileRef} type="file" accept=".json,.html,.htm" onChange={handleFileUpload} className="hidden" />
-          <Button onClick={() => fileRef.current?.click()} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
-            <Upload className="w-4 h-4 mr-2" /> Selecionar Arquivo
-          </Button>
-        </div>
+        <Tabs defaultValue="geral" className="space-y-6">
+          <TabsList className="bg-secondary border border-border">
+            <TabsTrigger value="geral">Geral</TabsTrigger>
+            <TabsTrigger value="vencimentos">Vencimentos</TabsTrigger>
+            <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
+          </TabsList>
 
-        {/* M3U Validation */}
-        <div className="bg-card rounded-xl border border-border p-6 mb-8">
-          <h2 className="text-xl font-display text-foreground mb-3 flex items-center gap-2">
-            <Link className="w-5 h-5 text-accent" />
-            VALIDAÇÃO M3U
-          </h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            Cole a URL M3U ou o conteúdo diretamente. O sistema extrairá os títulos VOD para filtrar o catálogo.
-          </p>
-
-          <div className="space-y-3">
-            <Input
-              value={m3uUrl}
-              onChange={e => {
-                // Sanitize: only allow valid URL characters
-                const sanitized = e.target.value.replace(/[<>"'`;(){}]/g, '');
-                setM3uUrl(sanitized);
-              }}
-              placeholder="URL da lista M3U (ex: http://...)"
-              className="h-10 bg-background border-border text-foreground"
-              maxLength={500}
-            />
-            <textarea
-              value={m3uContent}
-              onChange={e => {
-                // Sanitize: strip script tags and event handlers
-                const sanitized = e.target.value
-                  .replace(/<script[\s\S]*?<\/script>/gi, '')
-                  .replace(/on\w+="[^"]*"/gi, '');
-                setM3uContent(sanitized);
-              }}
-              placeholder="Ou cole o conteúdo M3U aqui..."
-              className="w-full h-32 rounded-lg bg-background border border-border text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={handleM3uProcess}
-                disabled={m3uLoading}
-                className="bg-accent text-accent-foreground hover:bg-accent/90"
-              >
-                {m3uLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-                Processar M3U
+          <TabsContent value="geral" className="space-y-8">
+            {/* Upload */}
+            <div className="bg-card rounded-xl border border-border p-6">
+              <h2 className="text-xl font-display text-foreground mb-3">IMPORTAR LISTA DE CLIENTES</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Faça upload do arquivo JSON ou HTML extraído do painel. O sistema lerá os campos <code className="text-accent">u</code>, <code className="text-accent">p</code>, <code className="text-accent">e</code> e <code className="text-accent">t</code>.
+              </p>
+              <input ref={fileRef} type="file" accept=".json,.html,.htm" onChange={handleFileUpload} className="hidden" />
+              <Button onClick={() => fileRef.current?.click()} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
+                <Upload className="w-4 h-4 mr-2" /> Selecionar Arquivo
               </Button>
-              {m3uTitleCount > 0 && (
-                <Button variant="outline" onClick={clearM3u} className="border-border text-foreground">
-                  Limpar Lista
-                </Button>
-              )}
-              {m3uTitleCount > 0 && (
-                <span className="text-sm text-accent font-medium">
-                  ✅ {m3uTitleCount} títulos VOD carregados
-                </span>
-              )}
             </div>
-          </div>
-        </div>
 
-        {/* Client list preview */}
-        {clientList.length > 0 && (
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
-            <div className="p-4 border-b border-border">
-              <h3 className="font-display text-lg text-foreground">LISTA DE CLIENTES</h3>
+            {/* M3U Validation */}
+            <div className="bg-card rounded-xl border border-border p-6">
+              <h2 className="text-xl font-display text-foreground mb-3 flex items-center gap-2">
+                <Link className="w-5 h-5 text-accent" />
+                VALIDAÇÃO M3U
+              </h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Cole a URL M3U ou o conteúdo diretamente. O sistema extrairá os títulos VOD para filtrar o catálogo.
+              </p>
+              <div className="space-y-3">
+                <Input
+                  value={m3uUrl}
+                  onChange={e => {
+                    const sanitized = e.target.value.replace(/[<>"'`;(){}]/g, '');
+                    setM3uUrl(sanitized);
+                  }}
+                  placeholder="URL da lista M3U (ex: http://...)"
+                  className="h-10 bg-background border-border text-foreground"
+                  maxLength={500}
+                />
+                <textarea
+                  value={m3uContent}
+                  onChange={e => {
+                    const sanitized = e.target.value
+                      .replace(/<script[\s\S]*?<\/script>/gi, '')
+                      .replace(/on\w+="[^"]*"/gi, '');
+                    setM3uContent(sanitized);
+                  }}
+                  placeholder="Ou cole o conteúdo M3U aqui..."
+                  className="w-full h-32 rounded-lg bg-background border border-border text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button onClick={handleM3uProcess} disabled={m3uLoading} className="bg-accent text-accent-foreground hover:bg-accent/90">
+                    {m3uLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                    Processar M3U
+                  </Button>
+                  {m3uTitleCount > 0 && (
+                    <Button variant="outline" onClick={clearM3u} className="border-border text-foreground">Limpar Lista</Button>
+                  )}
+                  {m3uTitleCount > 0 && (
+                    <span className="text-sm text-accent font-medium">✅ {m3uTitleCount} títulos VOD carregados</span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="overflow-x-auto max-h-96 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-secondary">
-                  <tr>
-                    <th className="text-left p-3 text-muted-foreground font-medium">Usuário</th>
-                    <th className="text-left p-3 text-muted-foreground font-medium">Expiração</th>
-                    <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clientList.slice(0, 50).map((c, i) => (
-                    <tr key={i} className="border-t border-border hover:bg-secondary/50 transition-colors">
-                      <td className="p-3 text-foreground">{c.u}</td>
-                      <td className="p-3 text-muted-foreground">{c.e || '-'}</td>
-                      <td className="p-3">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
-                          c.t?.toLowerCase() === 'ativo' ? 'bg-green-500/20 text-green-400' : 'bg-primary/20 text-primary'
-                        }`}>
-                          {c.t || 'N/A'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            {/* Client list preview */}
+            {clientList.length > 0 && (
+              <div className="bg-card rounded-xl border border-border overflow-hidden">
+                <div className="p-4 border-b border-border">
+                  <h3 className="font-display text-lg text-foreground">LISTA DE CLIENTES</h3>
+                </div>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-secondary">
+                      <tr>
+                        <th className="text-left p-3 text-muted-foreground font-medium">Usuário</th>
+                        <th className="text-left p-3 text-muted-foreground font-medium">Expiração</th>
+                        <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {clientList.slice(0, 50).map((c, i) => (
+                        <tr key={i} className="border-t border-border hover:bg-secondary/50 transition-colors">
+                          <td className="p-3 text-foreground">{c.u}</td>
+                          <td className="p-3 text-muted-foreground">{c.e || '-'}</td>
+                          <td className="p-3">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
+                              c.t?.toLowerCase() === 'ativo' ? 'bg-green-500/20 text-green-400' : 'bg-primary/20 text-primary'
+                            }`}>
+                              {c.t || 'N/A'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="vencimentos">
+            <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+              <h2 className="text-xl font-display text-foreground flex items-center gap-2">
+                <Bell className="w-5 h-5 text-accent" />
+                AUTOMAÇÃO DE VENCIMENTOS
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Dispare um webhook com a lista de clientes cujas mensalidades expiram nos próximos 3 dias.
+              </p>
+              <Input
+                value={webhookUrl}
+                onChange={e => setWebhookUrl(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
+                placeholder="URL do Webhook (n8n/Evolution)"
+                className="h-10 bg-background border-border text-foreground"
+                maxLength={500}
+              />
+              <Button onClick={handleCheckExpiring} disabled={webhookLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                {webhookLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                Verificar Vencimentos
+              </Button>
             </div>
-          </div>
-        )}
+          </TabsContent>
+
+          <TabsContent value="campanhas">
+            <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+              <h2 className="text-xl font-display text-foreground flex items-center gap-2">
+                <Megaphone className="w-5 h-5 text-accent" />
+                CAMPANHAS DE MARKETING
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Envie mensagens de marketing para seus clientes via webhook n8n/Evolution.
+              </p>
+              <Input
+                value={campaignWebhookUrl}
+                onChange={e => setCampaignWebhookUrl(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
+                placeholder="URL do Webhook de Campanhas"
+                className="h-10 bg-background border-border text-foreground"
+                maxLength={500}
+              />
+              <Input
+                value={campaignTitle}
+                onChange={e => setCampaignTitle(e.target.value)}
+                placeholder="Título da campanha"
+                className="h-10 bg-background border-border text-foreground"
+                maxLength={200}
+              />
+              <textarea
+                value={campaignMessage}
+                onChange={e => setCampaignMessage(e.target.value)}
+                placeholder="Mensagem da campanha..."
+                className="w-full h-32 rounded-lg bg-background border border-border text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                maxLength={2000}
+              />
+              <Button onClick={handleSendCampaign} disabled={campaignLoading} className="bg-accent text-accent-foreground hover:bg-accent/90">
+                {campaignLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+                Disparar via n8n
+              </Button>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

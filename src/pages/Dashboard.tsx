@@ -4,9 +4,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getTrending, TMDBMovie, searchMovies, searchByTitles } from '@/lib/tmdb';
 import { fetchM3UCatalog, normalizeTitle, isInM3UCatalog } from '@/lib/m3u-parser';
 import { motion } from 'framer-motion';
-import { Film, Search, Heart, Clock, Dices, HelpCircle, LogOut, Trophy } from 'lucide-react';
+import { Film, Search, Heart, Clock, Dices, HelpCircle, LogOut, Trophy, Menu, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
+import { useIsMobile } from '@/hooks/use-mobile';
 import MovieCard from '@/components/MovieCard';
 import MovieModal from '@/components/MovieModal';
 import CineRoleta from '@/components/CineRoleta';
@@ -16,11 +18,13 @@ import AgendaJogos from '@/components/AgendaJogos';
 import CineTrailerChallenge from '@/components/CineTrailerChallenge';
 import { supabase } from '@/integrations/supabase/client';
 
-type Tab = 'home' | 'watchlist' | 'history' | 'roleta' | 'jogos' | 'support';
+type Tab = 'home' | 'watchlist' | 'roleta' | 'jogos' | 'support';
 
 const Dashboard = () => {
   const { currentClient, isClient, isExpiringSoon, logout } = useAuth();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('home');
   const [movies, setMovies] = useState<TMDBMovie[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -129,12 +133,11 @@ const Dashboard = () => {
   const watchedMovies = movies.filter(m => watchedSet.has(m.id));
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'home', label: 'Início', icon: <Film className="w-4 h-4" /> },
-    { id: 'watchlist', label: 'Favoritos', icon: <Heart className="w-4 h-4" /> },
-    { id: 'history', label: 'Assistidos', icon: <Clock className="w-4 h-4" /> },
+    { id: 'home', label: 'Explorar', icon: <Film className="w-4 h-4" /> },
+    { id: 'watchlist', label: 'Minha Lista', icon: <Heart className="w-4 h-4" /> },
     { id: 'roleta', label: 'Cine-Roleta', icon: <Dices className="w-4 h-4" /> },
-    { id: 'jogos', label: 'Jogos VIP', icon: <Trophy className="w-4 h-4" /> },
-    { id: 'support', label: 'Suporte', icon: <HelpCircle className="w-4 h-4" /> },
+    { id: 'jogos', label: 'Agenda Esportiva', icon: <Trophy className="w-4 h-4" /> },
+    { id: 'support', label: 'Central de Ajuda', icon: <HelpCircle className="w-4 h-4" /> },
   ];
 
   const renderMovieCard = (movie: TMDBMovie) => (
@@ -160,6 +163,50 @@ const Dashboard = () => {
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-md border-b border-border">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
+            {isMobile && (
+              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <button className="text-foreground p-1">
+                    <Menu className="w-6 h-6" />
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-64 bg-card border-border p-0">
+                  <SheetTitle className="sr-only">Menu de navegação</SheetTitle>
+                  <div className="p-4 border-b border-border">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+                        <Film className="w-5 h-5 text-primary-foreground" />
+                      </div>
+                      <span className="font-display text-xl text-foreground tracking-wide">MEU STREAM</span>
+                    </div>
+                  </div>
+                  <nav className="p-3 space-y-1">
+                    {tabs.map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => { setTab(t.id); setMobileMenuOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                          tab === t.id
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                        }`}
+                      >
+                        {t.icon} {t.label}
+                      </button>
+                    ))}
+                  </nav>
+                  <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border">
+                    <p className="text-xs text-muted-foreground mb-2">{currentClient?.u}</p>
+                    <button
+                      onClick={() => { logout(); navigate('/'); }}
+                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" /> Sair
+                    </button>
+                  </div>
+                </SheetContent>
+              </Sheet>
+            )}
             <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
               <Film className="w-5 h-5 text-primary-foreground" />
             </div>
@@ -194,24 +241,26 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="max-w-7xl mx-auto px-4 pb-2">
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-            {tabs.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                  tab === t.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-card'
-                }`}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
+        {/* Tabs - desktop only */}
+        {!isMobile && (
+          <div className="max-w-7xl mx-auto px-4 pb-2">
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+              {tabs.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                    tab === t.id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-card'
+                  }`}
+                >
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
       {/* Content */}
@@ -246,25 +295,12 @@ const Dashboard = () => {
 
         {tab === 'watchlist' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <h2 className="text-2xl font-display text-foreground mb-4">MEUS FAVORITOS</h2>
+            <h2 className="text-2xl font-display text-foreground mb-4">MINHA LISTA</h2>
             {favoriteMovies.length === 0 ? (
-              <p className="text-muted-foreground text-center py-12">Você ainda não adicionou favoritos.</p>
+              <p className="text-muted-foreground text-center py-12">Você ainda não adicionou itens à sua lista.</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {favoriteMovies.map(renderMovieCard)}
-              </div>
-            )}
-          </motion.div>
-        )}
-
-        {tab === 'history' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <h2 className="text-2xl font-display text-foreground mb-4">JÁ ASSISTIDOS</h2>
-            {watchedMovies.length === 0 ? (
-              <p className="text-muted-foreground text-center py-12">Marque filmes como assistidos para acompanhar seu histórico.</p>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                {watchedMovies.map(renderMovieCard)}
               </div>
             )}
           </motion.div>

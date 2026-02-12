@@ -68,6 +68,7 @@ function dedupeMovies(movies: TMDBMovie[]): TMDBMovie[] {
 const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite, onToggleWatched, onTrailerWatched }: CineRoletaProps) => {
   const { currentClient } = useAuth();
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
+  const [mediaType, setMediaType] = useState<'movie' | 'tv'>('movie');
   const [result, setResult] = useState<TMDBMovie | null>(null);
   const [spinning, setSpinning] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -133,7 +134,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       }
 
       // 2. Search TMDB for those M3U titles to get metadata (posters, etc.)
-      let combined = await searchByTitles(randomTitles, randomTitles.length);
+      let combined = await searchByTitles(randomTitles, randomTitles.length, mediaType);
 
       // 3. Filter by genre if selected
       if (selectedGenre) {
@@ -249,6 +250,32 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         <p className="text-muted-foreground text-sm">Não sabe o que assistir? Deixe a sorte decidir!</p>
       </div>
 
+      {/* Media type toggle */}
+      <div className="flex justify-center">
+        <div className="inline-flex rounded-xl bg-secondary p-1 gap-1">
+          <button
+            onClick={() => { if (!spinning && !loading) setMediaType('movie'); }}
+            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              mediaType === 'movie'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            🎬 Filmes
+          </button>
+          <button
+            onClick={() => { if (!spinning && !loading) setMediaType('tv'); }}
+            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              mediaType === 'tv'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            📺 Séries
+          </button>
+        </div>
+      </div>
+
       {/* Genre selection */}
       <div>
         <p className="text-sm font-medium text-muted-foreground mb-3">Filtrar por gênero (opcional):</p>
@@ -354,7 +381,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
           ) : spinning ? (
             <><Dices className="w-7 h-7 inline mr-3 animate-spin" /> GIRANDO...</>
           ) : (
-            <><Dices className="w-7 h-7 inline mr-3" /> 🎬 SORTEAR FILME!</>
+          <><Dices className="w-7 h-7 inline mr-3" /> 🎬 {mediaType === 'tv' ? 'SORTEAR SÉRIE!' : 'SORTEAR FILME!'}</>
           )}
         </button>
       </div>
