@@ -40,7 +40,8 @@ const AgendaJogos = () => {
 
   useEffect(() => {
     loadMatches();
-    const interval = setInterval(loadMatches, hasLiveMatches ? 30000 : 60000);
+    // 5 min for live matches, 15 min otherwise — reads from cache only
+    const interval = setInterval(loadMatches, hasLiveMatches ? 5 * 60000 : 15 * 60000);
     return () => clearInterval(interval);
   }, [loadMatches, hasLiveMatches]);
 
@@ -108,7 +109,7 @@ const AgendaJogos = () => {
       <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-6 pb-1">
         <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>Todos</FilterChip>
         <FilterChip active={filter === 'live'} onClick={() => setFilter('live')}>
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Ao Vivo
+          <span className="w-1.5 h-1.5 rounded-full bg-primary" /> Ao Vivo
         </FilterChip>
         {leagues.map(l => (
           <FilterChip key={l} active={filter === l} onClick={() => setFilter(l)}>{l}</FilterChip>
@@ -203,12 +204,9 @@ function MatchCard({
         </div>
         <div className="flex items-center gap-2">
           {live && (
-            <span className="relative flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
-              <span className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" />
-              <span className="relative flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                Ao Vivo {match.elapsed ? `• ${match.elapsed}'` : ''}
-              </span>
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+              Ao Vivo {match.elapsed ? `• ${match.elapsed}'` : ''}
             </span>
           )}
           {finished && (

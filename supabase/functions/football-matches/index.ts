@@ -83,8 +83,9 @@ Deno.serve(async (req) => {
       const hasLive = matches.some((m: any) =>
         ["1H", "HT", "2H", "AET", "PEN", "LIVE"].includes(m.status)
       );
-      // Fresh cache: return if no live matches or cache < 2 min old
-      if (!hasLive || cacheAge < 120000) {
+      // 5 min for live matches, 15 min for scheduled — preserves API quota
+      const maxAge = hasLive ? 5 * 60 * 1000 : 15 * 60 * 1000;
+      if (cacheAge < maxAge) {
         console.log(`[Cache HIT] ${matches.length} matches, age: ${Math.round(cacheAge/1000)}s`);
         return new Response(JSON.stringify(matches), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
