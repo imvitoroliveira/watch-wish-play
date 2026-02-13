@@ -4,8 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getTrending, TMDBMovie, searchMovies, searchByTitles } from '@/lib/tmdb';
 import { fetchM3UCatalog, normalizeTitle, isInM3UCatalog } from '@/lib/m3u-parser';
 import { motion } from 'framer-motion';
-import { Search, Heart, Clock, Dices, HelpCircle, LogOut, Trophy, Menu, X } from 'lucide-react';
-import logoEagle from '@/assets/logo-eagle.png';
+import { Film, Search, Heart, Clock, Dices, HelpCircle, LogOut, Trophy, Menu, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
@@ -148,7 +147,7 @@ const Dashboard = () => {
   const watchedMovies = movies.filter(m => watchedSet.has(m.id));
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'home', label: 'Explorar', icon: <img src={logoEagle} alt="" className="w-4 h-4 object-contain" /> },
+    { id: 'home', label: 'Explorar', icon: <Film className="w-4 h-4" /> },
     { id: 'watchlist', label: 'Minha Lista', icon: <Heart className="w-4 h-4" /> },
     { id: 'roleta', label: 'Cine-Roleta', icon: <Dices className="w-4 h-4" /> },
     { id: 'jogos', label: 'Agenda Esportiva', icon: <Trophy className="w-4 h-4" /> },
@@ -189,8 +188,10 @@ const Dashboard = () => {
                   <SheetTitle className="sr-only">Menu de navegação</SheetTitle>
                   <div className="p-4 border-b border-border">
                     <div className="flex items-center gap-2.5">
-                      <img src={logoEagle} alt="StreamTV" className="w-9 h-9 rounded-lg object-contain" />
-                      <span className="font-display text-xl text-foreground tracking-wide">STREAMTV</span>
+                      <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+                        <Film className="w-5 h-5 text-primary-foreground" />
+                      </div>
+                      <span className="font-display text-xl text-foreground tracking-wide">MEU STREAM</span>
                     </div>
                   </div>
                   <nav className="p-3 space-y-1">
@@ -220,8 +221,10 @@ const Dashboard = () => {
                 </SheetContent>
               </Sheet>
             )}
-            <img src={logoEagle} alt="StreamTV" className="w-9 h-9 rounded-lg object-contain" />
-            <span className="font-display text-xl text-foreground tracking-wide hidden sm:block">STREAMTV</span>
+            <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
+              <Film className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <span className="font-display text-xl text-foreground tracking-wide hidden sm:block">MEU STREAM</span>
           </div>
 
           {tab === 'home' && (
