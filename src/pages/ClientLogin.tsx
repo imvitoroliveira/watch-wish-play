@@ -54,10 +54,7 @@ const ClientLogin = () => {
             transition={{ delay: 0.2, type: 'spring' }}
             className="inline-flex items-center gap-3 mb-4"
           >
-            <img src={logoEagle} alt="StreamTV" className="w-14 h-14 object-contain" style={{ filter: 'drop-shadow(0 0 20px hsl(0 72% 51% / 0.5))' }} />
-            <h1 className="text-4xl font-display tracking-wide text-foreground">
-              STREAMTV
-            </h1>
+            <img src={logoEagle} alt="StreamTV" className="w-24 h-24 object-contain" style={{ filter: 'drop-shadow(0 0 30px hsl(0 72% 51% / 0.5))' }} />
           </motion.div>
           <p className="text-muted-foreground text-sm">
             O seu cinema pessoal. Entre para começar.
