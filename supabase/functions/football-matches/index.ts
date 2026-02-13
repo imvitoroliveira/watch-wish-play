@@ -8,15 +8,13 @@ const corsHeaders = {
 
 // Premium leagues whitelist
 const PREMIUM_LEAGUES = new Set([
-  "laliga", "la liga", "bundesliga", "serie a", "ligue 1", "premier league",
+  "laliga", "la liga", "bundesliga", "serie a",
   "champions league", "liga dos campeões", "europa league", "liga europa",
-  "conference league", "brasileirão", "campeonato brasileiro",
+  "brasileirão", "campeonato brasileiro",
   "copa do brasil", "copa libertadores", "libertadores",
   "copa sul-americana", "sul-americana", "eliminatórias",
-  "copa do mundo", "fa cup", "taça de inglaterra", "taça de espanha",
-  "copa del rey", "coppa italia", "coupe de france", "dfb pokal",
-  "supercopa", "campeonato paulista", "campeonato carioca",
-  "recopa sul-americana",
+  "copa do mundo", "supercopa",
+  "recopa sul-americana", "amistoso",
 ]);
 
 function isPremiumLeague(name: string): boolean {
@@ -56,16 +54,13 @@ const BROADCAST_MAP: Record<string, string[]> = {
   "sul-americana": ["Paramount+", "SBT", "ESPN"],
   "champions league": ["TNT", "HBO Max"],
   "europa league": ["ESPN", "Star+"],
-  "premier league": ["ESPN", "Star+"],
-  "fa cup": ["ESPN", "Star+"],
   "laliga": ["ESPN", "Star+"], "la liga": ["ESPN", "Star+"],
   "bundesliga": ["CazéTV", "OneFootball"],
   "serie a": ["ESPN", "Star+"],
-  "ligue 1": ["CazéTV"],
-  "campeonato paulista": ["Record", "CazéTV", "Premiere"],
-  "campeonato carioca": ["Band", "SporTV", "Premiere"],
+  "supercopa": ["Globo", "SporTV"],
   "eliminatórias": ["Globo", "SporTV", "CazéTV"],
   "copa do mundo": ["Globo", "SporTV", "CazéTV"],
+  "amistoso": ["SporTV", "ESPN"],
 };
 
 function getBroadcast(leagueName: string): string[] {
