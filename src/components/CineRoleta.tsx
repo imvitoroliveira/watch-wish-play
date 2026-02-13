@@ -189,7 +189,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       strip.style.transform = 'translateX(0)';
       void strip.offsetHeight;
 
-      const duration = 6000 + Math.random() * 1500;
+      const duration = 10000 + Math.random() * 1500;
       strip.style.transition = `transform ${duration}ms cubic-bezier(0.12, 0.8, 0.2, 1)`;
       strip.style.transform = `translateX(${finalX}px)`;
 
@@ -198,7 +198,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       let lastClickX = 0;
 
       const checkPosition = () => {
-        if (clickCount >= 60) return;
+        if (clickCount >= 100) return;
         const currentTransform = getComputedStyle(strip).transform;
         const matrix = new DOMMatrix(currentTransform);
         const currentX = Math.abs(matrix.m41);
