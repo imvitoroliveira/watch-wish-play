@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw } from 'lucide-react';
 import { Match, getTodayMatches, isLive, getStatusLabel } from '@/lib/football-api';
@@ -9,10 +9,8 @@ const AgendaJogos = () => {
   const { currentClient } = useAuth();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
-  const initialLoad = useRef(true);
 
   // Load reminders from DB
   useEffect(() => {
@@ -32,26 +30,18 @@ const AgendaJogos = () => {
   }, [currentClient?.u]);
 
   const loadMatches = useCallback(async () => {
-    // Silent refresh: only show full loading on first load
-    if (initialLoad.current) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
-
+    setLoading(true);
     const data = await getTodayMatches();
     setMatches(data);
     setLoading(false);
-    setRefreshing(false);
-    initialLoad.current = false;
   }, []);
 
   const hasLiveMatches = matches.some(m => isLive(m.status));
 
   useEffect(() => {
     loadMatches();
-    // 3 min for live, 15 min otherwise — silent background refresh
-    const interval = setInterval(loadMatches, hasLiveMatches ? 3 * 60000 : 15 * 60000);
+    // 5 min for live matches, 15 min otherwise — reads from cache only
+    const interval = setInterval(loadMatches, hasLiveMatches ? 5 * 60000 : 15 * 60000);
     return () => clearInterval(interval);
   }, [loadMatches, hasLiveMatches]);
 
@@ -110,7 +100,7 @@ const AgendaJogos = () => {
           onClick={loadMatches}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground transition-colors text-xs"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Atualizar
         </button>
       </div>
@@ -126,8 +116,7 @@ const AgendaJogos = () => {
         ))}
       </div>
 
-      {/* Only show full loading spinner on initial load, never skeletons */}
-      {loading && matches.length === 0 ? (
+      {loading ? (
         <div className="flex items-center justify-center py-16">
           <RefreshCw className="w-8 h-8 text-primary animate-spin" />
         </div>
@@ -170,7 +159,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
         active
           ? 'bg-primary text-primary-foreground'
-          : 'bg-[#000000] border border-white/10 text-muted-foreground hover:text-foreground'
+          : 'bg-card border border-border text-muted-foreground hover:text-foreground'
       }`}
     >
       {children}
@@ -194,13 +183,13 @@ function MatchCard({
   const upcoming = match.status === 'NS';
 
   return (
-    <div className={`relative rounded-xl overflow-hidden transition-all ${
+    <div className={`relative rounded-xl border overflow-hidden transition-all ${
       live
-        ? 'border border-primary/30 bg-[#000000] shadow-lg shadow-primary/10'
-        : 'border border-white/5 bg-[#000000]'
+        ? 'border-primary/50 bg-gradient-to-r from-primary/5 via-card to-primary/5 shadow-lg shadow-primary/10'
+        : 'border-border bg-card hover:border-border/80'
     }`}>
       {/* League header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white/[0.03] border-b border-white/5">
+      <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50">
         <div className="flex items-center gap-2">
           <img
             src={match.league.logo}
@@ -216,7 +205,7 @@ function MatchCard({
         <div className="flex items-center gap-2">
           {live && (
             <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               Ao Vivo {match.elapsed ? `• ${match.elapsed}'` : ''}
             </span>
           )}
@@ -291,13 +280,13 @@ function MatchCard({
         </div>
 
         {/* Bottom bar: broadcast + reminder */}
-        <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
+        <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Tv className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
             {match.broadcast.map(ch => (
               <span
                 key={ch}
-                className="px-2 py-0.5 rounded bg-white/5 text-[10px] font-medium text-muted-foreground"
+                className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground"
               >
                 {ch}
               </span>
@@ -310,7 +299,7 @@ function MatchCard({
               className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 hasReminder
                   ? 'bg-primary/20 text-primary border border-primary/30'
-                  : 'bg-white/5 text-muted-foreground hover:text-foreground border border-transparent'
+                  : 'bg-muted/50 text-muted-foreground hover:text-foreground border border-transparent'
               }`}
             >
               {hasReminder ? (
