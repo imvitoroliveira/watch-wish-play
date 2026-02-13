@@ -161,7 +161,7 @@ const SupportTickets = () => {
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-3xl font-display text-foreground mb-2">
-          <HelpCircle className="w-6 h-6 inline mr-2 text-blue-400" />
+          <HelpCircle className="w-6 h-6 inline mr-2 text-primary" />
           SUPORTE
         </h2>
         <p className="text-muted-foreground text-sm">Selecione o problema e receba a solução na hora</p>
