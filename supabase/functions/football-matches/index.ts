@@ -203,6 +203,9 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         url: "https://www.espn.com.br/futebol/resultados",
         formats: ["extract"],
+        maxAge: 0,
+        storeInCache: false,
+        headers: { "Cache-Control": "no-cache, no-store", "Pragma": "no-cache" },
         extract: {
           prompt:
             "Extract ALL football/soccer matches shown on this page for today. For each match extract: league_name (competition name like 'Ligue 1', 'LALIGA', 'Bundesliga', 'Serie A', 'Premier League', 'Champions League', etc.), home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '37' for live, 'F' for finished, 'HT' for half-time, or time like '21:30' for scheduled). Include ALL matches.",
@@ -228,7 +231,7 @@ Deno.serve(async (req) => {
             required: ["matches"],
           },
         },
-        waitFor: 3000,
+        waitFor: 5000,
       }),
     });
 
