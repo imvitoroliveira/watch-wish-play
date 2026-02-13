@@ -8,12 +8,24 @@ const corsHeaders = {
 
 const API_BASE = "https://v3.football.api-sports.io";
 
-// Brazilian & South American league IDs we want
+// Brazilian, South American & European league IDs
 const TARGET_LEAGUE_IDS = new Set([
-  71, 72, 75, 73, 475, 606, 625, // Nacional
-  352, 480,                       // Estaduais
-  13, 11, 535,                    // Continental
-  34, 10,                         // Seleções
+  // Brasil
+  71, 72, 75, 73, 475, 606, 625,
+  // Estaduais
+  352, 480,
+  // Continental SA
+  13, 11, 535,
+  // Seleções
+  34, 10,
+  // Europa - Top 5 + Champions
+  140,  // La Liga
+  78,   // Bundesliga
+  135,  // Serie A (Itália)
+  61,   // Ligue 1
+  2,    // Champions League
+  1,    // Copa do Mundo
+  3,    // Europa League
 ]);
 
 const BROADCAST_MAP: Record<number, string[]> = {
@@ -31,6 +43,13 @@ const BROADCAST_MAP: Record<number, string[]> = {
   535: ["ESPN", "SBT"],
   34: ["Globo", "SporTV", "CazéTV"],
   10: ["Globo", "SporTV", "ESPN"],
+  140: ["ESPN", "Star+"],
+  78: ["CazéTV", "OneFootball"],
+  135: ["ESPN", "Star+"],
+  61: ["CazéTV"],
+  2: ["TNT", "HBO Max"],
+  1: ["Globo", "SporTV", "CazéTV"],
+  3: ["ESPN", "Star+"],
 };
 
 Deno.serve(async (req) => {
