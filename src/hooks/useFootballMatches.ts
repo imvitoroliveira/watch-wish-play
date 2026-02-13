@@ -10,8 +10,16 @@ async function fetchMatchesFromDB(): Promise<Match[]> {
     .eq('cache_date', brDate)
     .maybeSingle();
 
-  if (error) throw error;
-  return (data?.matches as unknown as Match[]) || [];
+  if (error) {
+    console.error('[Football] DB query error:', error);
+    throw error;
+  }
+  
+  const matches = (data?.matches as unknown as Match[]) || [];
+  console.log(`[Football] Fetched ${matches.length} matches from DB, statuses:`, 
+    matches.map(m => `${m.homeTeam?.name} ${m.goals?.home}×${m.goals?.away} ${m.awayTeam?.name} [${m.status}]`).join(', ')
+  );
+  return matches;
 }
 
 export function useFootballMatches() {
@@ -21,5 +29,7 @@ export function useFootballMatches() {
     refetchInterval: 5000,
     placeholderData: (previousData) => previousData,
     staleTime: 0,
+    refetchOnWindowFocus: true,
+    gcTime: 0,
   });
 }
