@@ -36,13 +36,13 @@ const AgendaJogos = () => {
     setLoading(false);
   }, []);
 
+  const hasLiveMatches = matches.some(m => isLive(m.status));
+
   useEffect(() => {
     loadMatches();
-    // Poll every 30s for live updates, every 60s otherwise
-    const hasLive = matches.some(m => isLive(m.status));
-    const interval = setInterval(loadMatches, hasLive ? 30000 : 60000);
+    const interval = setInterval(loadMatches, hasLiveMatches ? 30000 : 60000);
     return () => clearInterval(interval);
-  }, [loadMatches, matches.some(m => isLive(m.status))]);
+  }, [loadMatches, hasLiveMatches]);
 
   const handleToggleReminder = async (match: Match) => {
     if (!currentClient?.u) return;
