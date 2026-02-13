@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Film, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Lock, User, Eye, EyeOff } from 'lucide-react';
+import logoEagle from '@/assets/logo-eagle.png';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
@@ -53,11 +54,9 @@ const ClientLogin = () => {
             transition={{ delay: 0.2, type: 'spring' }}
             className="inline-flex items-center gap-3 mb-4"
           >
-            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center glow-red">
-              <Film className="w-7 h-7 text-primary-foreground" />
-            </div>
+            <img src={logoEagle} alt="StreamTV" className="w-14 h-14 object-contain" style={{ filter: 'drop-shadow(0 0 20px hsl(250 70% 50% / 0.5))' }} />
             <h1 className="text-4xl font-display tracking-wide text-foreground">
-              MEU STREAM
+              STREAMTV
             </h1>
           </motion.div>
           <p className="text-muted-foreground text-sm">
