@@ -167,6 +167,33 @@ export type Database = {
         }
         Relationships: []
       }
+      team_badges: {
+        Row: {
+          badge_url: string
+          created_at: string
+          id: string
+          source: string
+          team_name: string
+          updated_at: string
+        }
+        Insert: {
+          badge_url?: string
+          created_at?: string
+          id?: string
+          source?: string
+          team_name: string
+          updated_at?: string
+        }
+        Update: {
+          badge_url?: string
+          created_at?: string
+          id?: string
+          source?: string
+          team_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       trailer_challenge: {
         Row: {
           challenge_date: string
