@@ -79,27 +79,55 @@ function getBroadcast(leagueName: string): string[] {
 // TheSportsDB free API for team badges
 const logoCache = new Map<string, string>();
 
+// Common name aliases for teams ESPN uses differently than TheSportsDB
+const TEAM_ALIASES: Record<string, string> = {
+  "Paris Saint-Germain": "Paris SG",
+  "PSG": "Paris SG",
+  "Atlético de Madrid": "Atletico Madrid",
+  "Atlético Madrid": "Atletico Madrid",
+  "Inter de Milão": "Inter Milan",
+  "Internazionale": "Inter Milan",
+  "B. Dortmund": "Borussia Dortmund",
+  "Mainz 05": "Mainz",
+  "RB Leipzig": "RB Leipzig",
+  "Bayern de Munique": "Bayern Munich",
+  "Bayer Leverkusen": "Bayer 04 Leverkusen",
+  "Wolverhampton": "Wolverhampton Wanderers",
+  "Man United": "Manchester United",
+  "Man City": "Manchester City",
+  "Nottm Forest": "Nottingham Forest",
+  "Tottenham": "Tottenham Hotspur",
+  "Newcastle": "Newcastle United",
+  "West Ham": "West Ham United",
+  "Sheffield Utd": "Sheffield United",
+  "Stade Brestois": "Stade Brestois 29",
+};
+
 async function resolveTeamLogo(teamName: string): Promise<string> {
   if (logoCache.has(teamName)) return logoCache.get(teamName)!;
 
-  try {
-    const res = await fetch(
-      `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(teamName)}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.teams && data.teams.length > 0) {
-        const badge = data.teams[0].strBadge || data.teams[0].strTeamBadge || "";
-        if (badge) {
-          // Use /small suffix for performance
-          const smallBadge = badge + "/small";
-          logoCache.set(teamName, smallBadge);
-          return smallBadge;
+  const namesToTry = [teamName];
+  if (TEAM_ALIASES[teamName]) namesToTry.push(TEAM_ALIASES[teamName]);
+
+  for (const name of namesToTry) {
+    try {
+      const res = await fetch(
+        `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(name)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.teams && data.teams.length > 0) {
+          const badge = data.teams[0].strBadge || data.teams[0].strTeamBadge || "";
+          if (badge) {
+            const smallBadge = badge + "/small";
+            logoCache.set(teamName, smallBadge);
+            return smallBadge;
+          }
         }
       }
+    } catch {
+      // silent
     }
-  } catch {
-    // silent
   }
 
   logoCache.set(teamName, "");
