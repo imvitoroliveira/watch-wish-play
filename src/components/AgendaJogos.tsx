@@ -1,16 +1,48 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw } from 'lucide-react';
 import { Match, getTodayMatches, isLive, getStatusLabel } from '@/lib/football-api';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 
 const AgendaJogos = () => {
   const { currentClient } = useAuth();
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
+
+  // Silent refresh with React Query
+  const { data: matches = [], isLoading: initialLoading, dataUpdatedAt } = useQuery({
+    queryKey: ['footballMatches'],
+    queryFn: getTodayMatches,
+    staleTime: 2 * 60 * 1000,
+    refetchInterval: (query) => {
+      const data = query.state.data as Match[] | undefined;
+      const hasLive = data?.some(m => isLive(m.status));
+      return hasLive ? 2 * 60 * 1000 : 10 * 60 * 1000;
+    },
+    refetchOnWindowFocus: false,
+    refetchIntervalInBackground: true,
+  });
+
+  // Halftime intelligence: if any match is HT for >20min, force refetch
+  useEffect(() => {
+    if (!matches.length) return;
+    const check = setInterval(() => {
+      const now = Date.now();
+      const staleHalftime = matches.some(m => {
+        if (m.status !== 'HT') return false;
+        // If data hasn't updated in 20min and match is still HT, force refresh
+        return (now - dataUpdatedAt) > 20 * 60 * 1000;
+      });
+      if (staleHalftime) {
+        queryClient.invalidateQueries({ queryKey: ['footballMatches'] });
+      }
+    }, 60 * 1000);
+    return () => clearInterval(check);
+  }, [matches, dataUpdatedAt, queryClient]);
 
   // Load reminders from DB
   useEffect(() => {
@@ -28,22 +60,6 @@ const AgendaJogos = () => {
     };
     loadReminders();
   }, [currentClient?.u]);
-
-  const loadMatches = useCallback(async () => {
-    setLoading(true);
-    const data = await getTodayMatches();
-    setMatches(data);
-    setLoading(false);
-  }, []);
-
-  const hasLiveMatches = matches.some(m => isLive(m.status));
-
-  useEffect(() => {
-    loadMatches();
-    // 5 min for live matches, 15 min otherwise — reads from cache only
-    const interval = setInterval(loadMatches, hasLiveMatches ? 5 * 60000 : 15 * 60000);
-    return () => clearInterval(interval);
-  }, [loadMatches, hasLiveMatches]);
 
   const handleToggleReminder = async (match: Match) => {
     if (!currentClient?.u) return;
@@ -73,7 +89,7 @@ const AgendaJogos = () => {
     }
   };
 
-  const leagues = [...new Set(matches.map(m => m.league.name))];
+  const leagues = useMemo(() => [...new Set(matches.map(m => m.league.name))], [matches]);
 
   const filteredMatches = filter === 'all'
     ? matches
@@ -86,6 +102,9 @@ const AgendaJogos = () => {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
+  // Only show skeleton on first ever load, never again
+  const showSkeleton = initialLoading && matches.length === 0;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -96,13 +115,6 @@ const AgendaJogos = () => {
           </h2>
           <p className="text-sm text-muted-foreground mt-1">Jogos de hoje • Brasil & Europa</p>
         </div>
-        <button
-          onClick={loadMatches}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground transition-colors text-xs"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
       </div>
 
       {/* Filters */}
@@ -116,9 +128,11 @@ const AgendaJogos = () => {
         ))}
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+      {showSkeleton ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="rounded-xl border border-border bg-card animate-pulse h-36" />
+          ))}
         </div>
       ) : filteredMatches.length === 0 ? (
         <div className="text-center py-16">
