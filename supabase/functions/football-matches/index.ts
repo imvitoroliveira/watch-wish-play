@@ -275,7 +275,10 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         url: scrapeUrl,
         formats: ["markdown"],
-        waitFor: 5000,
+        waitFor: 15000,
+        actions: [
+          { type: "wait", milliseconds: 10000 },
+        ],
       }),
     });
 
