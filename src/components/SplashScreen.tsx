@@ -30,7 +30,7 @@ const SplashScreen = ({ onFinish }: { onFinish: () => void }) => {
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.6, type: 'spring' }}
             style={{
-              filter: 'drop-shadow(0 0 40px hsl(260 80% 60% / 0.6)) drop-shadow(0 0 80px hsl(210 90% 55% / 0.3))',
+              filter: 'drop-shadow(0 0 40px hsl(0 72% 51% / 0.6)) drop-shadow(0 0 80px hsl(43 96% 56% / 0.3))',
             }}
           />
           <motion.p
