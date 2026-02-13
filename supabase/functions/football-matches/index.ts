@@ -159,7 +159,7 @@ Deno.serve(async (req) => {
       const hasLive = matches.some((m: any) =>
         ["1H", "HT", "2H", "AET", "PEN", "LIVE"].includes(m.status)
       );
-      const maxAge = hasLive ? 5 * 60 * 1000 : 15 * 60 * 1000;
+      const maxAge = hasLive ? 3 * 60 * 1000 : 15 * 60 * 1000;
       if (cacheAge < maxAge) {
         console.log(`[Cache HIT] ${matches.length} matches, age: ${Math.round(cacheAge / 1000)}s`);
         return new Response(JSON.stringify(matches), {
