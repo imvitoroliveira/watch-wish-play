@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.content-alerts]
 verify_jwt = false
+
+[functions.user-presence]
+verify_jwt = false

@@ -44,6 +44,20 @@ const Dashboard = () => {
   const [contentAlerts, setContentAlerts] = useState<Set<number>>(new Set());
   const [challengeKey, setChallengeKey] = useState(0);
 
+  // Heartbeat: send presence every 3 minutes
+  useEffect(() => {
+    if (!currentClient?.u) return;
+    const sendHeartbeat = () => {
+      supabase.functions.invoke('user-presence', {
+        method: 'POST',
+        body: { action: 'heartbeat', username: currentClient.u },
+      }).catch(() => {});
+    };
+    sendHeartbeat(); // immediate
+    const interval = setInterval(sendHeartbeat, 3 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [currentClient?.u]);
+
   useEffect(() => {
     if (!isClient) navigate('/');
   }, [isClient, navigate]);
