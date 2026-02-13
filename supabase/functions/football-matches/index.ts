@@ -8,7 +8,7 @@ const corsHeaders = {
 
 // Premium leagues whitelist
 const PREMIUM_LEAGUES = new Set([
-  "laliga", "la liga", "bundesliga", "serie a",
+  "laliga", "la liga", "bundesliga", "serie a", "premier league",
   "champions league", "liga dos campeões", "europa league", "liga europa",
   "brasileirão", "campeonato brasileiro",
   "copa do brasil", "copa libertadores", "libertadores",
@@ -55,6 +55,7 @@ const BROADCAST_MAP: Record<string, string[]> = {
   "champions league": ["TNT", "HBO Max"],
   "europa league": ["ESPN", "Star+"],
   "laliga": ["ESPN", "Star+"], "la liga": ["ESPN", "Star+"],
+  "premier league": ["ESPN", "Star+"],
   "bundesliga": ["CazéTV", "OneFootball"],
   "serie a": ["ESPN", "Star+"],
   "supercopa": ["Globo", "SporTV"],
