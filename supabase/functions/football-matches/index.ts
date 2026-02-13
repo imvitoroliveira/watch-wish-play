@@ -203,17 +203,21 @@ Deno.serve(async (req) => {
     const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
     if (!FIRECRAWL_API_KEY) throw new Error("FIRECRAWL_API_KEY not configured");
 
-    // Use Firecrawl Search to query Google for live scores
+    // Use Firecrawl Search to query Google for live scores — with 5s timeout per request
     console.log(`[Engine] Searching Google for live scores via Firecrawl...`);
 
     const allRawMatches: any[] = [];
     const seen = new Set<string>();
+
+    const FETCH_TIMEOUT = 5000; // 5 seconds max per search
 
     // Run searches in parallel batches of 3
     for (let i = 0; i < SEARCH_QUERIES.length; i += 3) {
       const batch = SEARCH_QUERIES.slice(i, i + 3);
       const results = await Promise.all(
         batch.map(async (query) => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
           try {
             const res = await fetch("https://api.firecrawl.dev/v1/search", {
               method: "POST",
@@ -221,6 +225,7 @@ Deno.serve(async (req) => {
                 Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
                 "Content-Type": "application/json",
               },
+              signal: controller.signal,
               body: JSON.stringify({
                 query,
                 limit: 5,
@@ -251,9 +256,9 @@ Deno.serve(async (req) => {
                 }},
               }),
             });
+            clearTimeout(timeoutId);
             if (!res.ok) return [];
             const data = await res.json();
-            // Search results may have extracted data in each result
             const results = data?.data || data?.results || [];
             const extracted: any[] = [];
             for (const r of results) {
@@ -262,7 +267,12 @@ Deno.serve(async (req) => {
             }
             return extracted;
           } catch (e) {
-            console.warn(`[Search] Failed for "${query}":`, e);
+            clearTimeout(timeoutId);
+            if (e?.name === "AbortError") {
+              console.warn(`[Search] Timeout for "${query}"`);
+            } else {
+              console.warn(`[Search] Failed for "${query}":`, e);
+            }
             return [];
           }
         })
@@ -343,11 +353,21 @@ Deno.serve(async (req) => {
 
     console.log(`[Engine] Final: ${allMatches.length} matches`);
 
-    // Upsert cache
-    await supabase.from("football_cache").upsert(
-      { cache_date: brDate, matches: allMatches, fetched_at: new Date().toISOString() },
-      { onConflict: "cache_date" }
-    );
+    // Only cache if we got results — never overwrite good cache with empty data
+    if (allMatches.length > 0) {
+      await supabase.from("football_cache").upsert(
+        { cache_date: brDate, matches: allMatches, fetched_at: new Date().toISOString() },
+        { onConflict: "cache_date" }
+      );
+    } else {
+      console.warn("[Engine] 0 matches from Google — keeping existing cache");
+      // Return existing cache instead of empty
+      if (cached?.matches && (cached.matches as any[]).length > 0) {
+        return new Response(JSON.stringify(cached.matches), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     return new Response(JSON.stringify(allMatches), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

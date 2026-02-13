@@ -106,6 +106,8 @@ export async function getTodayMatches(): Promise<Match[]> {
     if (Array.isArray(data) && data.length > 0) {
       return sortByPriority(data as Match[]);
     }
+    // Edge function returned empty array — use mock
+    console.warn('[Football] Edge function returned 0 matches, using mock data');
   } catch (e) {
     console.warn('[Football] Edge function failed, using mock data:', e);
   }
