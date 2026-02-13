@@ -1,0 +1,17 @@
+{
+  "name": "StreamTV",
+  "short_name": "StreamTV",
+  "description": "Seu cinema pessoal.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#6D28D9",
+  "icons": [
+    {
+      "src": "/logo-eagle.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
