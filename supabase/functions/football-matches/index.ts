@@ -15,6 +15,7 @@ const PREMIUM_LEAGUES = new Set([
   "copa sul-americana", "sul-americana", "eliminatórias",
   "copa do mundo", "supercopa",
   "recopa sul-americana", "amistoso",
+  "mls", "major league soccer",
 ]);
 
 function isPremiumLeague(name: string): boolean {
@@ -62,6 +63,8 @@ const BROADCAST_MAP: Record<string, string[]> = {
   "eliminatórias": ["Globo", "SporTV", "CazéTV"],
   "copa do mundo": ["Globo", "SporTV", "CazéTV"],
   "amistoso": ["SporTV", "ESPN"],
+  "mls": ["Apple TV", "MLS Season Pass"],
+  "major league soccer": ["Apple TV", "MLS Season Pass"],
 };
 
 function getBroadcast(leagueName: string): string[] {
