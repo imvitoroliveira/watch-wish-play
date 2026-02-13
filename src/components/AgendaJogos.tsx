@@ -91,7 +91,7 @@ const AgendaJogos = () => {
             <Trophy className="w-6 h-6 text-primary" />
             AGENDA DE JOGOS VIP
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">Jogos de hoje • Futebol Brasileiro</p>
+          <p className="text-sm text-muted-foreground mt-1">Jogos de hoje • Brasil & Europa</p>
         </div>
         <button
           onClick={loadMatches}
@@ -201,9 +201,12 @@ function MatchCard({
         </div>
         <div className="flex items-center gap-2">
           {live && (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-              Ao Vivo {match.elapsed ? `• ${match.elapsed}'` : ''}
+            <span className="relative flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider">
+              <span className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" />
+              <span className="relative flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                Ao Vivo {match.elapsed ? `• ${match.elapsed}'` : ''}
+              </span>
             </span>
           )}
           {finished && (
