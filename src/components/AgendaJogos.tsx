@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw } from 'lucide-react';
+import { Bell, BellRing, Tv, Clock, Trophy } from 'lucide-react';
 import { Match, getTodayMatches, isLive, getStatusLabel } from '@/lib/football-api';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,28 +13,23 @@ const AgendaJogos = () => {
   const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
 
-  // Silent refresh with React Query
+  // Silent refresh — 60s interval, no loading indicators after first load
   const { data: matches = [], isLoading: initialLoading, dataUpdatedAt } = useQuery({
     queryKey: ['footballMatches'],
     queryFn: getTodayMatches,
-    staleTime: 2 * 60 * 1000,
-    refetchInterval: (query) => {
-      const data = query.state.data as Match[] | undefined;
-      const hasLive = data?.some(m => isLive(m.status));
-      return hasLive ? 2 * 60 * 1000 : 10 * 60 * 1000;
-    },
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
     refetchOnWindowFocus: false,
     refetchIntervalInBackground: true,
   });
 
-  // Halftime intelligence: if any match is HT for >20min, force refetch
+  // Halftime intelligence: if HT for >20min, force refetch
   useEffect(() => {
     if (!matches.length) return;
     const check = setInterval(() => {
       const now = Date.now();
       const staleHalftime = matches.some(m => {
         if (m.status !== 'HT') return false;
-        // If data hasn't updated in 20min and match is still HT, force refresh
         return (now - dataUpdatedAt) > 20 * 60 * 1000;
       });
       if (staleHalftime) {
@@ -54,9 +49,7 @@ const AgendaJogos = () => {
           body: { username: currentClient.u, action: 'list' },
         });
         if (data?.reminders) setReminders(new Set(data.reminders));
-      } catch {
-        // silent
-      }
+      } catch { /* silent */ }
     };
     loadReminders();
   }, [currentClient?.u]);
@@ -84,9 +77,7 @@ const AgendaJogos = () => {
           return next;
         });
       }
-    } catch {
-      // silent
-    }
+    } catch { /* silent */ }
   };
 
   const leagues = useMemo(() => [...new Set(matches.map(m => m.league.name))], [matches]);
@@ -102,7 +93,6 @@ const AgendaJogos = () => {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Only show skeleton on first ever load, never again
   const showSkeleton = initialLoading && matches.length === 0;
 
   return (
@@ -146,10 +136,11 @@ const AgendaJogos = () => {
           <AnimatePresence>
             {filteredMatches.map((match, i) => (
               <motion.div
-                key={match.id}
+                key={`${match.homeTeam.name}-${match.awayTeam.name}`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
+                layout
               >
                 <MatchCard
                   match={match}
@@ -181,6 +172,25 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
+/** Animated score digit with fade transition */
+function AnimatedScore({ value, live }: { value: number | null; live: boolean }) {
+  const display = value ?? 0;
+  return (
+    <AnimatePresence mode="wait">
+      <motion.span
+        key={display}
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
+        transition={{ duration: 0.4, ease: 'easeInOut' }}
+        className={`text-3xl sm:text-4xl font-display inline-block ${live ? 'text-primary' : 'text-foreground'}`}
+      >
+        {display}
+      </motion.span>
+    </AnimatePresence>
+  );
+}
+
 function MatchCard({
   match,
   hasReminder,
@@ -205,12 +215,6 @@ function MatchCard({
       {/* League header */}
       <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50">
         <div className="flex items-center gap-2">
-          <img
-            src={match.league.logo}
-            alt={match.league.name}
-            className="w-4 h-4 object-contain"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
           <span className="text-xs font-medium text-muted-foreground">{match.league.name}</span>
           {match.league.round && (
             <span className="text-xs text-muted-foreground/60">• {match.league.round}</span>
@@ -240,30 +244,30 @@ function MatchCard({
         <div className="flex items-center justify-between">
           {/* Home team */}
           <div className="flex-1 flex flex-col items-center gap-2">
-            <img
-              src={match.homeTeam.logo}
-              alt={match.homeTeam.name}
-              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/placeholder.svg';
-              }}
-            />
+            {match.homeTeam.logo ? (
+              <img
+                src={match.homeTeam.logo}
+                alt={match.homeTeam.name}
+                className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
+                onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
+              />
+            ) : (
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
+                {match.homeTeam.name.substring(0, 3).toUpperCase()}
+              </div>
+            )}
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
               {match.homeTeam.name}
             </span>
           </div>
 
-          {/* Score / VS */}
+          {/* Score with fade animation */}
           <div className="flex-shrink-0 mx-4 text-center">
             {(live || finished) ? (
               <div className="flex items-center gap-2">
-                <span className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}>
-                  {match.goals.home ?? 0}
-                </span>
+                <AnimatedScore value={match.goals.home} live={live} />
                 <span className="text-lg text-muted-foreground font-light">×</span>
-                <span className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}>
-                  {match.goals.away ?? 0}
-                </span>
+                <AnimatedScore value={match.goals.away} live={live} />
               </div>
             ) : (
               <div className="flex flex-col items-center">
@@ -279,29 +283,30 @@ function MatchCard({
 
           {/* Away team */}
           <div className="flex-1 flex flex-col items-center gap-2">
-            <img
-              src={match.awayTeam.logo}
-              alt={match.awayTeam.name}
-              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/placeholder.svg';
-              }}
-            />
+            {match.awayTeam.logo ? (
+              <img
+                src={match.awayTeam.logo}
+                alt={match.awayTeam.name}
+                className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
+                onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
+              />
+            ) : (
+              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
+                {match.awayTeam.name.substring(0, 3).toUpperCase()}
+              </div>
+            )}
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
               {match.awayTeam.name}
             </span>
           </div>
         </div>
 
-        {/* Bottom bar: broadcast + reminder */}
+        {/* Bottom bar */}
         <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Tv className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
             {match.broadcast.map(ch => (
-              <span
-                key={ch}
-                className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground"
-              >
+              <span key={ch} className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground">
                 {ch}
               </span>
             ))}
