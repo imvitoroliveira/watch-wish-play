@@ -224,6 +224,24 @@ export type Database = {
         }
         Relationships: []
       }
+      user_presence: {
+        Row: {
+          client_username: string
+          id: string
+          last_seen: string
+        }
+        Insert: {
+          client_username: string
+          id?: string
+          last_seen?: string
+        }
+        Update: {
+          client_username?: string
+          id?: string
+          last_seen?: string
+        }
+        Relationships: []
+      }
       user_push_subscriptions: {
         Row: {
           auth: string
