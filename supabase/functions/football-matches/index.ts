@@ -175,8 +175,9 @@ Deno.serve(async (req) => {
       .eq("cache_date", brDate)
       .maybeSingle();
 
-    // For client-initiated requests, serve from cache if fresh enough
-    const isClientRequest = req.headers.get("authorization")?.includes("eyJ");
+    // Cron sends x-cron-source header; client requests don't
+    const isCronRequest = req.headers.get("x-cron-source") === "pg_cron";
+    const isClientRequest = !isCronRequest;
     if (isClientRequest && cached) {
       // Client just reads from DB; realtime handles updates
       return new Response(JSON.stringify(cached.matches), {
