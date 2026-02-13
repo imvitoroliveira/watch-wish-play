@@ -79,7 +79,6 @@ function getBroadcast(leagueName: string): string[] {
 // TheSportsDB free API for team badges
 const logoCache = new Map<string, string>();
 
-// Common name aliases for teams ESPN uses differently than TheSportsDB
 const TEAM_ALIASES: Record<string, string> = {
   "Paris Saint-Germain": "Paris SG",
   "PSG": "Paris SG",
@@ -134,6 +133,29 @@ async function resolveTeamLogo(teamName: string): Promise<string> {
   return "";
 }
 
+// Compare matches to detect real changes (score or status)
+function hasDataChanged(oldMatches: any[], newMatches: any[]): boolean {
+  if (oldMatches.length !== newMatches.length) return true;
+
+  // Build lookup by home+away team name for comparison
+  const oldMap = new Map<string, any>();
+  for (const m of oldMatches) {
+    const key = `${m.homeTeam?.name}|${m.awayTeam?.name}`;
+    oldMap.set(key, m);
+  }
+
+  for (const n of newMatches) {
+    const key = `${n.homeTeam?.name}|${n.awayTeam?.name}`;
+    const o = oldMap.get(key);
+    if (!o) return true; // new match appeared
+    if (o.status !== n.status) return true;
+    if (o.elapsed !== n.elapsed) return true;
+    if (o.goals?.home !== n.goals?.home || o.goals?.away !== n.goals?.away) return true;
+  }
+
+  return false;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -146,35 +168,28 @@ Deno.serve(async (req) => {
 
     const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-    // Check cache
+    // Always fetch current cache for diff comparison
     const { data: cached } = await supabase
       .from("football_cache")
       .select("matches, fetched_at")
       .eq("cache_date", brDate)
       .maybeSingle();
 
-    if (cached) {
-      const cacheAge = Date.now() - new Date(cached.fetched_at).getTime();
-      const matches = cached.matches as any[];
-      const hasLive = matches.some((m: any) =>
-        ["1H", "HT", "2H", "AET", "PEN", "LIVE"].includes(m.status)
-      );
-      const maxAge = hasLive ? 3 * 60 * 1000 : 15 * 60 * 1000;
-      if (cacheAge < maxAge) {
-        console.log(`[Cache HIT] ${matches.length} matches, age: ${Math.round(cacheAge / 1000)}s`);
-        return new Response(JSON.stringify(matches), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    // For client-initiated requests, serve from cache if fresh enough
+    const isClientRequest = req.headers.get("authorization")?.includes("eyJ");
+    if (isClientRequest && cached) {
+      // Client just reads from DB; realtime handles updates
+      return new Response(JSON.stringify(cached.matches), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
+    // For cron-triggered calls: always scrape fresh data
     const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
     if (!FIRECRAWL_API_KEY) {
       throw new Error("FIRECRAWL_API_KEY is not configured");
     }
 
-    // Scrape ESPN Brasil (reliable source for match data)
-    const scrapeUrl = "https://www.espn.com.br/futebol/resultados";
     console.log(`[Scraper] Fetching from ESPN Brasil...`);
 
     const firecrawlRes = await fetch("https://api.firecrawl.dev/v1/scrape", {
@@ -182,9 +197,10 @@ Deno.serve(async (req) => {
       headers: {
         Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
         "Content-Type": "application/json",
+        "Cache-Control": "no-store",
       },
       body: JSON.stringify({
-        url: scrapeUrl,
+        url: "https://www.espn.com.br/futebol/resultados",
         formats: ["extract"],
         extract: {
           prompt:
@@ -231,68 +247,51 @@ Deno.serve(async (req) => {
     const rawMatches = extractedJson?.matches || [];
     console.log(`[Scraper] Extracted ${rawMatches.length} matches from ESPN`);
 
-    // Filter premium leagues
     const premiumMatches = rawMatches.filter((m: any) => isPremiumLeague(m.league_name || ""));
     console.log(`[Scraper] ${premiumMatches.length} premium matches after filter`);
 
-    // Resolve team logos from TheSportsDB (in parallel, batched)
+    // Resolve team logos
     const uniqueTeams = new Set<string>();
     premiumMatches.forEach((m: any) => {
       uniqueTeams.add(m.home_team_name);
       uniqueTeams.add(m.away_team_name);
     });
-
-    console.log(`[Scraper] Resolving logos for ${uniqueTeams.size} teams...`);
     await Promise.all([...uniqueTeams].map((name) => resolveTeamLogo(name)));
-    console.log(`[Scraper] Logo resolution complete`);
 
-    // Transform to Match format
     const allMatches: any[] = premiumMatches.map((m: any, index: number) => {
       const { status, elapsed } = parseStatus(m.match_status || "");
-
       let matchDate = new Date().toISOString();
       const timeMatch = (m.match_status || "").match(/^(\d{1,2}):(\d{2})/);
       if (timeMatch) {
         const d = new Date(brDate + `T${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}:00-03:00`);
         matchDate = d.toISOString();
       }
-
       return {
         id: 9000 + index,
-        league: {
-          id: 0,
-          name: m.league_name || "Desconhecida",
-          logo: "",
-          round: null,
-        },
-        homeTeam: {
-          id: 0,
-          name: m.home_team_name || "Time A",
-          logo: logoCache.get(m.home_team_name) || "",
-        },
-        awayTeam: {
-          id: 0,
-          name: m.away_team_name || "Time B",
-          logo: logoCache.get(m.away_team_name) || "",
-        },
+        league: { id: 0, name: m.league_name || "Desconhecida", logo: "", round: null },
+        homeTeam: { id: 0, name: m.home_team_name || "Time A", logo: logoCache.get(m.home_team_name) || "" },
+        awayTeam: { id: 0, name: m.away_team_name || "Time B", logo: logoCache.get(m.away_team_name) || "" },
         date: matchDate,
         status,
         elapsed,
-        goals: {
-          home: m.home_score ?? null,
-          away: m.away_score ?? null,
-        },
+        goals: { home: m.home_score ?? null, away: m.away_score ?? null },
         broadcast: getBroadcast(m.league_name || ""),
       };
     });
 
-    console.log(`[Scraper] Final: ${allMatches.length} matches with logos`);
+    console.log(`[Scraper] Final: ${allMatches.length} matches`);
 
-    // Upsert cache
-    await supabase.from("football_cache").upsert(
-      { cache_date: brDate, matches: allMatches, fetched_at: new Date().toISOString() },
-      { onConflict: "cache_date" }
-    );
+    // DIFF LOGIC: Only UPDATE if data actually changed
+    const oldMatches = (cached?.matches as any[]) || [];
+    if (hasDataChanged(oldMatches, allMatches)) {
+      console.log(`[Scraper] Data CHANGED — updating DB (triggers Realtime)`);
+      await supabase.from("football_cache").upsert(
+        { cache_date: brDate, matches: allMatches, fetched_at: new Date().toISOString() },
+        { onConflict: "cache_date" }
+      );
+    } else {
+      console.log(`[Scraper] No changes detected — skipping DB update`);
+    }
 
     return new Response(JSON.stringify(allMatches), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
