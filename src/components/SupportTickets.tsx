@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { HelpCircle, ChevronRight, MessageCircle, CheckCircle, ExternalLink, ShieldCheck } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -99,14 +100,14 @@ const SupportTickets = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [timerDone, setTimerDone] = useState(false);
   const [checked, setChecked] = useState(false);
-  const [seconds, setSeconds] = useState(30);
+  const [seconds, setSeconds] = useState(24);
 
-  // 30s countdown when modal opens with video
+  // 24s countdown when modal opens
   useEffect(() => {
-    if (!modalOpen || !selectedIssue?.videoId) return;
+    if (!modalOpen) return;
     setTimerDone(false);
     setChecked(false);
-    setSeconds(30);
+    setSeconds(24);
     const interval = setInterval(() => {
       setSeconds(prev => {
         if (prev <= 1) {
@@ -121,6 +122,13 @@ const SupportTickets = () => {
   }, [modalOpen, selectedIssue]);
 
   const canProceed = timerDone || checked;
+
+  const handleBlockedWhatsApp = () => {
+    toast({
+      title: 'Suporte bloqueado',
+      description: 'Por favor, assista ao vídeo tutorial para liberar o suporte.',
+    });
+  };
 
   const selectIssue = (issue: typeof COMMON_ISSUES[0]) => {
     setSelectedIssue(issue);
@@ -218,7 +226,7 @@ const SupportTickets = () => {
 
           {/* Blocking flow */}
           <div className="p-5 space-y-3">
-            {selectedIssue?.videoId && (
+            {selectedIssue?.videoId && !canProceed && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
                   checked={checked}
@@ -228,29 +236,43 @@ const SupportTickets = () => {
               </label>
             )}
 
+            {!canProceed && selectedIssue?.videoId && (
+              <p className="text-xs text-muted-foreground text-center">
+                ⏳ Aguarde {seconds}s ou marque acima para liberar o suporte
+              </p>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 onClick={createTicket}
-                disabled={selectedIssue?.videoId ? !canProceed : false}
+                disabled={!canProceed}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground flex-1"
               >
                 <MessageCircle className="w-4 h-4 mr-2" />
-                {selectedIssue?.videoId
-                  ? (canProceed ? 'Ainda preciso de ajuda / Abrir Ticket' : `Aguarde ${seconds}s ou marque acima`)
-                  : 'Abrir Ticket'
-                }
+                {canProceed ? 'Ainda preciso de ajuda / Abrir Ticket' : `Aguarde ${seconds}s ou marque acima`}
               </Button>
 
-              <Button
-                asChild
-                variant="outline"
-                className="border-green-600 text-green-500 hover:bg-green-600/10 hover:text-green-400"
-              >
-                <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
+              {canProceed ? (
+                <Button
+                  asChild
+                  variant="outline"
+                  className="border-green-600 text-green-500 hover:bg-green-600/10 hover:text-green-400 animate-pulse"
+                >
+                  <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer">
+                    <WhatsAppIcon />
+                    <span className="ml-2">Falar no WhatsApp</span>
+                  </a>
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="border-muted text-muted-foreground opacity-50 cursor-not-allowed"
+                  onClick={handleBlockedWhatsApp}
+                >
                   <WhatsAppIcon />
                   <span className="ml-2">Falar no WhatsApp</span>
-                </a>
-              </Button>
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>
