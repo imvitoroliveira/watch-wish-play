@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw } from 'lucide-react';
 import { Match, isLive, getStatusLabel } from '@/lib/football-api';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRealtimeFootball } from '@/hooks/useRealtimeFootball';
+import { useFootballMatches } from '@/hooks/useFootballMatches';
 
 const AgendaJogos = () => {
   const { currentClient } = useAuth();
-  const { matches, loading, connectionStatus, refresh } = useRealtimeFootball();
+  const { data: matches = [], isLoading, isFetching, refetch } = useFootballMatches();
   const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
+  const [initialLoad, setInitialLoad] = useState(true);
+
+  // Only show loading on very first load (no data yet)
+  useEffect(() => {
+    if (matches.length > 0) setInitialLoad(false);
+  }, [matches]);
 
   // Load reminders from DB
   useEffect(() => {
@@ -70,6 +76,8 @@ const AgendaJogos = () => {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
+  const showLoading = isLoading && initialLoad && matches.length === 0;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -78,13 +86,18 @@ const AgendaJogos = () => {
             <Trophy className="w-6 h-6 text-primary" />
             AGENDA DE JOGOS VIP
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">Jogos de hoje • Brasil & Europa</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Jogos de hoje • Brasil & Europa
+            {isFetching && !showLoading && (
+              <span className="ml-2 inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            )}
+          </p>
         </div>
         <button
-          onClick={refresh}
+          onClick={() => refetch()}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground transition-colors text-xs"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           Atualizar
         </button>
       </div>
@@ -100,7 +113,7 @@ const AgendaJogos = () => {
         ))}
       </div>
 
-      {loading ? (
+      {showLoading ? (
         <div className="flex items-center justify-center py-16">
           <RefreshCw className="w-8 h-8 text-primary animate-spin" />
         </div>
@@ -113,13 +126,14 @@ const AgendaJogos = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {filteredMatches.map((match, i) => (
               <motion.div
                 key={`${match.homeTeam.name}-${match.awayTeam.name}`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
+                layout
               >
                 <MatchCard
                   match={match}
@@ -132,25 +146,6 @@ const AgendaJogos = () => {
           </AnimatePresence>
         </div>
       )}
-
-      {/* Realtime connection indicator */}
-      <div className="fixed bottom-4 right-4 z-50">
-        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[10px] font-medium backdrop-blur-sm border transition-all ${
-          connectionStatus === 'connected'
-            ? 'bg-green-500/10 text-green-400 border-green-500/20'
-            : connectionStatus === 'disconnected'
-              ? 'bg-red-500/10 text-red-400 border-red-500/20'
-              : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-        }`}>
-          {connectionStatus === 'connected' ? (
-            <><Wifi className="w-3 h-3" /> Conectado</>
-          ) : connectionStatus === 'disconnected' ? (
-            <><WifiOff className="w-3 h-3" /> Desconectado</>
-          ) : (
-            <><Wifi className="w-3 h-3 animate-pulse" /> Conectando...</>
-          )}
-        </div>
-      </div>
     </div>
   );
 };
@@ -233,35 +228,33 @@ function MatchCard({
               src={match.homeTeam.logo}
               alt={match.homeTeam.name}
               className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/placeholder.svg';
-              }}
+              onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
             />
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
               {match.homeTeam.name}
             </span>
           </div>
 
-          {/* Score / VS — uses transition for magic update */}
+          {/* Score / VS — magic update via placeholderData */}
           <div className="flex-shrink-0 mx-4 text-center">
             {(live || finished) ? (
               <div className="flex items-center gap-2">
                 <motion.span
                   key={`home-${match.goals.home}`}
-                  initial={{ scale: 1.4, color: 'hsl(var(--primary))' }}
-                  animate={{ scale: 1, color: live ? 'hsl(var(--primary))' : 'hsl(var(--foreground))' }}
-                  transition={{ duration: 0.5 }}
-                  className="text-3xl sm:text-4xl font-display"
+                  initial={{ scale: 1.3 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}
                 >
                   {match.goals.home ?? 0}
                 </motion.span>
                 <span className="text-lg text-muted-foreground font-light">×</span>
                 <motion.span
                   key={`away-${match.goals.away}`}
-                  initial={{ scale: 1.4, color: 'hsl(var(--primary))' }}
-                  animate={{ scale: 1, color: live ? 'hsl(var(--primary))' : 'hsl(var(--foreground))' }}
-                  transition={{ duration: 0.5 }}
-                  className="text-3xl sm:text-4xl font-display"
+                  initial={{ scale: 1.3 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}
                 >
                   {match.goals.away ?? 0}
                 </motion.span>
@@ -284,9 +277,7 @@ function MatchCard({
               src={match.awayTeam.logo}
               alt={match.awayTeam.name}
               className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/placeholder.svg';
-              }}
+              onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
             />
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
               {match.awayTeam.name}
@@ -299,10 +290,7 @@ function MatchCard({
           <div className="flex items-center gap-1.5 flex-wrap">
             <Tv className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
             {match.broadcast.map(ch => (
-              <span
-                key={ch}
-                className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground"
-              >
+              <span key={ch} className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground">
                 {ch}
               </span>
             ))}
