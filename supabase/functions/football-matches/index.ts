@@ -6,65 +6,44 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Premium leagues for Google Search queries
-const SEARCH_QUERIES = [
-  "Champions League jogos hoje placar",
-  "Premier League jogos hoje placar",
-  "La Liga jogos hoje placar",
-  "Bundesliga jogos hoje placar",
-  "Serie A Itália jogos hoje placar",
-  "Ligue 1 jogos hoje placar",
-  "Brasileirão Serie A jogos hoje placar",
-  "Copa do Brasil jogos hoje placar",
-  "Copa Libertadores jogos hoje placar",
-  "Copa Sul-Americana jogos hoje placar",
-  "Europa League jogos hoje placar",
-];
-
-const PREMIUM_LEAGUES_KEYWORDS = [
-  "champions league", "liga dos campeões",
-  "premier league",
-  "laliga", "la liga",
-  "bundesliga",
-  "serie a", "série a",
-  "ligue 1",
-  "brasileirão", "campeonato brasileiro",
-  "copa do brasil",
-  "libertadores",
-  "sul-americana", "copa sul-americana",
-  "europa league", "liga europa",
-  "conference league",
-  "eliminatórias",
-  "copa do mundo",
-  "campeonato paulista", "campeonato carioca",
-  "supercopa",
-];
+// Premium leagues whitelist
+const PREMIUM_LEAGUES = new Set([
+  "laliga", "la liga", "bundesliga", "serie a", "ligue 1", "premier league",
+  "champions league", "liga dos campeões", "europa league", "liga europa",
+  "conference league", "brasileirão", "campeonato brasileiro",
+  "copa do brasil", "copa libertadores", "libertadores",
+  "copa sul-americana", "sul-americana", "eliminatórias",
+  "copa do mundo", "fa cup", "taça de inglaterra", "taça de espanha",
+  "copa del rey", "coppa italia", "coupe de france", "dfb pokal",
+  "supercopa", "campeonato paulista", "campeonato carioca",
+  "recopa sul-americana",
+]);
 
 function isPremiumLeague(name: string): boolean {
   const lower = name.toLowerCase().trim();
-  return PREMIUM_LEAGUES_KEYWORDS.some(k => lower.includes(k) || k.includes(lower));
+  for (const league of PREMIUM_LEAGUES) {
+    if (lower.includes(league) || league.includes(lower)) return true;
+  }
+  return false;
 }
 
 function parseStatus(statusText: string): { status: string; elapsed: number | null } {
   if (!statusText) return { status: "NS", elapsed: null };
   const s = statusText.trim();
-  if (/\bfin(al|alizado)?\b|\bencerrado\b|\b(FT|AET)\b/i.test(s))
+  if (s === "F" || s.toLowerCase() === "encerrado" || s.toLowerCase() === "fin")
     return { status: "FT", elapsed: 90 };
-  if (/\binterval(o)?\b|\bHT\b/i.test(s))
+  if (s === "HT" || s.toLowerCase() === "intervalo" || s.toLowerCase() === "int")
     return { status: "HT", elapsed: 45 };
-  if (/\bprorrog/i.test(s)) return { status: "AET", elapsed: 120 };
-  if (/\bp[eê]nalt/i.test(s)) return { status: "PEN", elapsed: 120 };
-  if (/\bsusp/i.test(s)) return { status: "SUSP", elapsed: null };
-  if (/\badiado\b/i.test(s)) return { status: "PST", elapsed: null };
-  const minuteMatch = s.match(/(\d+)['′]/);
+  if (s === "AET" || s.toLowerCase() === "prorrogação") return { status: "AET", elapsed: 120 };
+  if (s === "PEN" || s.toLowerCase() === "pênaltis") return { status: "PEN", elapsed: 120 };
+  if (s.toLowerCase().includes("susp")) return { status: "SUSP", elapsed: null };
+  if (s.toLowerCase().includes("adiado")) return { status: "PST", elapsed: null };
+  if (s.toLowerCase().includes("canc")) return { status: "CANC", elapsed: null };
+  const minuteMatch = s.match(/^(\d+)['′+]?/);
   if (minuteMatch) {
     const min = parseInt(minuteMatch[1]);
     return { status: min <= 45 ? "1H" : "2H", elapsed: min };
   }
-  // "1º tempo", "2º tempo" patterns
-  if (/1[ºo]\s*tempo/i.test(s)) return { status: "1H", elapsed: null };
-  if (/2[ºo]\s*tempo/i.test(s)) return { status: "2H", elapsed: null };
-  if (/ao\s*vivo|live|em\s*andamento/i.test(s)) return { status: "LIVE", elapsed: null };
   if (/^\d{1,2}:\d{2}/.test(s)) return { status: "NS", elapsed: null };
   return { status: "NS", elapsed: null };
 }
@@ -76,9 +55,9 @@ const BROADCAST_MAP: Record<string, string[]> = {
   "libertadores": ["Paramount+", "SBT", "ESPN"],
   "sul-americana": ["Paramount+", "SBT", "ESPN"],
   "champions league": ["TNT", "HBO Max"],
-  "liga dos campeões": ["TNT", "HBO Max"],
   "europa league": ["ESPN", "Star+"],
   "premier league": ["ESPN", "Star+"],
+  "fa cup": ["ESPN", "Star+"],
   "laliga": ["ESPN", "Star+"], "la liga": ["ESPN", "Star+"],
   "bundesliga": ["CazéTV", "OneFootball"],
   "serie a": ["ESPN", "Star+"],
@@ -97,47 +76,39 @@ function getBroadcast(leagueName: string): string[] {
   return ["ESPN"];
 }
 
-// TheSportsDB badge resolver with persistent DB cache
+// TheSportsDB free API for team badges
+const logoCache = new Map<string, string>();
+
+// Common name aliases for teams ESPN uses differently than TheSportsDB
 const TEAM_ALIASES: Record<string, string> = {
-  "Paris Saint-Germain": "Paris SG", "PSG": "Paris SG",
-  "Atlético de Madrid": "Atletico Madrid", "Atlético Madrid": "Atletico Madrid",
-  "Inter de Milão": "Inter Milan", "Internazionale": "Inter Milan",
-  "B. Dortmund": "Borussia Dortmund", "Mainz 05": "Mainz",
-  "Bayern de Munique": "Bayern Munich", "Bayer Leverkusen": "Bayer 04 Leverkusen",
+  "Paris Saint-Germain": "Paris SG",
+  "PSG": "Paris SG",
+  "Atlético de Madrid": "Atletico Madrid",
+  "Atlético Madrid": "Atletico Madrid",
+  "Inter de Milão": "Inter Milan",
+  "Internazionale": "Inter Milan",
+  "B. Dortmund": "Borussia Dortmund",
+  "Mainz 05": "Mainz",
+  "RB Leipzig": "RB Leipzig",
+  "Bayern de Munique": "Bayern Munich",
+  "Bayer Leverkusen": "Bayer 04 Leverkusen",
   "Wolverhampton": "Wolverhampton Wanderers",
-  "Man United": "Manchester United", "Man City": "Manchester City",
-  "Nottm Forest": "Nottingham Forest", "Tottenham": "Tottenham Hotspur",
-  "Newcastle": "Newcastle United", "West Ham": "West Ham United",
-  "Sheffield Utd": "Sheffield United", "Stade Brestois": "Stade Brestois 29",
-  "Athletico-PR": "Athletico Paranaense", "Atlético-MG": "Atletico Mineiro",
-  "Atlético Mineiro": "Atletico Mineiro",
+  "Man United": "Manchester United",
+  "Man City": "Manchester City",
+  "Nottm Forest": "Nottingham Forest",
+  "Tottenham": "Tottenham Hotspur",
+  "Newcastle": "Newcastle United",
+  "West Ham": "West Ham United",
+  "Sheffield Utd": "Sheffield United",
+  "Stade Brestois": "Stade Brestois 29",
 };
 
-async function resolveTeamBadge(
-  teamName: string,
-  supabase: any,
-  memoryCache: Map<string, string>
-): Promise<string> {
-  // 1. Memory cache (in-process)
-  if (memoryCache.has(teamName)) return memoryCache.get(teamName)!;
+async function resolveTeamLogo(teamName: string): Promise<string> {
+  if (logoCache.has(teamName)) return logoCache.get(teamName)!;
 
-  // 2. DB persistent cache
-  const { data: cached } = await supabase
-    .from("team_badges")
-    .select("badge_url")
-    .eq("team_name", teamName)
-    .maybeSingle();
-
-  if (cached) {
-    memoryCache.set(teamName, cached.badge_url);
-    return cached.badge_url;
-  }
-
-  // 3. Fetch from TheSportsDB
   const namesToTry = [teamName];
   if (TEAM_ALIASES[teamName]) namesToTry.push(TEAM_ALIASES[teamName]);
 
-  let badge = "";
   for (const name of namesToTry) {
     try {
       const res = await fetch(
@@ -145,25 +116,22 @@ async function resolveTeamBadge(
       );
       if (res.ok) {
         const data = await res.json();
-        if (data.teams?.[0]) {
-          badge = data.teams[0].strBadge || data.teams[0].strTeamBadge || "";
+        if (data.teams && data.teams.length > 0) {
+          const badge = data.teams[0].strBadge || data.teams[0].strTeamBadge || "";
           if (badge) {
-            badge += "/small";
-            break;
+            const smallBadge = badge + "/small";
+            logoCache.set(teamName, smallBadge);
+            return smallBadge;
           }
         }
       }
-    } catch { /* silent */ }
+    } catch {
+      // silent
+    }
   }
 
-  // 4. Persist to DB
-  memoryCache.set(teamName, badge);
-  await supabase.from("team_badges").upsert(
-    { team_name: teamName, badge_url: badge, updated_at: new Date().toISOString() },
-    { onConflict: "team_name" }
-  ).then(() => {});
-
-  return badge;
+  logoCache.set(teamName, "");
+  return "";
 }
 
 Deno.serve(async (req) => {
@@ -178,7 +146,7 @@ Deno.serve(async (req) => {
 
     const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-    // Check cache — 2min for live, 15min otherwise
+    // Check cache
     const { data: cached } = await supabase
       .from("football_cache")
       .select("matches, fetched_at")
@@ -191,7 +159,7 @@ Deno.serve(async (req) => {
       const hasLive = matches.some((m: any) =>
         ["1H", "HT", "2H", "AET", "PEN", "LIVE"].includes(m.status)
       );
-      const maxAge = hasLive ? 2 * 60 * 1000 : 15 * 60 * 1000;
+      const maxAge = hasLive ? 3 * 60 * 1000 : 15 * 60 * 1000;
       if (cacheAge < maxAge) {
         console.log(`[Cache HIT] ${matches.length} matches, age: ${Math.round(cacheAge / 1000)}s`);
         return new Response(JSON.stringify(matches), {
@@ -201,128 +169,87 @@ Deno.serve(async (req) => {
     }
 
     const FIRECRAWL_API_KEY = Deno.env.get("FIRECRAWL_API_KEY");
-    if (!FIRECRAWL_API_KEY) throw new Error("FIRECRAWL_API_KEY not configured");
+    if (!FIRECRAWL_API_KEY) {
+      throw new Error("FIRECRAWL_API_KEY is not configured");
+    }
 
-    // Use Firecrawl Search to query Google for live scores — with 5s timeout per request
-    console.log(`[Engine] Searching Google for live scores via Firecrawl...`);
+    // Scrape ESPN Brasil (reliable source for match data)
+    const scrapeUrl = "https://www.espn.com.br/futebol/resultados";
+    console.log(`[Scraper] Fetching from ESPN Brasil...`);
 
-    const allRawMatches: any[] = [];
-    const seen = new Set<string>();
-
-    const FETCH_TIMEOUT = 5000; // 5 seconds max per search
-
-    // Run searches in parallel batches of 3
-    for (let i = 0; i < SEARCH_QUERIES.length; i += 3) {
-      const batch = SEARCH_QUERIES.slice(i, i + 3);
-      const results = await Promise.all(
-        batch.map(async (query) => {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
-          try {
-            const res = await fetch("https://api.firecrawl.dev/v1/search", {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
-                "Content-Type": "application/json",
-              },
-              signal: controller.signal,
-              body: JSON.stringify({
-                query,
-                limit: 5,
-                lang: "pt-br",
-                country: "br",
-                scrapeOptions: { formats: ["extract"], extract: {
-                  prompt: "Extract all football/soccer match results from this page. For each match: league_name, home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '67' for live, 'Intervalo' for halftime, 'Encerrado' for finished, or kickoff time like '21:30' for scheduled). Return as JSON array.",
-                  schema: {
-                    type: "object",
-                    properties: {
-                      matches: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          properties: {
-                            league_name: { type: "string" },
-                            home_team_name: { type: "string" },
-                            away_team_name: { type: "string" },
-                            home_score: { type: ["number", "null"] },
-                            away_score: { type: ["number", "null"] },
-                            match_status: { type: "string" },
-                          },
-                          required: ["home_team_name", "away_team_name"],
-                        },
-                      },
-                    },
+    const firecrawlRes = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url: scrapeUrl,
+        formats: ["extract"],
+        extract: {
+          prompt:
+            "Extract ALL football/soccer matches shown on this page for today. For each match extract: league_name (competition name like 'Ligue 1', 'LALIGA', 'Bundesliga', 'Serie A', 'Premier League', 'Champions League', etc.), home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '37' for live, 'F' for finished, 'HT' for half-time, or time like '21:30' for scheduled). Include ALL matches.",
+          schema: {
+            type: "object",
+            properties: {
+              matches: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    league_name: { type: "string" },
+                    home_team_name: { type: "string" },
+                    away_team_name: { type: "string" },
+                    home_score: { type: ["number", "null"] },
+                    away_score: { type: ["number", "null"] },
+                    match_status: { type: "string" },
                   },
-                }},
-              }),
-            });
-            clearTimeout(timeoutId);
-            if (!res.ok) return [];
-            const data = await res.json();
-            const results = data?.data || data?.results || [];
-            const extracted: any[] = [];
-            for (const r of results) {
-              const ext = r?.extract?.matches || r?.data?.extract?.matches || [];
-              extracted.push(...ext);
-            }
-            return extracted;
-          } catch (e) {
-            clearTimeout(timeoutId);
-            if (e?.name === "AbortError") {
-              console.warn(`[Search] Timeout for "${query}"`);
-            } else {
-              console.warn(`[Search] Failed for "${query}":`, e);
-            }
-            return [];
-          }
-        })
-      );
-      results.flat().forEach((m: any) => {
-        if (!m?.home_team_name || !m?.away_team_name) return;
-        const key = `${m.home_team_name}-${m.away_team_name}`.toLowerCase();
-        if (!seen.has(key)) {
-          seen.add(key);
-          allRawMatches.push(m);
-        }
-      });
+                  required: ["league_name", "home_team_name", "away_team_name", "match_status"],
+                },
+              },
+            },
+            required: ["matches"],
+          },
+        },
+        waitFor: 3000,
+      }),
+    });
+
+    const firecrawlData = await firecrawlRes.json();
+
+    if (!firecrawlRes.ok) {
+      console.error("[Scraper] Firecrawl error:", JSON.stringify(firecrawlData));
+      if (cached) {
+        return new Response(JSON.stringify(cached.matches), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      throw new Error(`Firecrawl error: ${firecrawlData.error || firecrawlRes.status}`);
     }
 
-    console.log(`[Engine] Extracted ${allRawMatches.length} unique matches from Google`);
+    const extractedJson = firecrawlData?.data?.extract || firecrawlData?.extract;
+    const rawMatches = extractedJson?.matches || [];
+    console.log(`[Scraper] Extracted ${rawMatches.length} matches from ESPN`);
 
-    // Filter premium only
-    const premiumMatches = allRawMatches.filter((m: any) =>
-      isPremiumLeague(m.league_name || "")
-    );
-    console.log(`[Engine] ${premiumMatches.length} premium matches`);
+    // Filter premium leagues
+    const premiumMatches = rawMatches.filter((m: any) => isPremiumLeague(m.league_name || ""));
+    console.log(`[Scraper] ${premiumMatches.length} premium matches after filter`);
 
-    // Resolve badges with persistent cache
-    const memoryCache = new Map<string, string>();
-    // Pre-load DB badges
-    const { data: allBadges } = await supabase.from("team_badges").select("team_name, badge_url");
-    if (allBadges) {
-      allBadges.forEach((b: any) => memoryCache.set(b.team_name, b.badge_url));
-    }
-
+    // Resolve team logos from TheSportsDB (in parallel, batched)
     const uniqueTeams = new Set<string>();
     premiumMatches.forEach((m: any) => {
       uniqueTeams.add(m.home_team_name);
       uniqueTeams.add(m.away_team_name);
     });
 
-    // Only resolve teams not already in cache
-    const teamsToResolve = [...uniqueTeams].filter(t => !memoryCache.has(t));
-    console.log(`[Engine] Resolving ${teamsToResolve.length} new team badges...`);
-    
-    // Batch resolve in groups of 5
-    for (let i = 0; i < teamsToResolve.length; i += 5) {
-      await Promise.all(
-        teamsToResolve.slice(i, i + 5).map(t => resolveTeamBadge(t, supabase, memoryCache))
-      );
-    }
+    console.log(`[Scraper] Resolving logos for ${uniqueTeams.size} teams...`);
+    await Promise.all([...uniqueTeams].map((name) => resolveTeamLogo(name)));
+    console.log(`[Scraper] Logo resolution complete`);
 
-    // Build matches
-    const allMatches = premiumMatches.map((m: any, index: number) => {
+    // Transform to Match format
+    const allMatches: any[] = premiumMatches.map((m: any, index: number) => {
       const { status, elapsed } = parseStatus(m.match_status || "");
+
       let matchDate = new Date().toISOString();
       const timeMatch = (m.match_status || "").match(/^(\d{1,2}):(\d{2})/);
       if (timeMatch) {
@@ -332,66 +259,46 @@ Deno.serve(async (req) => {
 
       return {
         id: 9000 + index,
-        league: { id: 0, name: m.league_name || "Desconhecida", logo: "", round: null },
+        league: {
+          id: 0,
+          name: m.league_name || "Desconhecida",
+          logo: "",
+          round: null,
+        },
         homeTeam: {
           id: 0,
           name: m.home_team_name || "Time A",
-          logo: memoryCache.get(m.home_team_name) || "",
+          logo: logoCache.get(m.home_team_name) || "",
         },
         awayTeam: {
           id: 0,
           name: m.away_team_name || "Time B",
-          logo: memoryCache.get(m.away_team_name) || "",
+          logo: logoCache.get(m.away_team_name) || "",
         },
         date: matchDate,
         status,
         elapsed,
-        goals: { home: m.home_score ?? null, away: m.away_score ?? null },
+        goals: {
+          home: m.home_score ?? null,
+          away: m.away_score ?? null,
+        },
         broadcast: getBroadcast(m.league_name || ""),
       };
     });
 
-    console.log(`[Engine] Final: ${allMatches.length} matches`);
+    console.log(`[Scraper] Final: ${allMatches.length} matches with logos`);
 
-    // Only cache if we got results — never overwrite good cache with empty data
-    if (allMatches.length > 0) {
-      await supabase.from("football_cache").upsert(
-        { cache_date: brDate, matches: allMatches, fetched_at: new Date().toISOString() },
-        { onConflict: "cache_date" }
-      );
-    } else {
-      console.warn("[Engine] 0 matches from Google — keeping existing cache");
-      // Return existing cache instead of empty
-      if (cached?.matches && (cached.matches as any[]).length > 0) {
-        return new Response(JSON.stringify(cached.matches), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
+    // Upsert cache
+    await supabase.from("football_cache").upsert(
+      { cache_date: brDate, matches: allMatches, fetched_at: new Date().toISOString() },
+      { onConflict: "cache_date" }
+    );
 
     return new Response(JSON.stringify(allMatches), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("Error:", error);
-    // Return cached data as fallback
-    try {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const sb = createClient(supabaseUrl, supabaseServiceKey);
-      const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-      const { data: fallback } = await sb
-        .from("football_cache")
-        .select("matches")
-        .eq("cache_date", brDate)
-        .maybeSingle();
-      if (fallback?.matches) {
-        return new Response(JSON.stringify(fallback.matches), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    } catch { /* silent */ }
-
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

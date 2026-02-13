@@ -1,43 +1,16 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, BellRing, Tv, Clock, Trophy } from 'lucide-react';
+import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw } from 'lucide-react';
 import { Match, getTodayMatches, isLive, getStatusLabel } from '@/lib/football-api';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 
 const AgendaJogos = () => {
   const { currentClient } = useAuth();
-  const queryClient = useQueryClient();
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [loading, setLoading] = useState(true);
   const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
-
-  // Silent refresh — 60s interval, no loading indicators after first load
-  const { data: matches = [], isLoading: initialLoading, dataUpdatedAt } = useQuery({
-    queryKey: ['footballMatches'],
-    queryFn: getTodayMatches,
-    staleTime: 30 * 1000,
-    refetchInterval: 60 * 1000,
-    refetchOnWindowFocus: false,
-    refetchIntervalInBackground: true,
-  });
-
-  // Halftime intelligence: if HT for >20min, force refetch
-  useEffect(() => {
-    if (!matches.length) return;
-    const check = setInterval(() => {
-      const now = Date.now();
-      const staleHalftime = matches.some(m => {
-        if (m.status !== 'HT') return false;
-        return (now - dataUpdatedAt) > 20 * 60 * 1000;
-      });
-      if (staleHalftime) {
-        queryClient.invalidateQueries({ queryKey: ['footballMatches'] });
-      }
-    }, 60 * 1000);
-    return () => clearInterval(check);
-  }, [matches, dataUpdatedAt, queryClient]);
 
   // Load reminders from DB
   useEffect(() => {
@@ -49,10 +22,28 @@ const AgendaJogos = () => {
           body: { username: currentClient.u, action: 'list' },
         });
         if (data?.reminders) setReminders(new Set(data.reminders));
-      } catch { /* silent */ }
+      } catch {
+        // silent
+      }
     };
     loadReminders();
   }, [currentClient?.u]);
+
+  const loadMatches = useCallback(async () => {
+    setLoading(true);
+    const data = await getTodayMatches();
+    setMatches(data);
+    setLoading(false);
+  }, []);
+
+  const hasLiveMatches = matches.some(m => isLive(m.status));
+
+  useEffect(() => {
+    loadMatches();
+    // 5 min for live matches, 15 min otherwise — reads from cache only
+    const interval = setInterval(loadMatches, hasLiveMatches ? 5 * 60000 : 15 * 60000);
+    return () => clearInterval(interval);
+  }, [loadMatches, hasLiveMatches]);
 
   const handleToggleReminder = async (match: Match) => {
     if (!currentClient?.u) return;
@@ -77,10 +68,12 @@ const AgendaJogos = () => {
           return next;
         });
       }
-    } catch { /* silent */ }
+    } catch {
+      // silent
+    }
   };
 
-  const leagues = useMemo(() => [...new Set(matches.map(m => m.league.name))], [matches]);
+  const leagues = [...new Set(matches.map(m => m.league.name))];
 
   const filteredMatches = filter === 'all'
     ? matches
@@ -93,8 +86,6 @@ const AgendaJogos = () => {
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const showSkeleton = initialLoading && matches.length === 0;
-
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -105,6 +96,13 @@ const AgendaJogos = () => {
           </h2>
           <p className="text-sm text-muted-foreground mt-1">Jogos de hoje • Brasil & Europa</p>
         </div>
+        <button
+          onClick={loadMatches}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground transition-colors text-xs"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Atualizar
+        </button>
       </div>
 
       {/* Filters */}
@@ -118,11 +116,9 @@ const AgendaJogos = () => {
         ))}
       </div>
 
-      {showSkeleton ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="rounded-xl border border-border bg-card animate-pulse h-36" />
-          ))}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <RefreshCw className="w-8 h-8 text-primary animate-spin" />
         </div>
       ) : filteredMatches.length === 0 ? (
         <div className="text-center py-16">
@@ -136,11 +132,10 @@ const AgendaJogos = () => {
           <AnimatePresence>
             {filteredMatches.map((match, i) => (
               <motion.div
-                key={`${match.homeTeam.name}-${match.awayTeam.name}`}
+                key={match.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
-                layout
               >
                 <MatchCard
                   match={match}
@@ -172,25 +167,6 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-/** Animated score digit with fade transition */
-function AnimatedScore({ value, live }: { value: number | null; live: boolean }) {
-  const display = value ?? 0;
-  return (
-    <AnimatePresence mode="wait">
-      <motion.span
-        key={display}
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 8 }}
-        transition={{ duration: 0.4, ease: 'easeInOut' }}
-        className={`text-3xl sm:text-4xl font-display inline-block ${live ? 'text-primary' : 'text-foreground'}`}
-      >
-        {display}
-      </motion.span>
-    </AnimatePresence>
-  );
-}
-
 function MatchCard({
   match,
   hasReminder,
@@ -215,6 +191,12 @@ function MatchCard({
       {/* League header */}
       <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50">
         <div className="flex items-center gap-2">
+          <img
+            src={match.league.logo}
+            alt={match.league.name}
+            className="w-4 h-4 object-contain"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
           <span className="text-xs font-medium text-muted-foreground">{match.league.name}</span>
           {match.league.round && (
             <span className="text-xs text-muted-foreground/60">• {match.league.round}</span>
@@ -244,30 +226,30 @@ function MatchCard({
         <div className="flex items-center justify-between">
           {/* Home team */}
           <div className="flex-1 flex flex-col items-center gap-2">
-            {match.homeTeam.logo ? (
-              <img
-                src={match.homeTeam.logo}
-                alt={match.homeTeam.name}
-                className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
-              />
-            ) : (
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
-                {match.homeTeam.name.substring(0, 3).toUpperCase()}
-              </div>
-            )}
+            <img
+              src={match.homeTeam.logo}
+              alt={match.homeTeam.name}
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/placeholder.svg';
+              }}
+            />
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
               {match.homeTeam.name}
             </span>
           </div>
 
-          {/* Score with fade animation */}
+          {/* Score / VS */}
           <div className="flex-shrink-0 mx-4 text-center">
             {(live || finished) ? (
               <div className="flex items-center gap-2">
-                <AnimatedScore value={match.goals.home} live={live} />
+                <span className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}>
+                  {match.goals.home ?? 0}
+                </span>
                 <span className="text-lg text-muted-foreground font-light">×</span>
-                <AnimatedScore value={match.goals.away} live={live} />
+                <span className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}>
+                  {match.goals.away ?? 0}
+                </span>
               </div>
             ) : (
               <div className="flex flex-col items-center">
@@ -283,30 +265,29 @@ function MatchCard({
 
           {/* Away team */}
           <div className="flex-1 flex flex-col items-center gap-2">
-            {match.awayTeam.logo ? (
-              <img
-                src={match.awayTeam.logo}
-                alt={match.awayTeam.name}
-                className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
-              />
-            ) : (
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-muted flex items-center justify-center text-sm font-bold text-muted-foreground">
-                {match.awayTeam.name.substring(0, 3).toUpperCase()}
-              </div>
-            )}
+            <img
+              src={match.awayTeam.logo}
+              alt={match.awayTeam.name}
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/placeholder.svg';
+              }}
+            />
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
               {match.awayTeam.name}
             </span>
           </div>
         </div>
 
-        {/* Bottom bar */}
+        {/* Bottom bar: broadcast + reminder */}
         <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Tv className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
             {match.broadcast.map(ch => (
-              <span key={ch} className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground">
+              <span
+                key={ch}
+                className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground"
+              >
                 {ch}
               </span>
             ))}
