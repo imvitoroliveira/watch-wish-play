@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
     // Get today in São Paulo timezone
     const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-    // Check cache first
+    // Check cache first (cast brDate string to match date column)
     const { data: cached } = await supabase
       .from("football_cache")
       .select("matches, fetched_at")
@@ -99,36 +99,34 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         url: scrapeUrl,
-        formats: [
-          {
-            type: "json",
-            prompt:
-              "Extract all football/soccer matches shown on this page. For each match extract: league_name, home_team_name, away_team_name, home_score (number or null if not started), away_score (number or null if not started), match_status (the exact status text shown, like minute number, 'Fin', 'Int', time like '21:30', etc), and match_time (the scheduled kick-off time if shown, like '21:30'). Return as an array of objects.",
-            schema: {
-              type: "object",
-              properties: {
-                matches: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      league_name: { type: "string" },
-                      home_team_name: { type: "string" },
-                      away_team_name: { type: "string" },
-                      home_score: { type: ["number", "null"] },
-                      away_score: { type: ["number", "null"] },
-                      match_status: { type: "string" },
-                      match_time: { type: ["string", "null"] },
-                    },
-                    required: ["league_name", "home_team_name", "away_team_name", "match_status"],
+        formats: ["markdown", "extract"],
+        extract: {
+          prompt:
+            "Extract all football/soccer matches shown on this page. For each match extract: league_name, home_team_name, away_team_name, home_score (number or null if not started), away_score (number or null if not started), match_status (the exact status text shown like minute number, 'Fin', 'Int', time like '21:30', etc), and match_time (the scheduled kick-off time if shown like '21:30'). Return as an array under key 'matches'.",
+          schema: {
+            type: "object",
+            properties: {
+              matches: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    league_name: { type: "string" },
+                    home_team_name: { type: "string" },
+                    away_team_name: { type: "string" },
+                    home_score: { type: ["number", "null"] },
+                    away_score: { type: ["number", "null"] },
+                    match_status: { type: "string" },
+                    match_time: { type: ["string", "null"] },
                   },
+                  required: ["league_name", "home_team_name", "away_team_name", "match_status"],
                 },
               },
-              required: ["matches"],
             },
+            required: ["matches"],
           },
-        ],
-        waitFor: 5000,
+        },
+        waitFor: 8000,
       }),
     });
 
@@ -146,8 +144,15 @@ Deno.serve(async (req) => {
       throw new Error(`Firecrawl error: ${firecrawlData.error || firecrawlRes.status}`);
     }
 
-    // Extract the JSON data from Firecrawl response
-    const extractedJson = firecrawlData?.data?.json || firecrawlData?.json;
+    // Debug: log what Firecrawl returned
+    const markdown = firecrawlData?.data?.markdown || firecrawlData?.markdown || "";
+    console.log(`[Scraper] Markdown length: ${markdown.length}`);
+    if (markdown.length > 0) {
+      console.log(`[Scraper] Markdown preview: ${markdown.substring(0, 500)}`);
+    }
+
+    const extractedJson = firecrawlData?.data?.extract || firecrawlData?.extract;
+    console.log(`[Scraper] Extract result:`, JSON.stringify(extractedJson)?.substring(0, 500));
     const rawMatches = extractedJson?.matches || [];
 
     console.log(`[Scraper] Extracted ${rawMatches.length} matches from BeSoccer`);
