@@ -112,13 +112,7 @@ Deno.serve(async (req) => {
     }
 
     const allFixtures = data.response || [];
-    // Debug: log unique league IDs found
-    const uniqueLeagues = new Map<number, string>();
-    for (const f of allFixtures) {
-      if (!uniqueLeagues.has(f.league.id)) uniqueLeagues.set(f.league.id, f.league.name);
-    }
-    console.log(`[API] Got ${allFixtures.length} total fixtures. Unique leagues:`, JSON.stringify(Object.fromEntries(uniqueLeagues)));
-    console.log(`[API] Target IDs:`, [...TARGET_LEAGUE_IDS]);
+    console.log(`[API] Got ${allFixtures.length} total fixtures, filtering for target leagues...`);
 
     // Filter for our target leagues
     const allMatches: any[] = [];
