@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
         headers: { "Cache-Control": "no-cache, no-store", "Pragma": "no-cache" },
         extract: {
           prompt:
-            "Extract ALL football/soccer matches shown on this page for today. For each match extract: league_name (competition name like 'Ligue 1', 'LALIGA', 'Bundesliga', 'Serie A', 'Premier League', 'Champions League', etc.), home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '37' for live, 'F' for finished, 'HT' for half-time, or time like '21:30' for scheduled). Include ALL matches.",
+            "Extract ALL football/soccer matches shown on this page for today. For each match extract: league_name (competition name), home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '37' for live, 'F' for finished, 'HT' for half-time, or the scheduled time like '21:30' for not started), match_time (the original scheduled kick-off time in HH:MM format like '21:30' or '16:00' — extract this even for live or finished matches, it should be the time the match was originally scheduled to start). Include ALL matches.",
           schema: {
             type: "object",
             properties: {
@@ -222,6 +222,7 @@ Deno.serve(async (req) => {
                     home_score: { type: ["number", "null"] },
                     away_score: { type: ["number", "null"] },
                     match_status: { type: "string" },
+                    match_time: { type: ["string", "null"] },
                   },
                   required: ["league_name", "home_team_name", "away_team_name", "match_status"],
                 },
@@ -264,7 +265,9 @@ Deno.serve(async (req) => {
     const allMatches: any[] = premiumMatches.map((m: any, index: number) => {
       const { status, elapsed } = parseStatus(m.match_status || "");
       let matchDate = new Date().toISOString();
-      const timeMatch = (m.match_status || "").match(/^(\d{1,2}):(\d{2})/);
+      // Try match_time first (dedicated scheduled time field), then fall back to match_status
+      const timeSource = m.match_time || m.match_status || "";
+      const timeMatch = timeSource.match(/(\d{1,2}):(\d{2})/);
       if (timeMatch) {
         const d = new Date(brDate + `T${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}:00-03:00`);
         matchDate = d.toISOString();
