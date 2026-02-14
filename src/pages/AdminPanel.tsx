@@ -112,6 +112,7 @@ const AdminPanel = () => {
       return;
     }
     setWebhookLoading(true);
+    toast({ title: 'Processando disparos...', description: 'Filtrando clientes e enviando dados ao n8n.' });
     try {
       const now = new Date();
       const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
@@ -120,14 +121,32 @@ const AdminPanel = () => {
         const exp = new Date(c.e);
         return exp >= now && exp <= threeDaysLater;
       });
+
+      const payload = expiring.map(c => {
+        // Format expiration date as dd/mm/yyyy
+        let dataFormatada = c.e || '';
+        try {
+          const d = new Date(c.e);
+          if (!isNaN(d.getTime())) {
+            dataFormatada = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          }
+        } catch { /* keep original */ }
+
+        return {
+          usuario: c.u,
+          data_expiracao: dataFormatada,
+          contato: c['Notas'] || c['notas'] || c['NOTAS'] || '',
+        };
+      });
+
       const res = await fetch(webhookUrl.trim(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'expiring_clients', clients: expiring, total: expiring.length }),
+        body: JSON.stringify({ action: 'expiring_clients', clients: payload, total: payload.length }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       localStorage.setItem('msc_webhook_url', webhookUrl.trim());
-      toast({ title: 'Webhook disparado!', description: `${expiring.length} clientes com vencimento em 3 dias enviados.` });
+      toast({ title: 'Webhook disparado!', description: `${payload.length} clientes com vencimento em 3 dias enviados ao n8n.` });
     } catch (e: any) {
       toast({ title: 'Erro ao disparar webhook', description: e.message, variant: 'destructive' });
     }
