@@ -6,22 +6,88 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── Premium Leagues ────────────────────────────────────────────────
-const PREMIUM_LEAGUES = new Set([
-  "laliga", "la liga", "bundesliga", "serie a", "premier league",
-  "champions league", "liga dos campeões", "europa league", "liga europa",
-  "brasileirão", "campeonato brasileiro", "série a", "série b",
-  "copa do brasil", "copa libertadores", "libertadores",
-  "copa sul-americana", "sul-americana", "eliminatórias",
-  "copa do mundo", "supercopa", "recopa sul-americana", "amistoso",
-  "mls", "major league soccer",
-]);
+// ─── Premium Leagues (STRICT matching) ──────────────────────────────
+// Must match EXACTLY or with very specific patterns to avoid false positives
+// like "FKF Premier League" or "U18 Premier League"
 
-function isPremiumLeague(name: string): boolean {
+const EXCLUDED_PREFIXES = [
+  "u18", "u19", "u20", "u21", "u23", "sub-", "sub ", 
+  "frauen", "women", "feminino", "feminin",
+  "reserve", "youth", "amateur", "amador",
+  "fkf", "sudani", "liga premier serie",
+  // Reject minor divisions of state leagues
+  "paulista a2", "paulista a3", "paulista a4", "paulista série",
+  "carioca série b", "carioca série c",
+  "gaúcho 2", "gaúcho 3", "mineiro 2", "mineiro módulo",
+  "paranaense 2", "baiano 2", "catarinense 2", "pernambucano 2",
+];
+
+function isPremiumLeague(name: string, leagueId?: number): boolean {
   const lower = name.toLowerCase().trim();
-  for (const league of PREMIUM_LEAGUES) {
-    if (lower.includes(league) || league.includes(lower)) return true;
+  
+  // First: reject anything with excluded keywords
+  for (const ex of EXCLUDED_PREFIXES) {
+    if (lower.includes(ex)) return false;
   }
+  
+  // Reject generic "League"
+  if (lower === "league") return false;
+  
+  // Reject "2. Bundesliga"
+  if (lower.includes("2. bundesliga")) return false;
+  
+  // Reject CAF Champions League (keep only UEFA)
+  if (lower.includes("caf champions")) return false;
+  
+  // Reject state league relegation/semi-finals stages
+  if ((lower.includes("relegation") || lower.includes("semi-final")) && 
+      (lower.includes("gaúcho") || lower.includes("mineiro") || lower.includes("paulista") || lower.includes("carioca"))) {
+    return false;
+  }
+  
+  // "Premier League" is a GENERIC name used by 30+ countries
+  // ONLY accept it via known league IDs, never by name alone
+  if (lower === "premier league" || lower.includes("premier league")) {
+    // Accept only by known IDs (RapidAPI: 39, APIFootball: 152)
+    if (leagueId && (leagueId === 39 || leagueId === 152)) return true;
+    return false;
+  }
+  
+  // "Serie A" is also generic — accept only Italian Serie A by known IDs
+  if (lower === "serie a") {
+    if (leagueId && (leagueId === 135 || leagueId === 207)) return true;
+    return false;
+  }
+  
+  // WHITELIST: only these leagues are accepted by name
+  const ALLOWED = [
+    "la liga", "laliga",
+    "bundesliga",
+    "série a", "série b",
+    "champions league", "uefa champions league",
+    "europa league", "uefa europa league",
+    "brasileirão", "campeonato brasileiro",
+    "copa do brasil",
+    "copa libertadores", "libertadores",
+    "copa sul-americana", "sul-americana",
+    "eliminatórias",
+    "copa do mundo", "world cup",
+    "supercopa",
+    "recopa sul-americana", "recopa",
+    "amistoso", "amistosos",
+    "mls", "major league soccer",
+    "liga dos campeões", "liga europa",
+    "carioca série a", "carioca 1",
+    "paulista a1", "paulista 1", "campeonato paulista",
+    "gaúcho 1", "gauchão",
+    "mineiro 1",
+  ];
+  
+  for (const league of ALLOWED) {
+    if (lower === league) return true;
+    if (lower.startsWith(league)) return true;
+  }
+  
   return false;
 }
 
@@ -294,7 +360,7 @@ async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
       // Exclude unwanted
       if (EXCLUDED.some(kw => ln.includes(kw))) return false;
       // Include by ID or name
-      return premiumIds.has(lid) || isPremiumLeague(e.league_name || "");
+      return premiumIds.has(lid) || isPremiumLeague(e.league_name || "", lid);
     });
 
     console.log(`[Source2-APIFootball] ${filtered.length} premium events after strict filter`);
@@ -482,7 +548,7 @@ async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
     const filtered = allEvents.filter((ev: any) => {
       const ln = (ev.strLeague || "").toLowerCase();
       if (EXCLUDED_TSDB.some(kw => ln.includes(kw))) return false;
-      return isPremiumLeague(ev.strLeague || "");
+      return isPremiumLeague(ev.strLeague || "", parseInt(ev.idLeague) || 0);
     });
 
     console.log(`[Source4-TheSportsDB] ${filtered.length} premium events after filter`);
