@@ -258,34 +258,50 @@ async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
   if (!apiKey) { console.warn("[Source2] APIFOOTBALL_COM_KEY not set"); return null; }
 
   try {
-    console.log(`[Source2-APIFootball] Fetching events by league IDs for ${dateStr}...`);
+    console.log(`[Source2-APIFootball] Fetching ALL events for ${dateStr} (1 request to save quota)...`);
     
-    // Fetch each league individually to avoid pulling 1000+ irrelevant matches
-    const leagueIds = APIFOOTBALL_LEAGUE_IDS;
-    const allEvents: any[] = [];
-    
-    // Batch fetch: request all leagues in parallel
-    const fetches = leagueIds.map(async (leagueId) => {
-      try {
-        const url = `https://apiv3.apifootball.com/?action=get_events&from=${dateStr}&to=${dateStr}&league_id=${leagueId}&timezone=America/Sao_Paulo&APIkey=${apiKey}`;
-        const res = await fetch(url);
-        if (!res.ok) { await res.text(); return []; }
-        const data = await res.json();
-        if (!Array.isArray(data)) return [];
-        return data;
-      } catch { return []; }
-    });
-    
-    const results = await Promise.all(fetches);
-    for (const events of results) {
-      allEvents.push(...events);
+    // Single request — saves API quota (free plan ~100/day)
+    const url = `https://apiv3.apifootball.com/?action=get_events&from=${dateStr}&to=${dateStr}&timezone=America/Sao_Paulo&APIkey=${apiKey}`;
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[Source2-APIFootball] HTTP ${res.status}: ${body}`);
+      return null;
     }
+
+    const data = await res.json();
+    if (!Array.isArray(data)) {
+      console.warn(`[Source2-APIFootball] Unexpected response:`, typeof data);
+      return null;
+    }
+
+    console.log(`[Source2-APIFootball] Got ${data.length} total events`);
+
+    // Strict filter: known league IDs + name matching
+    const premiumIds = new Set(APIFOOTBALL_LEAGUE_IDS);
     
-    console.log(`[Source2-APIFootball] Got ${allEvents.length} events from ${leagueIds.length} leagues`);
+    // Exclude known unwanted leagues
+    const EXCLUDED = [
+      "welsh", "galês", "cymru", "northern ireland", "faroe", "gibraltar",
+      "andorra", "san marino", "malta", "kosovo", "luxembourg", "liechtenstein",
+      "reserve", "youth", "u19", "u21", "u23", "women", "feminino", "amateur",
+    ];
+    
+    const filtered = data.filter((e: any) => {
+      const lid = parseInt(e.league_id);
+      const ln = (e.league_name || "").toLowerCase();
+      // Exclude unwanted
+      if (EXCLUDED.some(kw => ln.includes(kw))) return false;
+      // Include by ID or name
+      return premiumIds.has(lid) || isPremiumLeague(e.league_name || "");
+    });
 
-    if (allEvents.length === 0) return null;
+    console.log(`[Source2-APIFootball] ${filtered.length} premium events after strict filter`);
 
-    return allEvents.map((e: any) => {
+    if (filtered.length === 0) return null;
+
+    return filtered.map((e: any) => {
       const { status, elapsed } = parseStatus(e.match_status || "");
       const homeScore = e.match_hometeam_score !== "" ? parseInt(e.match_hometeam_score) : null;
       const awayScore = e.match_awayteam_score !== "" ? parseInt(e.match_awayteam_score) : null;
