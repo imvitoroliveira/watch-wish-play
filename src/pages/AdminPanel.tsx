@@ -41,15 +41,26 @@ const AdminPanel = () => {
     setOnlineLoading(true);
     try {
       const adminAuth = sessionStorage.getItem('msc_admin_creds') || '';
-      const { data } = await supabase.functions.invoke('user-presence', {
+      console.log('[presence] loading online users, auth present:', !!adminAuth);
+      const { data, error } = await supabase.functions.invoke('user-presence', {
         method: 'POST',
         body: { action: 'list_online' },
         headers: { 'x-admin-auth': adminAuth },
       });
+      console.log('[presence] response:', data, error);
       if (data?.online) setOnlineUsers(data.online);
-    } catch { /* silent */ }
+    } catch (e) {
+      console.error('[presence] error:', e);
+    }
     setOnlineLoading(false);
   };
+
+  // Auto-load online users when admin is logged in
+  useEffect(() => {
+    if (isAdmin) {
+      loadOnlineUsers();
+    }
+  }, [isAdmin]);
 
   // Load catalog info via edge function (no direct DB access)
   useEffect(() => {
