@@ -330,7 +330,100 @@ async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SOURCE 3: Firecrawl fallback (ESPN scraper)
+// SOURCE 3: ESPN Public API (no key needed)
+// ═══════════════════════════════════════════════════════════════════
+const ESPN_LEAGUE_SLUGS = [
+  { slug: "bra.1", name: "Brasileirão Série A" },
+  { slug: "bra.2", name: "Brasileirão Série B" },
+  { slug: "bra.copa_do_brasil", name: "Copa do Brasil" },
+  { slug: "conmebol.libertadores", name: "Copa Libertadores" },
+  { slug: "conmebol.sudamericana", name: "Copa Sul-Americana" },
+  { slug: "uefa.champions", name: "Champions League" },
+  { slug: "uefa.europa", name: "Europa League" },
+  { slug: "eng.1", name: "Premier League" },
+  { slug: "esp.1", name: "La Liga" },
+  { slug: "ger.1", name: "Bundesliga" },
+  { slug: "ita.1", name: "Serie A" },
+  { slug: "usa.1", name: "MLS" },
+  { slug: "fifa.worldq.conmebol", name: "Eliminatórias CONMEBOL" },
+  { slug: "fifa.world", name: "Copa do Mundo" },
+  { slug: "fifa.friendly", name: "Amistosos Internacionais" },
+];
+
+async function fetchFromESPN(dateStr: string): Promise<any[] | null> {
+  try {
+    console.log(`[Source3-ESPN] Fetching from ESPN API for ${dateStr}...`);
+    const yyyymmdd = dateStr.replace(/-/g, "");
+    const allEvents: any[] = [];
+
+    // Fetch top leagues in parallel (ESPN API is free, no key needed)
+    const fetches = ESPN_LEAGUE_SLUGS.map(async ({ slug, name }) => {
+      try {
+        const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${yyyymmdd}`;
+        const res = await fetch(url);
+        if (!res.ok) { await res.text(); return []; }
+        const data = await res.json();
+        const events = data?.events || [];
+        return events.map((ev: any) => ({ ...ev, _leagueName: name, _slug: slug }));
+      } catch { return []; }
+    });
+
+    const results = await Promise.all(fetches);
+    for (const events of results) allEvents.push(...events);
+
+    console.log(`[Source3-ESPN] Got ${allEvents.length} events from ${ESPN_LEAGUE_SLUGS.length} leagues`);
+    if (allEvents.length === 0) return null;
+
+    return allEvents.map((ev: any) => {
+      const comp = ev.competitions?.[0];
+      if (!comp) return null;
+
+      const homeComp = comp.competitors?.find((c: any) => c.homeAway === "home");
+      const awayComp = comp.competitors?.find((c: any) => c.homeAway === "away");
+      
+      const espnStatus = comp.status?.type?.name || "";
+      let status = "NS";
+      let elapsed: number | null = null;
+
+      if (espnStatus === "STATUS_FULL_TIME" || espnStatus === "STATUS_FINAL") status = "FT";
+      else if (espnStatus === "STATUS_HALFTIME") { status = "HT"; elapsed = 45; }
+      else if (espnStatus === "STATUS_IN_PROGRESS" || espnStatus === "STATUS_FIRST_HALF") {
+        status = "1H";
+        elapsed = parseInt(comp.status?.displayClock || "0") || null;
+      }
+      else if (espnStatus === "STATUS_SECOND_HALF") {
+        status = "2H";
+        elapsed = parseInt(comp.status?.displayClock || "0") || null;
+      }
+      else if (espnStatus === "STATUS_POSTPONED") status = "PST";
+      else if (espnStatus === "STATUS_CANCELED" || espnStatus === "STATUS_CANCELLED") status = "CANC";
+      else if (espnStatus === "STATUS_SUSPENDED") status = "SUSP";
+      else if (espnStatus === "STATUS_EXTRA_TIME") { status = "AET"; elapsed = 105; }
+      else if (espnStatus === "STATUS_PENALTY_SHOOTOUT") { status = "PEN"; elapsed = 120; }
+
+      const homeScore = homeComp?.score ? parseInt(homeComp.score) : null;
+      const awayScore = awayComp?.score ? parseInt(awayComp.score) : null;
+
+      return {
+        homeTeamName: homeComp?.team?.displayName || homeComp?.team?.shortDisplayName || "Time A",
+        awayTeamName: awayComp?.team?.displayName || awayComp?.team?.shortDisplayName || "Time B",
+        homeScore: isNaN(homeScore as number) ? null : homeScore,
+        awayScore: isNaN(awayScore as number) ? null : awayScore,
+        leagueName: ev._leagueName || ev.league?.description || "Desconhecida",
+        leagueId: 0,
+        status,
+        elapsed,
+        date: ev.date || comp.date || new Date().toISOString(),
+      };
+    }).filter(Boolean);
+  } catch (e) {
+    console.error(`[Source3-ESPN] Error: ${e.message}`);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SOURCE 4: Firecrawl fallback (ESPN scraper)
 // ═══════════════════════════════════════════════════════════════════
 async function fetchFromFirecrawl(brDate: string): Promise<any[] | null> {
   const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
@@ -476,7 +569,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Source 3: Firecrawl (ESPN scraping) — last resort
+    // Source 3: ESPN Public API — free, no key needed
+    if (!rawMatches || rawMatches.length === 0) {
+      rawMatches = await fetchFromESPN(brDate);
+      if (rawMatches && rawMatches.length > 0) {
+        source = "ESPN-API";
+      }
+    }
+
+    // Source 4: Firecrawl (ESPN scraping) — last resort
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromFirecrawl(brDate);
       if (rawMatches && rawMatches.length > 0) {
@@ -485,7 +586,7 @@ Deno.serve(async (req) => {
     }
 
     if (!rawMatches || rawMatches.length === 0) {
-      console.error(`[Scraper] All 3 sources returned empty/failed`);
+      console.error(`[Scraper] All 4 sources returned empty/failed`);
       if (cached) {
         return new Response(JSON.stringify(cached.matches), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
