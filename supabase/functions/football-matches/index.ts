@@ -681,21 +681,13 @@ Deno.serve(async (req) => {
     let rawMatches: any[] | null = null;
     let source = "none";
 
-    // Source 1: RapidAPI (API-Football v3) — most reliable
+    // Source 1: RapidAPI (API-Football v3) — paid, most reliable
     rawMatches = await fetchFromRapidAPI(brDate);
     if (rawMatches && rawMatches.length > 0) {
       source = "RapidAPI";
     }
 
-    // Source 2: APIFootball.com — fallback
-    if (!rawMatches || rawMatches.length === 0) {
-      rawMatches = await fetchFromAPIFootball(brDate);
-      if (rawMatches && rawMatches.length > 0) {
-        source = "APIFootball.com";
-      }
-    }
-
-    // Source 3: ESPN Public API — free, no key needed
+    // Source 2: ESPN Public API — free, unlimited
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromESPN(brDate);
       if (rawMatches && rawMatches.length > 0) {
@@ -703,11 +695,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Source 4: TheSportsDB — free, no key needed
+    // Source 3: TheSportsDB — free, unlimited
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromTheSportsDB(brDate);
       if (rawMatches && rawMatches.length > 0) {
         source = "TheSportsDB";
+      }
+    }
+
+    // Source 4: APIFootball.com — free but limited (~100/day), use as emergency fallback
+    if (!rawMatches || rawMatches.length === 0) {
+      rawMatches = await fetchFromAPIFootball(brDate);
+      if (rawMatches && rawMatches.length > 0) {
+        source = "APIFootball.com";
       }
     }
 

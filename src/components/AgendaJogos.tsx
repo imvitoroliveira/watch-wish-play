@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, BellRing, Tv, Clock, Trophy, RefreshCw } from 'lucide-react';
+import { Bell, BellRing, Tv, Clock, Trophy, Loader2 } from 'lucide-react';
 import { Match, isLive, getStatusLabel } from '@/lib/football-api';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,7 +8,7 @@ import { useFootballMatches } from '@/hooks/useFootballMatches';
 
 const AgendaJogos = () => {
   const { currentClient } = useAuth();
-  const { data: matches = [], isLoading, isFetching, refetch } = useFootballMatches();
+  const { data: matches = [], isLoading } = useFootballMatches();
   const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
   const [initialLoad, setInitialLoad] = useState(true);
@@ -86,20 +86,8 @@ const AgendaJogos = () => {
             <Trophy className="w-6 h-6 text-primary" />
             AGENDA DE JOGOS VIP
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Jogos de hoje • Brasil & Europa
-            {isFetching && !showLoading && (
-              <span className="ml-2 inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            )}
-          </p>
+          {/* Banner slot — será preenchido futuramente */}
         </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground transition-colors text-xs"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
       </div>
 
       {/* Filters */}
@@ -115,7 +103,7 @@ const AgendaJogos = () => {
 
       {showLoading ? (
         <div className="flex items-center justify-center py-16">
-          <RefreshCw className="w-8 h-8 text-primary animate-spin" />
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
         </div>
       ) : filteredMatches.length === 0 ? (
         <div className="text-center py-16">
