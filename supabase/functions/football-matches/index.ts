@@ -193,59 +193,87 @@ Deno.serve(async (req) => {
 
     console.log(`[Scraper] Fetching from ESPN Brasil...`);
 
-    const firecrawlRes = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      },
-      body: JSON.stringify({
-        url: "https://www.espn.com.br/futebol/resultados",
-        formats: ["extract"],
-        maxAge: 0,
-        storeInCache: false,
-        headers: { "Cache-Control": "no-cache, no-store", "Pragma": "no-cache" },
-        extract: {
-          prompt:
-            "Extract ALL football/soccer matches shown on this page for today. For each match extract: league_name (competition name), home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '37' for live, 'F' for finished, 'HT' for half-time, or the scheduled time like '21:30' for not started), match_time (the original scheduled kick-off time in HH:MM format like '21:30' or '16:00' — extract this even for live or finished matches, it should be the time the match was originally scheduled to start). Include ALL matches.",
-          schema: {
-            type: "object",
-            properties: {
-              matches: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    league_name: { type: "string" },
-                    home_team_name: { type: "string" },
-                    away_team_name: { type: "string" },
-                    home_score: { type: ["number", "null"] },
-                    away_score: { type: ["number", "null"] },
-                    match_status: { type: "string" },
-                    match_time: { type: ["string", "null"] },
+    // Retry logic: up to 2 attempts with reduced waitFor for speed
+    let firecrawlData: any = null;
+    let lastError = "";
+    const MAX_RETRIES = 2;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const controller = new AbortController();
+        const abortTimeout = setTimeout(() => controller.abort(), 25000); // 25s hard limit
+
+        const firecrawlRes = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            url: "https://www.espn.com.br/futebol/resultados",
+            formats: ["extract"],
+            maxAge: 0,
+            storeInCache: false,
+            timeout: 20000,
+            headers: { "Cache-Control": "no-cache, no-store", "Pragma": "no-cache" },
+            extract: {
+              prompt:
+                "Extract ALL football/soccer matches shown on this page for today. For each match extract: league_name (competition name), home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '37' for live, 'F' for finished, 'HT' for half-time, or the scheduled time like '21:30' for not started), match_time (the original scheduled kick-off time in HH:MM format like '21:30' or '16:00' — extract this even for live or finished matches, it should be the time the match was originally scheduled to start). Include ALL matches.",
+              schema: {
+                type: "object",
+                properties: {
+                  matches: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        league_name: { type: "string" },
+                        home_team_name: { type: "string" },
+                        away_team_name: { type: "string" },
+                        home_score: { type: ["number", "null"] },
+                        away_score: { type: ["number", "null"] },
+                        match_status: { type: "string" },
+                        match_time: { type: ["string", "null"] },
+                      },
+                      required: ["league_name", "home_team_name", "away_team_name", "match_status"],
+                    },
                   },
-                  required: ["league_name", "home_team_name", "away_team_name", "match_status"],
                 },
+                required: ["matches"],
               },
             },
-            required: ["matches"],
-          },
-        },
-        waitFor: 5000,
-      }),
-    });
+            waitFor: 3000,
+          }),
+        });
 
-    const firecrawlData = await firecrawlRes.json();
+        clearTimeout(abortTimeout);
+        const data = await firecrawlRes.json();
 
-    if (!firecrawlRes.ok) {
-      console.error("[Scraper] Firecrawl error:", JSON.stringify(firecrawlData));
+        if (!firecrawlRes.ok) {
+          lastError = JSON.stringify(data);
+          console.warn(`[Scraper] Attempt ${attempt}/${MAX_RETRIES} failed: ${lastError}`);
+          continue; // retry
+        }
+
+        firecrawlData = data;
+        console.log(`[Scraper] Success on attempt ${attempt}`);
+        break; // success
+      } catch (e) {
+        lastError = e.message || String(e);
+        console.warn(`[Scraper] Attempt ${attempt}/${MAX_RETRIES} error: ${lastError}`);
+      }
+    }
+
+    if (!firecrawlData) {
+      console.error(`[Scraper] All ${MAX_RETRIES} attempts failed: ${lastError}`);
       if (cached) {
         return new Response(JSON.stringify(cached.matches), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      throw new Error(`Firecrawl error: ${firecrawlData.error || firecrawlRes.status}`);
+      throw new Error(`Firecrawl failed after ${MAX_RETRIES} attempts: ${lastError}`);
     }
 
     const extractedJson = firecrawlData?.data?.extract || firecrawlData?.extract;
