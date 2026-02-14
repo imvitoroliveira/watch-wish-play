@@ -38,12 +38,13 @@ function parseStatus(statusText: string): { status: string; elapsed: number | nu
   if (s.toLowerCase().includes("susp")) return { status: "SUSP", elapsed: null };
   if (s.toLowerCase().includes("adiado")) return { status: "PST", elapsed: null };
   if (s.toLowerCase().includes("canc")) return { status: "CANC", elapsed: null };
-  const minuteMatch = s.match(/^(\d+)['′+]?/);
+  // IMPORTANT: Check for scheduled time format BEFORE minute regex, otherwise "15:00" gets parsed as minute 15
+  if (/^\d{1,2}:\d{2}/.test(s)) return { status: "NS", elapsed: null };
+  const minuteMatch = s.match(/^(\d+)['′+]?$/);
   if (minuteMatch) {
     const min = parseInt(minuteMatch[1]);
     return { status: min <= 45 ? "1H" : "2H", elapsed: min };
   }
-  if (/^\d{1,2}:\d{2}/.test(s)) return { status: "NS", elapsed: null };
   return { status: "NS", elapsed: null };
 }
 
