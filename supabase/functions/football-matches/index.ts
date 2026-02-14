@@ -6,92 +6,11 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── Premium Leagues (STRICT matching) ──────────────────────────────
-// Must match EXACTLY or with very specific patterns to avoid false positives
-// like "FKF Premier League" or "U18 Premier League"
+// ─── Premium Leagues (STRICT WHITELIST — 13 competitions only) ──────
+// Brasileirão A/B, Copa do Brasil, Supercopa, Libertadores, Sul-Americana,
+// Recopa, Champions League, Europa League, Eliminatórias, Copa do Mundo, Amistosos
 
-const EXCLUDED_PREFIXES = [
-  "u18", "u19", "u20", "u21", "u23", "sub-", "sub ", 
-  "frauen", "women", "feminino", "feminin",
-  "reserve", "youth", "amateur", "amador",
-  "fkf", "sudani", "liga premier serie",
-  // Reject minor divisions of state leagues
-  "paulista a2", "paulista a3", "paulista a4", "paulista série",
-  "carioca série b", "carioca série c",
-  "gaúcho 2", "gaúcho 3", "mineiro 2", "mineiro módulo",
-  "paranaense 2", "baiano 2", "catarinense 2", "pernambucano 2",
-];
-
-function isPremiumLeague(name: string, leagueId?: number): boolean {
-  const lower = name.toLowerCase().trim();
-  
-  // First: reject anything with excluded keywords
-  for (const ex of EXCLUDED_PREFIXES) {
-    if (lower.includes(ex)) return false;
-  }
-  
-  // Reject generic "League"
-  if (lower === "league") return false;
-  
-  // Reject "2. Bundesliga"
-  if (lower.includes("2. bundesliga")) return false;
-  
-  // Reject CAF Champions League (keep only UEFA)
-  if (lower.includes("caf champions")) return false;
-  
-  // Reject state league relegation/semi-finals stages
-  if ((lower.includes("relegation") || lower.includes("semi-final")) && 
-      (lower.includes("gaúcho") || lower.includes("mineiro") || lower.includes("paulista") || lower.includes("carioca"))) {
-    return false;
-  }
-  
-  // "Premier League" is a GENERIC name used by 30+ countries
-  // ONLY accept it via known league IDs, never by name alone
-  if (lower === "premier league" || lower.includes("premier league")) {
-    // Accept only by known IDs (RapidAPI: 39, APIFootball: 152)
-    if (leagueId && (leagueId === 39 || leagueId === 152)) return true;
-    return false;
-  }
-  
-  // "Serie A" is also generic — accept only Italian Serie A by known IDs
-  if (lower === "serie a") {
-    if (leagueId && (leagueId === 135 || leagueId === 207)) return true;
-    return false;
-  }
-  
-  // WHITELIST: only these leagues are accepted by name
-  const ALLOWED = [
-    "la liga", "laliga",
-    "bundesliga",
-    "série a", "série b",
-    "champions league", "uefa champions league",
-    "europa league", "uefa europa league",
-    "brasileirão", "campeonato brasileiro",
-    "copa do brasil",
-    "copa libertadores", "libertadores",
-    "copa sul-americana", "sul-americana",
-    "eliminatórias",
-    "copa do mundo", "world cup",
-    "supercopa",
-    "recopa sul-americana", "recopa",
-    "amistoso", "amistosos",
-    "mls", "major league soccer",
-    "liga dos campeões", "liga europa",
-    "carioca série a", "carioca 1",
-    "paulista a1", "paulista 1", "campeonato paulista",
-    "gaúcho 1", "gauchão",
-    "mineiro 1",
-  ];
-  
-  for (const league of ALLOWED) {
-    if (lower === league) return true;
-    if (lower.startsWith(league)) return true;
-  }
-  
-  return false;
-}
-
-// ─── RapidAPI (API-Football v3) league IDs ──────────────────────────
+// Known league IDs per source (only the 13 competitions)
 const RAPIDAPI_LEAGUE_IDS = [
   71, 72,       // Brasileirão A, B
   73,           // Copa do Brasil
@@ -101,33 +20,52 @@ const RAPIDAPI_LEAGUE_IDS = [
   535,          // Recopa
   34,           // Eliminatórias
   10,           // Amistosos internacionais
-  140,          // La Liga
-  78,           // Bundesliga
-  135,          // Serie A (Itália)
-  39,           // Premier League
   2,            // Champions League
   3,            // Europa League
   1,            // Copa do Mundo
-  253,          // MLS
 ];
 
-// ─── APIFootball.com league IDs (v3 IDs) ────────────────────────────
-// We fetch by specific league_id to avoid pulling irrelevant leagues
-const APIFOOTBALL_LEAGUE_IDS = [
-  302,          // Brasileirão Série A
-  349,          // Copa do Brasil  
-  372,          // Copa Libertadores
-  373,          // Copa Sul-Americana
-  468,          // Eliminatórias CONMEBOL
-  152,          // Premier League
-  468,          // La Liga → need to confirm actual ID
-  175,          // Bundesliga
-  207,          // Serie A (Itália)
-  3,            // Champions League
-  4,            // Europa League
-  332,          // MLS
-  683,          // Copa do Mundo
-];
+// APIFootball.com IDs are unreliable — rely on isPremiumLeague name filter only
+const APIFOOTBALL_LEAGUE_IDS: number[] = [];
+
+function isPremiumLeague(name: string, leagueId?: number): boolean {
+  const lower = name.toLowerCase().trim();
+  
+  // Reject youth/women/reserve/amateur always
+  const REJECTED = [
+    "u17", "u18", "u19", "u20", "u21", "u23", "sub-", "sub ",
+    "frauen", "women", "feminino", "reserve", "youth", "amateur",
+    "group stage",  // Rejects "Friendlies - Group Stage" etc
+  ];
+  for (const ex of REJECTED) {
+    if (lower.includes(ex)) return false;
+  }
+
+  // Reject CAF Champions League (keep only UEFA)
+  if (lower.includes("caf champions")) return false;
+
+  // STRICT WHITELIST — only these 13 competitions
+  const ALLOWED = [
+    "brasileirão", "campeonato brasileiro", "série a", "série b",
+    "copa do brasil",
+    "supercopa", "supercopa do brasil",
+    "copa libertadores", "libertadores",
+    "copa sul-americana", "sul-americana",
+    "recopa sul-americana", "recopa",
+    "champions league", "uefa champions league", "liga dos campeões",
+    "europa league", "uefa europa league", "liga europa",
+    "eliminatórias", "world cup qualif",
+    "copa do mundo", "world cup", "fifa world cup",
+    "amistoso", "amistosos", "friendly", "friendlies",
+  ];
+
+  for (const league of ALLOWED) {
+    if (lower === league) return true;
+    if (lower.startsWith(league)) return true;
+  }
+
+  return false;
+}
 
 // ─── Status parsing ─────────────────────────────────────────────────
 function parseStatus(statusText: string): { status: string; elapsed: number | null } {
@@ -155,7 +93,7 @@ function parseStatus(statusText: string): { status: string; elapsed: number | nu
   return { status: "NS", elapsed: null };
 }
 
-// ─── Broadcast map ──────────────────────────────────────────────────
+// ─── Broadcast map (only 13 competitions) ───────────────────────────
 const BROADCAST_MAP: Record<string, string[]> = {
   "brasileirão": ["Premiere", "Globo", "SporTV"],
   "campeonato brasileiro": ["Premiere", "Globo", "SporTV"],
@@ -164,18 +102,13 @@ const BROADCAST_MAP: Record<string, string[]> = {
   "copa do brasil": ["Premiere", "Globo", "Amazon Prime"],
   "libertadores": ["Paramount+", "SBT", "ESPN"],
   "sul-americana": ["Paramount+", "SBT", "ESPN"],
+  "recopa": ["ESPN", "SBT"],
   "champions league": ["TNT", "HBO Max"],
   "europa league": ["ESPN", "Star+"],
-  "laliga": ["ESPN", "Star+"], "la liga": ["ESPN", "Star+"],
-  "premier league": ["ESPN", "Star+"],
-  "bundesliga": ["CazéTV", "OneFootball"],
-  "serie a": ["ESPN", "Star+"],
   "supercopa": ["Globo", "SporTV"],
   "eliminatórias": ["Globo", "SporTV", "CazéTV"],
   "copa do mundo": ["Globo", "SporTV", "CazéTV"],
   "amistoso": ["SporTV", "ESPN"],
-  "mls": ["Apple TV", "MLS Season Pass"],
-  "major league soccer": ["Apple TV", "MLS Season Pass"],
 };
 
 function getBroadcast(leagueName: string): string[] {
@@ -406,11 +339,6 @@ const ESPN_LEAGUE_SLUGS = [
   { slug: "conmebol.sudamericana", name: "Copa Sul-Americana" },
   { slug: "uefa.champions", name: "Champions League" },
   { slug: "uefa.europa", name: "Europa League" },
-  { slug: "eng.1", name: "Premier League" },
-  { slug: "esp.1", name: "La Liga" },
-  { slug: "ger.1", name: "Bundesliga" },
-  { slug: "ita.1", name: "Serie A" },
-  { slug: "usa.1", name: "MLS" },
   { slug: "fifa.worldq.conmebol", name: "Eliminatórias CONMEBOL" },
   { slug: "fifa.world", name: "Copa do Mundo" },
   { slug: "fifa.friendly", name: "Amistosos Internacionais" },
