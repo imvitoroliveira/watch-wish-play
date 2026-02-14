@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { processM3UViaBackend, clearM3UCatalog, fetchM3UCatalog } from '@/lib/m3u-parser';
 import { supabase } from '@/integrations/supabase/client';
+import OnlineStatusTab from '@/components/OnlineStatusTab';
 
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList } = useAuth();
@@ -412,79 +413,12 @@ const AdminPanel = () => {
           </TabsContent>
 
           <TabsContent value="online">
-            <div className="space-y-6">
-              {/* Online counter card */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-card rounded-xl border border-border p-6"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center">
-                      <Wifi className="w-6 h-6 text-green-400" />
-                    </div>
-                    <div>
-                      <p className="text-3xl font-bold text-foreground">{onlineUsers.length}</p>
-                      <p className="text-sm text-muted-foreground">Ativos Agora</p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadOnlineUsers}
-                    disabled={onlineLoading}
-                    className="border-border text-foreground"
-                  >
-                    {onlineLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4 mr-1" /> Atualizar</>}
-                  </Button>
-                </div>
-              </motion.div>
-
-              {/* Online users list */}
-              <div className="bg-card rounded-xl border border-border overflow-hidden">
-                <div className="p-4 border-b border-border">
-                  <h3 className="font-display text-lg text-foreground flex items-center gap-2">
-                    <Users className="w-5 h-5 text-accent" />
-                    STATUS EM TEMPO REAL
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">Usuários com atividade nos últimos 5 minutos</p>
-                </div>
-                {onlineUsers.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">
-                    {onlineLoading ? 'Carregando...' : 'Nenhum usuário online no momento.'}
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-secondary">
-                        <tr>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Username</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
-                          <th className="text-left p-3 text-muted-foreground font-medium">Última Atividade</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {onlineUsers.map((u, i) => (
-                          <tr key={i} className="border-t border-border hover:bg-secondary/50 transition-colors">
-                            <td className="p-3 text-foreground font-medium">{u.client_username}</td>
-                            <td className="p-3">
-                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-400">
-                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                Online
-                              </span>
-                            </td>
-                            <td className="p-3 text-muted-foreground">
-                              {new Date(u.last_seen).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
+            <OnlineStatusTab
+              onlineUsers={onlineUsers}
+              onlineLoading={onlineLoading}
+              loadOnlineUsers={loadOnlineUsers}
+              clientList={clientList}
+            />
           </TabsContent>
 
           <TabsContent value="vencimentos">
