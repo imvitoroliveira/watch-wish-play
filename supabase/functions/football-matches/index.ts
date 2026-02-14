@@ -423,7 +423,139 @@ async function fetchFromESPN(dateStr: string): Promise<any[] | null> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SOURCE 4: Firecrawl fallback (ESPN scraper)
+// SOURCE 4: TheSportsDB (free, no key needed)
+// ═══════════════════════════════════════════════════════════════════
+const TSDB_LEAGUE_IDS = [
+  "4351",  // Brasileirão Série A
+  "4404",  // Brasileirão Série B
+  "4480",  // Copa do Brasil
+  "4350",  // Copa Libertadores
+  "4481",  // Copa Sul-Americana
+  "4328",  // Premier League
+  "4335",  // La Liga
+  "4331",  // Bundesliga
+  "4332",  // Serie A (Itália)
+  "4480",  // Champions League → 4480 is approximate, will also use livescore
+  "4337",  // MLS
+];
+
+async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
+  try {
+    console.log(`[Source4-TheSportsDB] Fetching events for ${dateStr}...`);
+    const allEvents: any[] = [];
+
+    // Method 1: Livescores (live + today's matches)
+    try {
+      const liveRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/livescore.php?s=Soccer`);
+      if (liveRes.ok) {
+        const liveData = await liveRes.json();
+        const liveEvents = liveData?.events || [];
+        console.log(`[Source4-TheSportsDB] Livescore: ${liveEvents.length} events`);
+        allEvents.push(...liveEvents);
+      }
+    } catch { /* silent */ }
+
+    // Method 2: Events by day (past + scheduled)
+    try {
+      const dayRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${dateStr}&s=Soccer`);
+      if (dayRes.ok) {
+        const dayData = await dayRes.json();
+        const dayEvents = dayData?.events || [];
+        console.log(`[Source4-TheSportsDB] EventsDay: ${dayEvents.length} events`);
+        // Merge without duplicates
+        const existingIds = new Set(allEvents.map((e: any) => e.idEvent));
+        for (const ev of dayEvents) {
+          if (!existingIds.has(ev.idEvent)) allEvents.push(ev);
+        }
+      }
+    } catch { /* silent */ }
+
+    if (allEvents.length === 0) return null;
+
+    // Filter to premium leagues
+    const EXCLUDED_TSDB = [
+      "welsh", "cymru", "northern ireland", "faroe", "gibraltar",
+      "andorra", "san marino", "malta", "kosovo", "luxembourg",
+      "reserve", "youth", "u19", "u21", "u23", "women", "feminino", "amateur",
+    ];
+
+    const filtered = allEvents.filter((ev: any) => {
+      const ln = (ev.strLeague || "").toLowerCase();
+      if (EXCLUDED_TSDB.some(kw => ln.includes(kw))) return false;
+      return isPremiumLeague(ev.strLeague || "");
+    });
+
+    console.log(`[Source4-TheSportsDB] ${filtered.length} premium events after filter`);
+    if (filtered.length === 0) return null;
+
+    return filtered.map((ev: any) => {
+      // Status parsing from TheSportsDB
+      let status = "NS";
+      let elapsed: number | null = null;
+      const progress = (ev.strProgress || ev.strStatus || "").trim();
+
+      if (!progress || progress === "Not Started" || progress === "NS") {
+        status = "NS";
+      } else if (progress === "Match Finished" || progress === "FT") {
+        status = "FT"; elapsed = 90;
+      } else if (progress === "HT" || progress === "Halftime") {
+        status = "HT"; elapsed = 45;
+      } else if (progress === "AET" || progress === "After Extra Time") {
+        status = "AET"; elapsed = 120;
+      } else if (progress === "Pen." || progress === "PEN") {
+        status = "PEN"; elapsed = 120;
+      } else if (progress === "Postponed" || progress === "PST") {
+        status = "PST";
+      } else if (progress === "Cancelled" || progress === "CANC") {
+        status = "CANC";
+      } else if (progress === "Suspended" || progress === "SUSP") {
+        status = "SUSP";
+      } else {
+        // Try to parse minute
+        const minMatch = progress.match(/^(\d+)['′]?$/);
+        if (minMatch) {
+          const min = parseInt(minMatch[1]);
+          status = min <= 45 ? "1H" : "2H";
+          elapsed = min;
+        } else if (progress === "1H" || progress.includes("1st Half")) {
+          status = "1H";
+        } else if (progress === "2H" || progress.includes("2nd Half")) {
+          status = "2H";
+        }
+      }
+
+      const homeScore = ev.intHomeScore !== null && ev.intHomeScore !== "" ? parseInt(ev.intHomeScore) : null;
+      const awayScore = ev.intAwayScore !== null && ev.intAwayScore !== "" ? parseInt(ev.intAwayScore) : null;
+
+      // Build date
+      let matchDate = new Date().toISOString();
+      if (ev.dateEvent && ev.strTime) {
+        const time = ev.strTime.substring(0, 5); // HH:MM
+        matchDate = new Date(`${ev.dateEvent}T${time}:00Z`).toISOString();
+      } else if (ev.strTimestamp) {
+        matchDate = new Date(ev.strTimestamp).toISOString();
+      }
+
+      return {
+        homeTeamName: ev.strHomeTeam || "Time A",
+        awayTeamName: ev.strAwayTeam || "Time B",
+        homeScore: isNaN(homeScore as number) ? null : homeScore,
+        awayScore: isNaN(awayScore as number) ? null : awayScore,
+        leagueName: ev.strLeague || "Desconhecida",
+        leagueId: parseInt(ev.idLeague) || 0,
+        status,
+        elapsed,
+        date: matchDate,
+      };
+    });
+  } catch (e) {
+    console.error(`[Source4-TheSportsDB] Error: ${e.message}`);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SOURCE 5: Firecrawl fallback (ESPN scraper)
 // ═══════════════════════════════════════════════════════════════════
 async function fetchFromFirecrawl(brDate: string): Promise<any[] | null> {
   const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
@@ -577,7 +709,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Source 4: Firecrawl (ESPN scraping) — last resort
+    // Source 4: TheSportsDB — free, no key needed
+    if (!rawMatches || rawMatches.length === 0) {
+      rawMatches = await fetchFromTheSportsDB(brDate);
+      if (rawMatches && rawMatches.length > 0) {
+        source = "TheSportsDB";
+      }
+    }
+
+    // Source 5: Firecrawl (ESPN scraping) — last resort
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromFirecrawl(brDate);
       if (rawMatches && rawMatches.length > 0) {
@@ -586,7 +726,7 @@ Deno.serve(async (req) => {
     }
 
     if (!rawMatches || rawMatches.length === 0) {
-      console.error(`[Scraper] All 4 sources returned empty/failed`);
+      console.error(`[Scraper] All 5 sources returned empty/failed`);
       if (cached) {
         return new Response(JSON.stringify(cached.matches), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
