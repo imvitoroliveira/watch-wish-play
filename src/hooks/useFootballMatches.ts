@@ -4,9 +4,11 @@ import { Match } from '@/lib/football-api';
 
 async function fetchMatchesFromDB(): Promise<Match[]> {
   const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  console.log(`[Football] Fetching matches for date: ${brDate}`);
+  
   const { data, error } = await supabase
     .from('football_cache')
-    .select('matches')
+    .select('matches, fetched_at')
     .eq('cache_date', brDate)
     .maybeSingle();
 
@@ -15,10 +17,20 @@ async function fetchMatchesFromDB(): Promise<Match[]> {
     throw error;
   }
   
+  console.log(`[Football] Cache fetched_at: ${data?.fetched_at}`);
   const matches = (data?.matches as unknown as Match[]) || [];
-  console.log(`[Football] Fetched ${matches.length} matches from DB, statuses:`, 
-    matches.map(m => `${m.homeTeam?.name} ${m.goals?.home}×${m.goals?.away} ${m.awayTeam?.name} [${m.status}]`).join(', ')
-  );
+  
+  // Detailed logging per match
+  matches.forEach((m, i) => {
+    console.log(
+      `[Football][${i}] ${m.homeTeam?.name} vs ${m.awayTeam?.name} | ` +
+      `Liga: "${m.league?.name}" | Status: ${m.status} | Elapsed: ${m.elapsed} | ` +
+      `Placar: ${m.goals?.home ?? '-'}x${m.goals?.away ?? '-'} | ` +
+      `Date: ${m.date} | Hora local: ${new Date(m.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    );
+  });
+  
+  console.log(`[Football] Total: ${matches.length} matches`);
   return matches;
 }
 
