@@ -80,6 +80,72 @@ export type Database = {
         }
         Relationships: []
       }
+      jogos_ativos: {
+        Row: {
+          atualizado_em: string
+          data_jogo: string
+          elapsed: number | null
+          emblema_casa: string
+          emblema_fora: string
+          fonte: string
+          horario_inicio: string
+          id: string
+          id_partida: number
+          liga_id: number
+          liga_logo: string
+          liga_nome: string
+          placar_casa: number | null
+          placar_fora: number | null
+          rodada: string | null
+          status: string
+          time_casa: string
+          time_fora: string
+          transmissao: string[]
+        }
+        Insert: {
+          atualizado_em?: string
+          data_jogo?: string
+          elapsed?: number | null
+          emblema_casa?: string
+          emblema_fora?: string
+          fonte?: string
+          horario_inicio?: string
+          id?: string
+          id_partida: number
+          liga_id?: number
+          liga_logo?: string
+          liga_nome?: string
+          placar_casa?: number | null
+          placar_fora?: number | null
+          rodada?: string | null
+          status?: string
+          time_casa: string
+          time_fora: string
+          transmissao?: string[]
+        }
+        Update: {
+          atualizado_em?: string
+          data_jogo?: string
+          elapsed?: number | null
+          emblema_casa?: string
+          emblema_fora?: string
+          fonte?: string
+          horario_inicio?: string
+          id?: string
+          id_partida?: number
+          liga_id?: number
+          liga_logo?: string
+          liga_nome?: string
+          placar_casa?: number | null
+          placar_fora?: number | null
+          rodada?: string | null
+          status?: string
+          time_casa?: string
+          time_fora?: string
+          transmissao?: string[]
+        }
+        Relationships: []
+      }
       m3u_catalog: {
         Row: {
           id: string
