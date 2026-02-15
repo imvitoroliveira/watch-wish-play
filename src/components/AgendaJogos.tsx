@@ -1,24 +1,21 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, BellRing, Tv, Clock, Trophy, Loader2 } from 'lucide-react';
-import { Match, isLive, getStatusLabel } from '@/lib/football-api';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useFootballMatches } from '@/hooks/useFootballMatches';
+import { useJogosAtivos, JogoAtivo } from '@/hooks/useJogosAtivos';
 
 const AgendaJogos = () => {
   const { currentClient } = useAuth();
-  const { data: matches = [], isLoading } = useFootballMatches();
+  const { data: jogos = [], isLoading } = useJogosAtivos();
   const [reminders, setReminders] = useState<Set<number>>(new Set());
   const [filter, setFilter] = useState<string>('all');
   const [initialLoad, setInitialLoad] = useState(true);
 
-  // Only show loading on very first load (no data yet)
   useEffect(() => {
-    if (matches.length > 0) setInitialLoad(false);
-  }, [matches]);
+    if (jogos.length > 0) setInitialLoad(false);
+  }, [jogos]);
 
-  // Load reminders from DB
   useEffect(() => {
     if (!currentClient?.u) return;
     const loadReminders = async () => {
@@ -28,14 +25,12 @@ const AgendaJogos = () => {
           body: { username: currentClient.u, action: 'list' },
         });
         if (data?.reminders) setReminders(new Set(data.reminders));
-      } catch {
-        // silent
-      }
+      } catch { /* silent */ }
     };
     loadReminders();
   }, [currentClient?.u]);
 
-  const handleToggleReminder = async (match: Match) => {
+  const handleToggleReminder = async (jogo: JogoAtivo) => {
     if (!currentClient?.u) return;
     try {
       const { data } = await supabase.functions.invoke('match-reminders', {
@@ -43,40 +38,38 @@ const AgendaJogos = () => {
         body: {
           username: currentClient.u,
           action: 'toggle',
-          match_id: match.id,
-          match_date: match.date,
-          home_team: match.homeTeam.name,
-          away_team: match.awayTeam.name,
-          league_name: match.league.name,
+          match_id: jogo.id_partida,
+          match_date: jogo.horario_inicio,
+          home_team: jogo.time_casa,
+          away_team: jogo.time_fora,
+          league_name: jogo.liga_nome,
         },
       });
       if (data) {
         setReminders(prev => {
           const next = new Set(prev);
-          if (data.active) next.add(match.id);
-          else next.delete(match.id);
+          if (data.active) next.add(jogo.id_partida);
+          else next.delete(jogo.id_partida);
           return next;
         });
       }
-    } catch {
-      // silent
-    }
+    } catch { /* silent */ }
   };
 
-  const leagues = [...new Set(matches.map(m => m.league.name))];
+  const leagues = [...new Set(jogos.map(j => j.liga_nome))];
 
-  const filteredMatches = filter === 'all'
-    ? matches
-    : filter === 'live'
-      ? matches.filter(m => isLive(m.status))
-      : matches.filter(m => m.league.name === filter);
+  const filteredJogos = filter === 'all'
+    ? jogos
+    : filter === 'ao_vivo'
+      ? jogos.filter(j => j.status === 'ao_vivo')
+      : jogos.filter(j => j.liga_nome === filter);
 
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const showLoading = isLoading && initialLoad && matches.length === 0;
+  const showLoading = isLoading && initialLoad && jogos.length === 0;
 
   return (
     <div>
@@ -86,14 +79,13 @@ const AgendaJogos = () => {
             <Trophy className="w-6 h-6 text-primary" />
             AGENDA DE JOGOS VIP
           </h2>
-          {/* Banner slot — será preenchido futuramente */}
         </div>
       </div>
 
       {/* Filters */}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-6 pb-1">
         <FilterChip active={filter === 'all'} onClick={() => setFilter('all')}>Todos</FilterChip>
-        <FilterChip active={filter === 'live'} onClick={() => setFilter('live')}>
+        <FilterChip active={filter === 'ao_vivo'} onClick={() => setFilter('ao_vivo')}>
           <span className="w-1.5 h-1.5 rounded-full bg-primary" /> Ao Vivo
         </FilterChip>
         {leagues.map(l => (
@@ -105,28 +97,28 @@ const AgendaJogos = () => {
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-8 h-8 text-primary animate-spin" />
         </div>
-      ) : filteredMatches.length === 0 ? (
+      ) : filteredJogos.length === 0 ? (
         <div className="text-center py-16">
           <Trophy className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
           <p className="text-muted-foreground">
-            {filter === 'live' ? 'Nenhum jogo ao vivo no momento.' : 'Nenhum jogo encontrado hoje.'}
+            {filter === 'ao_vivo' ? 'Nenhum jogo ao vivo no momento.' : 'Nenhum jogo encontrado hoje.'}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
           <AnimatePresence mode="popLayout">
-            {filteredMatches.map((match, i) => (
+            {filteredJogos.map((jogo, i) => (
               <motion.div
-                key={`${match.homeTeam.name}-${match.awayTeam.name}`}
+                key={`${jogo.time_casa}-${jogo.time_fora}`}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
                 layout
               >
                 <MatchCard
-                  match={match}
-                  hasReminder={reminders.has(match.id)}
-                  onToggleReminder={() => handleToggleReminder(match)}
+                  jogo={jogo}
+                  hasReminder={reminders.has(jogo.id_partida)}
+                  onToggleReminder={() => handleToggleReminder(jogo)}
                   formatTime={formatTime}
                 />
               </motion.div>
@@ -153,20 +145,32 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
+function getStatusLabel(status: JogoAtivo['status']): string {
+  const map: Record<string, string> = {
+    programado: 'A iniciar',
+    ao_vivo: 'Ao Vivo',
+    finalizado: 'Encerrado',
+    suspenso: 'Suspenso',
+    adiado: 'Adiado',
+    cancelado: 'Cancelado',
+  };
+  return map[status] || status;
+}
+
 function MatchCard({
-  match,
+  jogo,
   hasReminder,
   onToggleReminder,
   formatTime,
 }: {
-  match: Match;
+  jogo: JogoAtivo;
   hasReminder: boolean;
   onToggleReminder: () => void;
   formatTime: (d: string) => string;
 }) {
-  const live = isLive(match.status);
-  const finished = match.status === 'FT' || match.status === 'AET' || match.status === 'PEN';
-  const upcoming = match.status === 'NS';
+  const live = jogo.status === 'ao_vivo';
+  const finished = jogo.status === 'finalizado';
+  const upcoming = jogo.status === 'programado';
 
   return (
     <div className={`relative rounded-xl border overflow-hidden transition-all ${
@@ -177,22 +181,24 @@ function MatchCard({
       {/* League header */}
       <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50">
         <div className="flex items-center gap-2">
-          <img
-            src={match.league.logo}
-            alt={match.league.name}
-            className="w-4 h-4 object-contain"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-          <span className="text-xs font-medium text-muted-foreground">{match.league.name}</span>
-          {match.league.round && (
-            <span className="text-xs text-muted-foreground/60">• {match.league.round}</span>
+          {jogo.liga_logo && (
+            <img
+              src={jogo.liga_logo}
+              alt={jogo.liga_nome}
+              className="w-4 h-4 object-contain"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          )}
+          <span className="text-xs font-medium text-muted-foreground">{jogo.liga_nome}</span>
+          {jogo.rodada && (
+            <span className="text-xs text-muted-foreground/60">• {jogo.rodada}</span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {live && (
             <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium uppercase tracking-wider">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              Ao Vivo {match.elapsed ? `• ${match.elapsed}'` : ''}
+              Ao Vivo {jogo.elapsed ? `• ${jogo.elapsed}'` : ''}
             </span>
           )}
           {finished && (
@@ -201,7 +207,7 @@ function MatchCard({
           {upcoming && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="w-3 h-3" />
-              {formatTime(match.date)}
+              {formatTime(jogo.horario_inicio)}
             </span>
           )}
         </div>
@@ -213,38 +219,38 @@ function MatchCard({
           {/* Home team */}
           <div className="flex-1 flex flex-col items-center gap-2">
             <img
-              src={match.homeTeam.logo}
-              alt={match.homeTeam.name}
+              src={jogo.emblema_casa || '/placeholder.svg'}
+              alt={jogo.time_casa}
               className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
               onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
             />
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
-              {match.homeTeam.name}
+              {jogo.time_casa}
             </span>
           </div>
 
-          {/* Score / VS — magic update via placeholderData */}
+          {/* Score / VS */}
           <div className="flex-shrink-0 mx-4 text-center">
             {(live || finished) ? (
               <div className="flex items-center gap-2">
                 <motion.span
-                  key={`home-${match.goals.home}`}
+                  key={`home-${jogo.placar_casa}`}
                   initial={{ scale: 1.3 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                   className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}
                 >
-                  {match.goals.home ?? 0}
+                  {jogo.placar_casa ?? 0}
                 </motion.span>
                 <span className="text-lg text-muted-foreground font-light">×</span>
                 <motion.span
-                  key={`away-${match.goals.away}`}
+                  key={`away-${jogo.placar_fora}`}
                   initial={{ scale: 1.3 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                   className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}
                 >
-                  {match.goals.away ?? 0}
+                  {jogo.placar_fora ?? 0}
                 </motion.span>
               </div>
             ) : (
@@ -254,7 +260,7 @@ function MatchCard({
             )}
             {live && (
               <span className="text-[10px] text-primary font-medium mt-1 block">
-                {getStatusLabel(match.status)}
+                {getStatusLabel(jogo.status)}
               </span>
             )}
           </div>
@@ -262,13 +268,13 @@ function MatchCard({
           {/* Away team */}
           <div className="flex-1 flex flex-col items-center gap-2">
             <img
-              src={match.awayTeam.logo}
-              alt={match.awayTeam.name}
+              src={jogo.emblema_fora || '/placeholder.svg'}
+              alt={jogo.time_fora}
               className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-md"
               onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
             />
             <span className="text-xs sm:text-sm font-medium text-foreground text-center leading-tight">
-              {match.awayTeam.name}
+              {jogo.time_fora}
             </span>
           </div>
         </div>
@@ -277,7 +283,7 @@ function MatchCard({
         <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
           <div className="flex items-center gap-1.5 flex-wrap">
             <Tv className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-            {match.broadcast.map(ch => (
+            {jogo.transmissao.map(ch => (
               <span key={ch} className="px-2 py-0.5 rounded bg-muted/50 text-[10px] font-medium text-muted-foreground">
                 {ch}
               </span>

@@ -6,51 +6,24 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// ─── Premium Leagues (STRICT WHITELIST — 13 competitions only) ──────
-// Brasileirão A/B, Copa do Brasil, Supercopa, Libertadores, Sul-Americana,
-// Recopa, Champions League, Europa League, Eliminatórias, Copa do Mundo, Amistosos
-
-// Known league IDs per source (only the 13 competitions)
+// ─── Premium Leagues (STRICT WHITELIST) ─────────────────────────────
 const RAPIDAPI_LEAGUE_IDS = [
-  71, 72,       // Brasileirão A, B
-  73,           // Copa do Brasil
-  625,          // Supercopa do Brasil
-  13,           // Libertadores
-  11,           // Sul-Americana
-  535,          // Recopa
-  34,           // Eliminatórias
-  10,           // Amistosos internacionais
-  2,            // Champions League
-  3,            // Europa League
-  1,            // Copa do Mundo
+  71, 72, 73, 625, 13, 11, 535, 34, 10, 2, 3, 1,
 ];
-
-// APIFootball.com IDs are unreliable — rely on isPremiumLeague name filter only
-const APIFOOTBALL_LEAGUE_IDS: number[] = [];
 
 function isPremiumLeague(name: string, leagueId?: number): boolean {
   const lower = name.toLowerCase().trim();
-  
-  // Reject youth/women/reserve/amateur always
   const REJECTED = [
     "u17", "u18", "u19", "u20", "u21", "u23", "sub-", "sub ",
-    "frauen", "women", "feminino", "reserve", "youth", "amateur",
-    "group stage",  // Rejects "Friendlies - Group Stage" etc
+    "frauen", "women", "feminino", "reserve", "youth", "amateur", "group stage",
   ];
-  for (const ex of REJECTED) {
-    if (lower.includes(ex)) return false;
-  }
-
-  // Reject CAF Champions League (keep only UEFA)
+  for (const ex of REJECTED) { if (lower.includes(ex)) return false; }
   if (lower.includes("caf champions")) return false;
 
-  // STRICT WHITELIST — only these 13 competitions
   const ALLOWED = [
     "brasileirão", "campeonato brasileiro", "série a", "série b",
-    "copa do brasil",
-    "supercopa", "supercopa do brasil",
-    "copa libertadores", "libertadores",
-    "copa sul-americana", "sul-americana",
+    "copa do brasil", "supercopa", "supercopa do brasil",
+    "copa libertadores", "libertadores", "copa sul-americana", "sul-americana",
     "recopa sul-americana", "recopa",
     "champions league", "uefa champions league", "liga dos campeões",
     "europa league", "uefa europa league", "liga europa",
@@ -58,12 +31,9 @@ function isPremiumLeague(name: string, leagueId?: number): boolean {
     "copa do mundo", "world cup", "fifa world cup",
     "amistoso", "amistosos", "friendly", "friendlies",
   ];
-
   for (const league of ALLOWED) {
-    if (lower === league) return true;
-    if (lower.startsWith(league)) return true;
+    if (lower === league || lower.startsWith(league)) return true;
   }
-
   return false;
 }
 
@@ -71,29 +41,39 @@ function isPremiumLeague(name: string, leagueId?: number): boolean {
 function parseStatus(statusText: string): { status: string; elapsed: number | null } {
   if (!statusText) return { status: "NS", elapsed: null };
   const s = statusText.trim();
-  if (s === "F" || s.toLowerCase() === "encerrado" || s.toLowerCase() === "fin" || s === "FT" || s === "Match Finished")
-    return { status: "FT", elapsed: 90 };
-  if (s === "HT" || s.toLowerCase() === "intervalo" || s.toLowerCase() === "int" || s === "Halftime")
-    return { status: "HT", elapsed: 45 };
-  if (s === "AET" || s.toLowerCase() === "prorrogação" || s === "After Extra Time") return { status: "AET", elapsed: 120 };
-  if (s === "PEN" || s.toLowerCase() === "pênaltis" || s === "Penalty In Progress") return { status: "PEN", elapsed: 120 };
-  if (s.toLowerCase().includes("susp")) return { status: "SUSP", elapsed: null };
-  if (s.toLowerCase().includes("adiado") || s === "PST" || s === "Postponed") return { status: "PST", elapsed: null };
-  if (s.toLowerCase().includes("canc") || s === "CANC" || s === "Cancelled") return { status: "CANC", elapsed: null };
-  if (s === "NS" || s === "Not Started" || s === "TBD") return { status: "NS", elapsed: null };
-  if (s === "1H" || s === "First Half") return { status: "1H", elapsed: null };
-  if (s === "2H" || s === "Second Half") return { status: "2H", elapsed: null };
-  // Scheduled time format
-  if (/^\d{1,2}:\d{2}/.test(s)) return { status: "NS", elapsed: null };
+  if (["F", "FT", "Match Finished"].includes(s) || s.toLowerCase() === "encerrado" || s.toLowerCase() === "fin")
+    return { status: "finalizado", elapsed: 90 };
+  if (["HT", "Halftime"].includes(s) || s.toLowerCase() === "intervalo" || s.toLowerCase() === "int")
+    return { status: "ao_vivo", elapsed: 45 };
+  if (["AET", "After Extra Time"].includes(s) || s.toLowerCase() === "prorrogação")
+    return { status: "finalizado", elapsed: 120 };
+  if (["PEN", "Penalty In Progress"].includes(s) || s.toLowerCase() === "pênaltis")
+    return { status: "ao_vivo", elapsed: 120 };
+  if (s.toLowerCase().includes("susp")) return { status: "suspenso", elapsed: null };
+  if (s.toLowerCase().includes("adiado") || ["PST", "Postponed"].includes(s))
+    return { status: "adiado", elapsed: null };
+  if (s.toLowerCase().includes("canc") || ["CANC", "Cancelled"].includes(s))
+    return { status: "cancelado", elapsed: null };
+  if (["NS", "Not Started", "TBD"].includes(s)) return { status: "programado", elapsed: null };
+  if (["1H", "First Half"].includes(s)) return { status: "ao_vivo", elapsed: null };
+  if (["2H", "Second Half"].includes(s)) return { status: "ao_vivo", elapsed: null };
+  if (/^\d{1,2}:\d{2}/.test(s)) return { status: "programado", elapsed: null };
   const minuteMatch = s.match(/^(\d+)['′+]?$/);
-  if (minuteMatch) {
-    const min = parseInt(minuteMatch[1]);
-    return { status: min <= 45 ? "1H" : "2H", elapsed: min };
-  }
-  return { status: "NS", elapsed: null };
+  if (minuteMatch) return { status: "ao_vivo", elapsed: parseInt(minuteMatch[1]) };
+  return { status: "programado", elapsed: null };
 }
 
-// ─── Broadcast map (only 13 competitions) ───────────────────────────
+// Map RapidAPI short status to our status
+function mapRapidAPIStatus(shortStatus: string, elapsed: number | null): string {
+  if (["LIVE", "1H", "HT", "2H", "ET", "BT", "P", "INT"].includes(shortStatus)) return "ao_vivo";
+  if (["FT", "AET", "PEN"].includes(shortStatus)) return "finalizado";
+  if (["PST"].includes(shortStatus)) return "adiado";
+  if (["CANC", "ABD", "AWD", "WO"].includes(shortStatus)) return "cancelado";
+  if (["SUSP"].includes(shortStatus)) return "suspenso";
+  return "programado";
+}
+
+// ─── Broadcast map ──────────────────────────────────────────────────
 const BROADCAST_MAP: Record<string, string[]> = {
   "brasileirão": ["Premiere", "Globo", "SporTV"],
   "campeonato brasileiro": ["Premiere", "Globo", "SporTV"],
@@ -119,9 +99,8 @@ function getBroadcast(leagueName: string): string[] {
   return ["ESPN"];
 }
 
-// ─── Team badge resolution (TheSportsDB) ────────────────────────────
+// ─── Team badge resolution with DB cache ────────────────────────────
 const logoCache = new Map<string, string>();
-
 const TEAM_ALIASES: Record<string, string> = {
   "Paris Saint-Germain": "Paris SG", "PSG": "Paris SG",
   "Atlético de Madrid": "Atletico Madrid", "Atlético Madrid": "Atletico Madrid",
@@ -135,8 +114,22 @@ const TEAM_ALIASES: Record<string, string> = {
   "Stade Brestois": "Stade Brestois 29",
 };
 
-async function resolveTeamLogo(teamName: string): Promise<string> {
+async function loadBadgesFromDB(supabase: any, teamNames: string[]) {
+  if (teamNames.length === 0) return;
+  const { data } = await supabase
+    .from("team_badges")
+    .select("team_name, badge_url")
+    .in("team_name", teamNames);
+  if (data) {
+    for (const row of data) {
+      if (row.badge_url) logoCache.set(row.team_name, row.badge_url);
+    }
+  }
+}
+
+async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<string> {
   if (logoCache.has(teamName)) return logoCache.get(teamName)!;
+
   const namesToTry = [teamName];
   if (TEAM_ALIASES[teamName]) namesToTry.push(TEAM_ALIASES[teamName]);
 
@@ -152,6 +145,11 @@ async function resolveTeamLogo(teamName: string): Promise<string> {
           if (badge) {
             const smallBadge = badge + "/small";
             logoCache.set(teamName, smallBadge);
+            // Save to DB for future use (fire and forget)
+            supabase.from("team_badges").upsert(
+              { team_name: teamName, badge_url: smallBadge, source: "thesportsdb", updated_at: new Date().toISOString() },
+              { onConflict: "team_name" }
+            ).then(() => {});
             return smallBadge;
           }
         }
@@ -162,24 +160,8 @@ async function resolveTeamLogo(teamName: string): Promise<string> {
   return "";
 }
 
-// ─── Diff logic ─────────────────────────────────────────────────────
-function hasDataChanged(oldMatches: any[], newMatches: any[]): boolean {
-  if (oldMatches.length !== newMatches.length) return true;
-  const oldMap = new Map<string, any>();
-  for (const m of oldMatches) {
-    oldMap.set(`${m.homeTeam?.name}|${m.awayTeam?.name}`, m);
-  }
-  for (const n of newMatches) {
-    const o = oldMap.get(`${n.homeTeam?.name}|${n.awayTeam?.name}`);
-    if (!o) return true;
-    if (o.status !== n.status || o.elapsed !== n.elapsed) return true;
-    if (o.goals?.home !== n.goals?.home || o.goals?.away !== n.goals?.away) return true;
-  }
-  return false;
-}
-
 // ═══════════════════════════════════════════════════════════════════
-// SOURCE 1: RapidAPI (API-Football v3)
+// SOURCE 1: RapidAPI (API-Football v3) — paid, most reliable
 // ═══════════════════════════════════════════════════════════════════
 async function fetchFromRapidAPI(dateStr: string): Promise<any[] | null> {
   const apiKey = Deno.env.get("RAPIDAPI_FOOTBALL_KEY");
@@ -189,58 +171,33 @@ async function fetchFromRapidAPI(dateStr: string): Promise<any[] | null> {
     console.log(`[Source1-RapidAPI] Fetching fixtures for ${dateStr}...`);
     const res = await fetch(
       `https://v3.football.api-sports.io/fixtures?date=${dateStr}`,
-      {
-        headers: {
-          "x-apisports-key": apiKey,
-        },
-      }
+      { headers: { "x-apisports-key": apiKey } }
     );
-
-    if (!res.ok) {
-      const body = await res.text();
-      console.error(`[Source1-RapidAPI] HTTP ${res.status}: ${body}`);
-      return null;
-    }
+    if (!res.ok) { console.error(`[Source1-RapidAPI] HTTP ${res.status}`); await res.text(); return null; }
 
     const data = await res.json();
     const fixtures = data?.response || [];
     console.log(`[Source1-RapidAPI] Got ${fixtures.length} total fixtures`);
 
-    // Filter to premium leagues by league ID
     const premiumSet = new Set(RAPIDAPI_LEAGUE_IDS);
     const filtered = fixtures.filter((f: any) => premiumSet.has(f.league?.id));
-    console.log(`[Source1-RapidAPI] ${filtered.length} premium fixtures after filter`);
+    console.log(`[Source1-RapidAPI] ${filtered.length} premium fixtures`);
 
     return filtered.map((f: any) => {
-      const statusShort = f.fixture?.status?.short || "NS";
+      const shortStatus = f.fixture?.status?.short || "NS";
       const elapsed = f.fixture?.status?.elapsed ?? null;
-      let status = statusShort;
-      // Normalize API-Football statuses
-      if (["LIVE", "1H", "HT", "2H", "ET", "BT", "P", "INT"].includes(statusShort)) {
-        if (statusShort === "P") status = "PEN";
-        else if (statusShort === "ET") status = "AET";
-        else if (statusShort === "BT" || statusShort === "INT") status = "HT";
-        else if (statusShort === "LIVE") status = elapsed && elapsed <= 45 ? "1H" : "2H";
-      } else if (["FT", "AET", "PEN"].includes(statusShort)) {
-        // already fine
-      } else if (["PST", "CANC", "ABD", "AWD", "WO"].includes(statusShort)) {
-        status = statusShort === "ABD" || statusShort === "AWD" || statusShort === "WO" ? "CANC" : statusShort;
-      } else if (["TBD", "NS"].includes(statusShort)) {
-        status = "NS";
-      } else if (statusShort === "SUSP") {
-        status = "SUSP";
-      }
-
       return {
+        id_partida: f.fixture?.id || 0,
         homeTeamName: f.teams?.home?.name || "Time A",
         awayTeamName: f.teams?.away?.name || "Time B",
         homeScore: f.goals?.home ?? null,
         awayScore: f.goals?.away ?? null,
         leagueName: f.league?.name || "Desconhecida",
         leagueId: f.league?.id || 0,
-        status,
+        status: mapRapidAPIStatus(shortStatus, elapsed),
         elapsed,
         date: f.fixture?.date || new Date().toISOString(),
+        round: f.league?.round || null,
       };
     });
   } catch (e) {
@@ -250,86 +207,7 @@ async function fetchFromRapidAPI(dateStr: string): Promise<any[] | null> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SOURCE 2: APIFootball.com (v3)
-// ═══════════════════════════════════════════════════════════════════
-async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
-  const apiKey = Deno.env.get("APIFOOTBALL_COM_KEY");
-  if (!apiKey) { console.warn("[Source2] APIFOOTBALL_COM_KEY not set"); return null; }
-
-  try {
-    console.log(`[Source2-APIFootball] Fetching ALL events for ${dateStr} (1 request to save quota)...`);
-    
-    // Single request — saves API quota (free plan ~100/day)
-    const url = `https://apiv3.apifootball.com/?action=get_events&from=${dateStr}&to=${dateStr}&timezone=America/Sao_Paulo&APIkey=${apiKey}`;
-    const res = await fetch(url);
-
-    if (!res.ok) {
-      const body = await res.text();
-      console.error(`[Source2-APIFootball] HTTP ${res.status}: ${body}`);
-      return null;
-    }
-
-    const data = await res.json();
-    if (!Array.isArray(data)) {
-      console.warn(`[Source2-APIFootball] Unexpected response:`, typeof data);
-      return null;
-    }
-
-    console.log(`[Source2-APIFootball] Got ${data.length} total events`);
-
-    // Strict filter: known league IDs + name matching
-    const premiumIds = new Set(APIFOOTBALL_LEAGUE_IDS);
-    
-    // Exclude known unwanted leagues
-    const EXCLUDED = [
-      "welsh", "galês", "cymru", "northern ireland", "faroe", "gibraltar",
-      "andorra", "san marino", "malta", "kosovo", "luxembourg", "liechtenstein",
-      "reserve", "youth", "u19", "u21", "u23", "women", "feminino", "amateur",
-    ];
-    
-    const filtered = data.filter((e: any) => {
-      const lid = parseInt(e.league_id);
-      const ln = (e.league_name || "").toLowerCase();
-      // Exclude unwanted
-      if (EXCLUDED.some(kw => ln.includes(kw))) return false;
-      // Include by ID or name
-      return premiumIds.has(lid) || isPremiumLeague(e.league_name || "", lid);
-    });
-
-    console.log(`[Source2-APIFootball] ${filtered.length} premium events after strict filter`);
-
-    if (filtered.length === 0) return null;
-
-    return filtered.map((e: any) => {
-      const { status, elapsed } = parseStatus(e.match_status || "");
-      const homeScore = e.match_hometeam_score !== "" ? parseInt(e.match_hometeam_score) : null;
-      const awayScore = e.match_awayteam_score !== "" ? parseInt(e.match_awayteam_score) : null;
-
-      let matchDate = new Date().toISOString();
-      if (e.match_date && e.match_time) {
-        matchDate = new Date(`${e.match_date}T${e.match_time}:00-03:00`).toISOString();
-      }
-
-      return {
-        homeTeamName: e.match_hometeam_name || "Time A",
-        awayTeamName: e.match_awayteam_name || "Time B",
-        homeScore: isNaN(homeScore as number) ? null : homeScore,
-        awayScore: isNaN(awayScore as number) ? null : awayScore,
-        leagueName: e.league_name || "Desconhecida",
-        leagueId: parseInt(e.league_id) || 0,
-        status,
-        elapsed,
-        date: matchDate,
-      };
-    });
-  } catch (e) {
-    console.error(`[Source2-APIFootball] Error: ${e.message}`);
-    return null;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// SOURCE 3: ESPN Public API (no key needed)
+// SOURCE 2: ESPN Public API (free, unlimited)
 // ═══════════════════════════════════════════════════════════════════
 const ESPN_LEAGUE_SLUGS = [
   { slug: "bra.1", name: "Brasileirão Série A" },
@@ -346,119 +224,95 @@ const ESPN_LEAGUE_SLUGS = [
 
 async function fetchFromESPN(dateStr: string): Promise<any[] | null> {
   try {
-    console.log(`[Source3-ESPN] Fetching from ESPN API for ${dateStr}...`);
+    console.log(`[Source2-ESPN] Fetching from ESPN API for ${dateStr}...`);
     const yyyymmdd = dateStr.replace(/-/g, "");
     const allEvents: any[] = [];
 
-    // Fetch top leagues in parallel (ESPN API is free, no key needed)
     const fetches = ESPN_LEAGUE_SLUGS.map(async ({ slug, name }) => {
       try {
         const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${yyyymmdd}`;
         const res = await fetch(url);
         if (!res.ok) { await res.text(); return []; }
         const data = await res.json();
-        const events = data?.events || [];
-        return events.map((ev: any) => ({ ...ev, _leagueName: name, _slug: slug }));
+        return (data?.events || []).map((ev: any) => ({ ...ev, _leagueName: name }));
       } catch { return []; }
     });
 
     const results = await Promise.all(fetches);
     for (const events of results) allEvents.push(...events);
-
-    console.log(`[Source3-ESPN] Got ${allEvents.length} events from ${ESPN_LEAGUE_SLUGS.length} leagues`);
+    console.log(`[Source2-ESPN] Got ${allEvents.length} events`);
     if (allEvents.length === 0) return null;
 
     return allEvents.map((ev: any) => {
       const comp = ev.competitions?.[0];
       if (!comp) return null;
-
       const homeComp = comp.competitors?.find((c: any) => c.homeAway === "home");
       const awayComp = comp.competitors?.find((c: any) => c.homeAway === "away");
-      
       const espnStatus = comp.status?.type?.name || "";
-      let status = "NS";
+      let status = "programado";
       let elapsed: number | null = null;
 
-      if (espnStatus === "STATUS_FULL_TIME" || espnStatus === "STATUS_FINAL") status = "FT";
-      else if (espnStatus === "STATUS_HALFTIME") { status = "HT"; elapsed = 45; }
-      else if (espnStatus === "STATUS_IN_PROGRESS" || espnStatus === "STATUS_FIRST_HALF") {
-        status = "1H";
-        elapsed = parseInt(comp.status?.displayClock || "0") || null;
+      if (["STATUS_FULL_TIME", "STATUS_FINAL"].includes(espnStatus)) status = "finalizado";
+      else if (espnStatus === "STATUS_HALFTIME") { status = "ao_vivo"; elapsed = 45; }
+      else if (["STATUS_IN_PROGRESS", "STATUS_FIRST_HALF"].includes(espnStatus)) {
+        status = "ao_vivo"; elapsed = parseInt(comp.status?.displayClock || "0") || null;
       }
       else if (espnStatus === "STATUS_SECOND_HALF") {
-        status = "2H";
-        elapsed = parseInt(comp.status?.displayClock || "0") || null;
+        status = "ao_vivo"; elapsed = parseInt(comp.status?.displayClock || "0") || null;
       }
-      else if (espnStatus === "STATUS_POSTPONED") status = "PST";
-      else if (espnStatus === "STATUS_CANCELED" || espnStatus === "STATUS_CANCELLED") status = "CANC";
-      else if (espnStatus === "STATUS_SUSPENDED") status = "SUSP";
-      else if (espnStatus === "STATUS_EXTRA_TIME") { status = "AET"; elapsed = 105; }
-      else if (espnStatus === "STATUS_PENALTY_SHOOTOUT") { status = "PEN"; elapsed = 120; }
+      else if (espnStatus === "STATUS_POSTPONED") status = "adiado";
+      else if (["STATUS_CANCELED", "STATUS_CANCELLED"].includes(espnStatus)) status = "cancelado";
+      else if (espnStatus === "STATUS_SUSPENDED") status = "suspenso";
+      else if (espnStatus === "STATUS_EXTRA_TIME") { status = "ao_vivo"; elapsed = 105; }
+      else if (espnStatus === "STATUS_PENALTY_SHOOTOUT") { status = "ao_vivo"; elapsed = 120; }
 
       const homeScore = homeComp?.score ? parseInt(homeComp.score) : null;
       const awayScore = awayComp?.score ? parseInt(awayComp.score) : null;
 
       return {
-        homeTeamName: homeComp?.team?.displayName || homeComp?.team?.shortDisplayName || "Time A",
-        awayTeamName: awayComp?.team?.displayName || awayComp?.team?.shortDisplayName || "Time B",
+        id_partida: parseInt(ev.id) || Math.random() * 100000 | 0,
+        homeTeamName: homeComp?.team?.displayName || "Time A",
+        awayTeamName: awayComp?.team?.displayName || "Time B",
         homeScore: isNaN(homeScore as number) ? null : homeScore,
         awayScore: isNaN(awayScore as number) ? null : awayScore,
-        leagueName: ev._leagueName || ev.league?.description || "Desconhecida",
+        leagueName: ev._leagueName || "Desconhecida",
         leagueId: 0,
         status,
         elapsed,
         date: ev.date || comp.date || new Date().toISOString(),
+        round: null,
       };
     }).filter(Boolean);
   } catch (e) {
-    console.error(`[Source3-ESPN] Error: ${e.message}`);
+    console.error(`[Source2-ESPN] Error: ${e.message}`);
     return null;
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SOURCE 4: TheSportsDB (free, no key needed)
+// SOURCE 3: TheSportsDB (free, no key needed)
 // ═══════════════════════════════════════════════════════════════════
-const TSDB_LEAGUE_IDS = [
-  "4351",  // Brasileirão Série A
-  "4404",  // Brasileirão Série B
-  "4480",  // Copa do Brasil
-  "4350",  // Copa Libertadores
-  "4481",  // Copa Sul-Americana
-  "4328",  // Premier League
-  "4335",  // La Liga
-  "4331",  // Bundesliga
-  "4332",  // Serie A (Itália)
-  "4480",  // Champions League → 4480 is approximate, will also use livescore
-  "4337",  // MLS
-];
-
 async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
   try {
-    console.log(`[Source4-TheSportsDB] Fetching events for ${dateStr}...`);
+    console.log(`[Source3-TheSportsDB] Fetching events for ${dateStr}...`);
     const allEvents: any[] = [];
 
-    // Method 1: Livescores (live + today's matches)
+    // Livescores
     try {
       const liveRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/livescore.php?s=Soccer`);
       if (liveRes.ok) {
         const liveData = await liveRes.json();
-        const liveEvents = liveData?.events || [];
-        console.log(`[Source4-TheSportsDB] Livescore: ${liveEvents.length} events`);
-        allEvents.push(...liveEvents);
+        allEvents.push(...(liveData?.events || []));
       }
     } catch { /* silent */ }
 
-    // Method 2: Events by day (past + scheduled)
+    // Events by day
     try {
       const dayRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${dateStr}&s=Soccer`);
       if (dayRes.ok) {
         const dayData = await dayRes.json();
-        const dayEvents = dayData?.events || [];
-        console.log(`[Source4-TheSportsDB] EventsDay: ${dayEvents.length} events`);
-        // Merge without duplicates
         const existingIds = new Set(allEvents.map((e: any) => e.idEvent));
-        for (const ev of dayEvents) {
+        for (const ev of (dayData?.events || [])) {
           if (!existingIds.has(ev.idEvent)) allEvents.push(ev);
         }
       }
@@ -466,7 +320,6 @@ async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
 
     if (allEvents.length === 0) return null;
 
-    // Filter to premium leagues
     const EXCLUDED_TSDB = [
       "welsh", "cymru", "northern ireland", "faroe", "gibraltar",
       "andorra", "san marino", "malta", "kosovo", "luxembourg",
@@ -476,61 +329,27 @@ async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
     const filtered = allEvents.filter((ev: any) => {
       const ln = (ev.strLeague || "").toLowerCase();
       if (EXCLUDED_TSDB.some(kw => ln.includes(kw))) return false;
-      return isPremiumLeague(ev.strLeague || "", parseInt(ev.idLeague) || 0);
+      return isPremiumLeague(ev.strLeague || "");
     });
 
-    console.log(`[Source4-TheSportsDB] ${filtered.length} premium events after filter`);
+    console.log(`[Source3-TheSportsDB] ${filtered.length} premium events`);
     if (filtered.length === 0) return null;
 
     return filtered.map((ev: any) => {
-      // Status parsing from TheSportsDB
-      let status = "NS";
-      let elapsed: number | null = null;
       const progress = (ev.strProgress || ev.strStatus || "").trim();
-
-      if (!progress || progress === "Not Started" || progress === "NS") {
-        status = "NS";
-      } else if (progress === "Match Finished" || progress === "FT") {
-        status = "FT"; elapsed = 90;
-      } else if (progress === "HT" || progress === "Halftime") {
-        status = "HT"; elapsed = 45;
-      } else if (progress === "AET" || progress === "After Extra Time") {
-        status = "AET"; elapsed = 120;
-      } else if (progress === "Pen." || progress === "PEN") {
-        status = "PEN"; elapsed = 120;
-      } else if (progress === "Postponed" || progress === "PST") {
-        status = "PST";
-      } else if (progress === "Cancelled" || progress === "CANC") {
-        status = "CANC";
-      } else if (progress === "Suspended" || progress === "SUSP") {
-        status = "SUSP";
-      } else {
-        // Try to parse minute
-        const minMatch = progress.match(/^(\d+)['′]?$/);
-        if (minMatch) {
-          const min = parseInt(minMatch[1]);
-          status = min <= 45 ? "1H" : "2H";
-          elapsed = min;
-        } else if (progress === "1H" || progress.includes("1st Half")) {
-          status = "1H";
-        } else if (progress === "2H" || progress.includes("2nd Half")) {
-          status = "2H";
-        }
-      }
-
+      const { status, elapsed } = parseStatus(progress || "NS");
       const homeScore = ev.intHomeScore !== null && ev.intHomeScore !== "" ? parseInt(ev.intHomeScore) : null;
       const awayScore = ev.intAwayScore !== null && ev.intAwayScore !== "" ? parseInt(ev.intAwayScore) : null;
 
-      // Build date
       let matchDate = new Date().toISOString();
       if (ev.dateEvent && ev.strTime) {
-        const time = ev.strTime.substring(0, 5); // HH:MM
-        matchDate = new Date(`${ev.dateEvent}T${time}:00Z`).toISOString();
+        matchDate = new Date(`${ev.dateEvent}T${ev.strTime.substring(0, 5)}:00Z`).toISOString();
       } else if (ev.strTimestamp) {
         matchDate = new Date(ev.strTimestamp).toISOString();
       }
 
       return {
+        id_partida: parseInt(ev.idEvent) || Math.random() * 100000 | 0,
         homeTeamName: ev.strHomeTeam || "Time A",
         awayTeamName: ev.strAwayTeam || "Time B",
         homeScore: isNaN(homeScore as number) ? null : homeScore,
@@ -540,110 +359,129 @@ async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
         status,
         elapsed,
         date: matchDate,
+        round: ev.intRound ? `Rodada ${ev.intRound}` : null,
       };
     });
   } catch (e) {
-    console.error(`[Source4-TheSportsDB] Error: ${e.message}`);
+    console.error(`[Source3-TheSportsDB] Error: ${e.message}`);
     return null;
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SOURCE 5: Firecrawl fallback (ESPN scraper)
+// SOURCE 4: APIFootball.com (free but limited)
 // ═══════════════════════════════════════════════════════════════════
-async function fetchFromFirecrawl(brDate: string): Promise<any[] | null> {
-  const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
-  if (!apiKey) { console.warn("[Source3] FIRECRAWL_API_KEY not set"); return null; }
+async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
+  const apiKey = Deno.env.get("APIFOOTBALL_COM_KEY");
+  if (!apiKey) { console.warn("[Source4] APIFOOTBALL_COM_KEY not set"); return null; }
 
   try {
-    console.log(`[Source3-Firecrawl] Scraping ESPN Brasil...`);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
+    console.log(`[Source4-APIFootball] Fetching for ${dateStr}...`);
+    const url = `https://apiv3.apifootball.com/?action=get_events&from=${dateStr}&to=${dateStr}&timezone=America/Sao_Paulo&APIkey=${apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) { console.error(`[Source4] HTTP ${res.status}`); await res.text(); return null; }
 
-    const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        url: "https://www.espn.com.br/futebol/resultados",
-        formats: ["extract"],
-        maxAge: 0,
-        storeInCache: false,
-        timeout: 20000,
-        headers: { "Cache-Control": "no-cache, no-store", "Pragma": "no-cache" },
-        extract: {
-          prompt:
-            "Extract ALL football/soccer matches shown on this page for today. For each match extract: league_name, home_team_name, away_team_name, home_score (number or null), away_score (number or null), match_status (minute like '37' for live, 'F' for finished, 'HT' for half-time, or scheduled time like '21:30'), match_time (original kick-off time HH:MM).",
-          schema: {
-            type: "object",
-            properties: {
-              matches: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    league_name: { type: "string" },
-                    home_team_name: { type: "string" },
-                    away_team_name: { type: "string" },
-                    home_score: { type: ["number", "null"] },
-                    away_score: { type: ["number", "null"] },
-                    match_status: { type: "string" },
-                    match_time: { type: ["string", "null"] },
-                  },
-                  required: ["league_name", "home_team_name", "away_team_name", "match_status"],
-                },
-              },
-            },
-            required: ["matches"],
-          },
-        },
-        waitFor: 3000,
-      }),
+    const data = await res.json();
+    if (!Array.isArray(data)) return null;
+    console.log(`[Source4-APIFootball] Got ${data.length} total events`);
+
+    const EXCLUDED = [
+      "welsh", "galês", "cymru", "northern ireland", "faroe", "gibraltar",
+      "andorra", "san marino", "malta", "kosovo", "luxembourg", "liechtenstein",
+      "reserve", "youth", "u19", "u21", "u23", "women", "feminino", "amateur",
+    ];
+
+    const filtered = data.filter((e: any) => {
+      const ln = (e.league_name || "").toLowerCase();
+      if (EXCLUDED.some(kw => ln.includes(kw))) return false;
+      return isPremiumLeague(e.league_name || "");
     });
 
-    clearTimeout(timeout);
-    const data = await res.json();
+    console.log(`[Source4-APIFootball] ${filtered.length} premium events`);
+    if (filtered.length === 0) return null;
 
-    if (!res.ok) {
-      console.error(`[Source3-Firecrawl] HTTP ${res.status}:`, JSON.stringify(data));
-      return null;
-    }
-
-    const extractedJson = data?.data?.extract || data?.extract;
-    const rawMatches = extractedJson?.matches || [];
-    console.log(`[Source3-Firecrawl] Extracted ${rawMatches.length} matches`);
-
-    const filtered = rawMatches.filter((m: any) => isPremiumLeague(m.league_name || ""));
-    console.log(`[Source3-Firecrawl] ${filtered.length} premium after filter`);
-
-    return filtered.map((m: any) => {
-      const { status, elapsed } = parseStatus(m.match_status || "");
+    return filtered.map((e: any) => {
+      const { status, elapsed } = parseStatus(e.match_status || "");
+      const homeScore = e.match_hometeam_score !== "" ? parseInt(e.match_hometeam_score) : null;
+      const awayScore = e.match_awayteam_score !== "" ? parseInt(e.match_awayteam_score) : null;
       let matchDate = new Date().toISOString();
-      const timeSource = m.match_time || m.match_status || "";
-      const timeMatch = timeSource.match(/(\d{1,2}):(\d{2})/);
-      if (timeMatch) {
-        matchDate = new Date(brDate + `T${timeMatch[1].padStart(2, "0")}:${timeMatch[2]}:00-03:00`).toISOString();
+      if (e.match_date && e.match_time) {
+        matchDate = new Date(`${e.match_date}T${e.match_time}:00-03:00`).toISOString();
       }
       return {
-        homeTeamName: m.home_team_name || "Time A",
-        awayTeamName: m.away_team_name || "Time B",
-        homeScore: m.home_score ?? null,
-        awayScore: m.away_score ?? null,
-        leagueName: m.league_name || "Desconhecida",
-        leagueId: 0,
+        id_partida: parseInt(e.match_id) || Math.random() * 100000 | 0,
+        homeTeamName: e.match_hometeam_name || "Time A",
+        awayTeamName: e.match_awayteam_name || "Time B",
+        homeScore: isNaN(homeScore as number) ? null : homeScore,
+        awayScore: isNaN(awayScore as number) ? null : awayScore,
+        leagueName: e.league_name || "Desconhecida",
+        leagueId: parseInt(e.league_id) || 0,
         status,
         elapsed,
         date: matchDate,
+        round: null,
       };
     });
   } catch (e) {
-    console.error(`[Source3-Firecrawl] Error: ${e.message}`);
+    console.error(`[Source4-APIFootball] Error: ${e.message}`);
     return null;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INTELLIGENT POLLING LOGIC
+// ═══════════════════════════════════════════════════════════════════
+interface PollingDecision {
+  shouldFetch: boolean;
+  reason: string;
+  hasLiveGames: boolean;
+  gamesStartingSoon: number;
+}
+
+async function decidePolling(supabase: any, brDate: string): Promise<PollingDecision> {
+  // Check current state of jogos_ativos
+  const { data: currentGames } = await supabase
+    .from("jogos_ativos")
+    .select("id_partida, status, horario_inicio, atualizado_em")
+    .eq("data_jogo", brDate);
+
+  const games = currentGames || [];
+  const now = new Date();
+
+  // Count live games
+  const liveGames = games.filter((g: any) => g.status === "ao_vivo");
+  if (liveGames.length > 0) {
+    return { shouldFetch: true, reason: `${liveGames.length} jogos ao vivo`, hasLiveGames: true, gamesStartingSoon: 0 };
+  }
+
+  // Check games starting within 15 minutes
+  const soonGames = games.filter((g: any) => {
+    if (g.status !== "programado") return false;
+    const startTime = new Date(g.horario_inicio).getTime();
+    const diff = startTime - now.getTime();
+    return diff > 0 && diff <= 15 * 60 * 1000; // 15 min
+  });
+  if (soonGames.length > 0) {
+    return { shouldFetch: true, reason: `${soonGames.length} jogos começando em <15min`, hasLiveGames: false, gamesStartingSoon: soonGames.length };
+  }
+
+  // No live/soon games: check if we have any data at all for today
+  if (games.length === 0) {
+    return { shouldFetch: true, reason: "Nenhum dado para hoje — busca inicial", hasLiveGames: false, gamesStartingSoon: 0 };
+  }
+
+  // Check last update time — only fetch if >30 min ago
+  const lastUpdate = games.reduce((latest: Date, g: any) => {
+    const t = new Date(g.atualizado_em);
+    return t > latest ? t : latest;
+  }, new Date(0));
+
+  const minutesSinceUpdate = (now.getTime() - lastUpdate.getTime()) / 60000;
+  if (minutesSinceUpdate >= 30) {
+    return { shouldFetch: true, reason: `Última atualização há ${Math.round(minutesSinceUpdate)}min — refresh periódico`, hasLiveGames: false, gamesStartingSoon: 0 };
+  }
+
+  return { shouldFetch: false, reason: `Sem jogos ao vivo, última atualização há ${Math.round(minutesSinceUpdate)}min`, hasLiveGames: false, gamesStartingSoon: 0 };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -660,123 +498,139 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-
-    // Always fetch cache
-    const { data: cached } = await supabase
-      .from("football_cache")
-      .select("matches, fetched_at")
-      .eq("cache_date", brDate)
-      .maybeSingle();
-
-    // Client requests just read DB
     const isCronRequest = req.headers.get("x-cron-source") === "pg_cron";
-    if (!isCronRequest && cached) {
-      return new Response(JSON.stringify(cached.matches), {
+
+    // For non-cron requests, just return current data from jogos_ativos
+    if (!isCronRequest) {
+      const { data } = await supabase
+        .from("jogos_ativos")
+        .select("*")
+        .eq("data_jogo", brDate)
+        .order("status", { ascending: true }) // ao_vivo first
+        .order("horario_inicio", { ascending: true });
+
+      return new Response(JSON.stringify(data || []), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // ── Multi-source cascade: try each source in order ──
+    // ── CRON: Intelligent polling ──
+    const decision = await decidePolling(supabase, brDate);
+    console.log(`[Polling] Decision: shouldFetch=${decision.shouldFetch} | ${decision.reason}`);
+
+    if (!decision.shouldFetch) {
+      console.log(`[Polling] Skipping API call — ${decision.reason}`);
+      return new Response(JSON.stringify({ skipped: true, reason: decision.reason }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── Multi-source cascade ──
     console.log(`[Scraper] Starting multi-source fetch for ${brDate}`);
     let rawMatches: any[] | null = null;
     let source = "none";
 
-    // Source 1: RapidAPI (API-Football v3) — paid, most reliable
+    // Source 1: RapidAPI
     rawMatches = await fetchFromRapidAPI(brDate);
-    if (rawMatches && rawMatches.length > 0) {
-      source = "RapidAPI";
-    }
+    if (rawMatches && rawMatches.length > 0) source = "RapidAPI";
 
-    // Source 2: ESPN Public API — free, unlimited
+    // Source 2: ESPN
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromESPN(brDate);
-      if (rawMatches && rawMatches.length > 0) {
-        source = "ESPN-API";
-      }
+      if (rawMatches && rawMatches.length > 0) source = "ESPN-API";
     }
 
-    // Source 3: TheSportsDB — free, unlimited
+    // Source 3: TheSportsDB
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromTheSportsDB(brDate);
-      if (rawMatches && rawMatches.length > 0) {
-        source = "TheSportsDB";
-      }
+      if (rawMatches && rawMatches.length > 0) source = "TheSportsDB";
     }
 
-    // Source 4: APIFootball.com — free but limited (~100/day), use as emergency fallback
+    // Source 4: APIFootball.com
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromAPIFootball(brDate);
-      if (rawMatches && rawMatches.length > 0) {
-        source = "APIFootball.com";
-      }
-    }
-
-    // Source 5: Firecrawl (ESPN scraping) — last resort
-    if (!rawMatches || rawMatches.length === 0) {
-      rawMatches = await fetchFromFirecrawl(brDate);
-      if (rawMatches && rawMatches.length > 0) {
-        source = "Firecrawl";
-      }
+      if (rawMatches && rawMatches.length > 0) source = "APIFootball.com";
     }
 
     if (!rawMatches || rawMatches.length === 0) {
-      console.error(`[Scraper] All 5 sources returned empty/failed`);
-      if (cached) {
-        return new Response(JSON.stringify(cached.matches), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      return new Response(JSON.stringify([]), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      console.error(`[Scraper] All sources returned empty/failed`);
+      return new Response(JSON.stringify({ error: "No data from any source" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     console.log(`[Scraper] Using source: ${source} with ${rawMatches.length} matches`);
 
-    // Resolve team logos
-    const uniqueTeams = new Set<string>();
-    rawMatches.forEach((m: any) => {
-      uniqueTeams.add(m.homeTeamName);
-      uniqueTeams.add(m.awayTeamName);
-    });
-    await Promise.all([...uniqueTeams].map((name) => resolveTeamLogo(name)));
+    // ── Resolve team badges (from DB cache first, then API) ──
+    const uniqueTeams = [...new Set(rawMatches.flatMap((m: any) => [m.homeTeamName, m.awayTeamName]))];
+    await loadBadgesFromDB(supabase, uniqueTeams);
 
-    // Build final match objects
-    const allMatches = rawMatches.map((m: any, index: number) => ({
-      id: 9000 + index,
-      league: { id: m.leagueId || 0, name: m.leagueName, logo: "", round: null },
+    const missingTeams = uniqueTeams.filter(t => !logoCache.has(t));
+    if (missingTeams.length > 0) {
+      console.log(`[Badges] Resolving ${missingTeams.length} missing badges from API...`);
+      await Promise.all(missingTeams.map(name => resolveAndCacheBadge(supabase, name)));
+    } else {
+      console.log(`[Badges] All ${uniqueTeams.length} badges served from DB cache`);
+    }
+
+    // ── Upsert into jogos_ativos ──
+    const upsertRows = rawMatches.map((m: any) => ({
+      id_partida: m.id_partida,
+      liga_nome: m.leagueName,
+      liga_id: m.leagueId || 0,
+      liga_logo: "",
+      rodada: m.round || null,
+      time_casa: m.homeTeamName,
+      time_fora: m.awayTeamName,
+      emblema_casa: logoCache.get(m.homeTeamName) || "",
+      emblema_fora: logoCache.get(m.awayTeamName) || "",
+      placar_casa: m.homeScore,
+      placar_fora: m.awayScore,
+      horario_inicio: m.date,
+      status: m.status,
+      elapsed: m.elapsed,
+      transmissao: getBroadcast(m.leagueName),
+      data_jogo: brDate,
+      fonte: source,
+      atualizado_em: new Date().toISOString(),
+    }));
+
+    const { error: upsertError } = await supabase
+      .from("jogos_ativos")
+      .upsert(upsertRows, { onConflict: "id_partida,data_jogo" });
+
+    if (upsertError) {
+      console.error(`[DB] Upsert error:`, upsertError);
+    } else {
+      console.log(`[DB] Upserted ${upsertRows.length} matches into jogos_ativos`);
+    }
+
+    // Also update legacy football_cache for backward compatibility
+    const legacyMatches = rawMatches.map((m: any, i: number) => ({
+      id: 9000 + i,
+      league: { id: m.leagueId || 0, name: m.leagueName, logo: "", round: m.round },
       homeTeam: { id: 0, name: m.homeTeamName, logo: logoCache.get(m.homeTeamName) || "" },
       awayTeam: { id: 0, name: m.awayTeamName, logo: logoCache.get(m.awayTeamName) || "" },
       date: m.date,
-      status: m.status,
+      status: m.status === "ao_vivo" ? "1H" : m.status === "finalizado" ? "FT" : m.status === "programado" ? "NS" : m.status.toUpperCase(),
       elapsed: m.elapsed,
       goals: { home: m.homeScore, away: m.awayScore },
       broadcast: getBroadcast(m.leagueName),
       source,
     }));
 
-    console.log(`[Scraper] Final: ${allMatches.length} matches from ${source}`);
+    await supabase.from("football_cache").upsert(
+      { cache_date: brDate, matches: legacyMatches, fetched_at: new Date().toISOString() },
+      { onConflict: "cache_date" }
+    );
 
-    // Diff: only update DB if data changed
-    const oldMatches = (cached?.matches as any[]) || [];
-    if (hasDataChanged(oldMatches, allMatches)) {
-      console.log(`[Scraper] Data CHANGED — updating DB`);
-      await supabase.from("football_cache").upsert(
-        { cache_date: brDate, matches: allMatches, fetched_at: new Date().toISOString() },
-        { onConflict: "cache_date" }
-      );
-    } else {
-      console.log(`[Scraper] No changes — skipping DB update`);
-    }
-
-    return new Response(JSON.stringify(allMatches), {
+    return new Response(JSON.stringify({ success: true, source, count: upsertRows.length, decision: decision.reason }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
     console.error("Error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
