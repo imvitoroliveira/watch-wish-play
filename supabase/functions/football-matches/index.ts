@@ -67,7 +67,6 @@ function parseStatus(statusText: string): { status: string; elapsed: number | nu
   return { status: "programado", elapsed: null };
 }
 
-// Map RapidAPI short status to our status
 function mapRapidAPIStatus(shortStatus: string, elapsed: number | null): string {
   if (["LIVE", "1H", "HT", "2H", "ET", "BT", "P", "INT"].includes(shortStatus)) return "ao_vivo";
   if (["FT", "AET", "PEN"].includes(shortStatus)) return "finalizado";
@@ -110,7 +109,6 @@ function getBroadcast(leagueName: string): string[] {
 // ─── Team badge resolution with DB cache ────────────────────────────
 const logoCache = new Map<string, string>();
 
-// Hardcoded fallback badges for top Brazilian teams (TheSportsDB URLs - updated Feb 2026)
 const FALLBACK_BADGES: Record<string, string> = {
   "Flamengo": "https://r2.thesportsdb.com/images/media/team/badge/syptwx1473538074.png",
   "Botafogo": "https://r2.thesportsdb.com/images/media/team/badge/uvut7f1473538051.png",
@@ -145,7 +143,6 @@ const TEAM_ALIASES: Record<string, string> = {
   "Tottenham": "Tottenham Hotspur", "Newcastle": "Newcastle United",
   "West Ham": "West Ham United", "Sheffield Utd": "Sheffield United",
   "Stade Brestois": "Stade Brestois 29",
-  // Brazilian teams with state suffixes
   "Botafogo RJ": "Botafogo", "Flamengo RJ": "Flamengo", "Fluminense RJ": "Fluminense",
   "Vasco da Gama RJ": "Vasco da Gama", "Vasco RJ": "Vasco da Gama",
   "Botafogo SP": "Botafogo SP", "Guarani SP": "Guarani",
@@ -171,7 +168,6 @@ async function loadBadgesFromDB(supabase: any, teamNames: string[]) {
     .in("team_name", teamNames);
   if (data) {
     for (const row of data) {
-      // Only cache non-empty badge URLs
       if (row.badge_url && row.badge_url.trim() !== "") logoCache.set(row.team_name, row.badge_url);
     }
   }
@@ -183,13 +179,11 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
   const namesToTry = [teamName];
   if (TEAM_ALIASES[teamName]) namesToTry.push(TEAM_ALIASES[teamName]);
   
-  // Auto-strip Brazilian state suffixes (e.g. "Botafogo RJ" -> "Botafogo")
   const stateMatch = teamName.match(/^(.+?)\s+(RJ|SP|MG|RS|PR|SC|BA|CE|PE|GO|PA|AM|MA|MT|MS|SE|AL|RN|PB|PI|ES|DF|RO|RR|AP|AC|TO)$/i);
   if (stateMatch && !TEAM_ALIASES[teamName]) {
     namesToTry.push(stateMatch[1].trim());
   }
 
-  // Check hardcoded fallback for ALL name variants (faster, no API call)
   for (const name of namesToTry) {
     const fallback = FALLBACK_BADGES[name];
     if (fallback) {
@@ -202,11 +196,9 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
     }
   }
 
-  // Also strip accents for TheSportsDB search
   const stripAccents = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   for (const name of namesToTry) {
-    // Try both original and accent-stripped versions
     const searchNames = [name];
     const stripped = stripAccents(name);
     if (stripped !== name) searchNames.push(stripped);
@@ -238,49 +230,171 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SOURCE 1: RapidAPI (API-Football v3) — paid, most reliable
+// RANDOM USER-AGENTS (Anti-bot)
 // ═══════════════════════════════════════════════════════════════════
-async function fetchFromRapidAPI(dateStr: string): Promise<any[] | null> {
-  const apiKey = (Deno.env.get("RAPIDAPI_FOOTBALL_KEY") || "").trim();
-  if (!apiKey) { console.warn("[Source1] RAPIDAPI_FOOTBALL_KEY not set"); return null; }
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+];
 
-  try {
-    console.log(`[Source1-RapidAPI] Fetching fixtures for ${dateStr}...`);
-    const res = await fetch(
-      `https://v3.football.api-sports.io/fixtures?date=${dateStr}`,
-      { headers: { "x-apisports-key": apiKey } }
-    );
-    if (!res.ok) { console.error(`[Source1-RapidAPI] HTTP ${res.status}`); await res.text(); return null; }
+function randomUA(): string {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
 
-    const data = await res.json();
-    const fixtures = data?.response || [];
-    console.log(`[Source1-RapidAPI] Got ${fixtures.length} total fixtures`);
+// ═══════════════════════════════════════════════════════════════════
+// API KEY ROTATION from api_keys table
+// ═══════════════════════════════════════════════════════════════════
+interface ApiKeyRow {
+  id: string;
+  key_name: string;
+  api_key: string;
+  status: string;
+  cooldown_until: string | null;
+  last_used_at: string;
+  total_calls: number;
+}
 
-    const premiumSet = new Set(RAPIDAPI_LEAGUE_IDS);
-    const filtered = fixtures.filter((f: any) => premiumSet.has(f.league?.id));
-    console.log(`[Source1-RapidAPI] ${filtered.length} premium fixtures`);
+async function getNextApiKey(supabase: any): Promise<ApiKeyRow | null> {
+  const now = new Date().toISOString();
 
-    return filtered.map((f: any) => {
-      const shortStatus = f.fixture?.status?.short || "NS";
-      const elapsed = f.fixture?.status?.elapsed ?? null;
-      return {
-        id_partida: f.fixture?.id || 0,
-        homeTeamName: f.teams?.home?.name || "Time A",
-        awayTeamName: f.teams?.away?.name || "Time B",
-        homeScore: f.goals?.home ?? null,
-        awayScore: f.goals?.away ?? null,
-        leagueName: f.league?.name || "Desconhecida",
-        leagueId: f.league?.id || 0,
-        status: mapRapidAPIStatus(shortStatus, elapsed),
-        elapsed,
-        date: f.fixture?.date || new Date().toISOString(),
-        round: f.league?.round || null,
-      };
-    });
-  } catch (e: any) {
-    console.error(`[Source1-RapidAPI] Error: ${e.message}`);
+  // First, reactivate any keys whose cooldown has expired
+  await supabase
+    .from("api_keys")
+    .update({ status: "active", cooldown_until: null })
+    .eq("status", "cooldown")
+    .lt("cooldown_until", now);
+
+  // Get the active key that was used least recently
+  const { data, error } = await supabase
+    .from("api_keys")
+    .select("*")
+    .eq("status", "active")
+    .eq("provider", "rapidapi")
+    .order("last_used_at", { ascending: true })
+    .limit(1);
+
+  if (error || !data || data.length === 0) {
+    console.warn("[KeyRotation] No active API keys available");
     return null;
   }
+
+  return data[0] as ApiKeyRow;
+}
+
+async function markKeyUsed(supabase: any, keyId: string) {
+  await supabase
+    .from("api_keys")
+    .update({
+      last_used_at: new Date().toISOString(),
+      total_calls: undefined, // handled below
+    })
+    .eq("id", keyId);
+
+  // Increment total_calls
+  const { data } = await supabase
+    .from("api_keys")
+    .select("total_calls")
+    .eq("id", keyId)
+    .single();
+
+  if (data) {
+    await supabase
+      .from("api_keys")
+      .update({ total_calls: (data.total_calls || 0) + 1, last_used_at: new Date().toISOString() })
+      .eq("id", keyId);
+  }
+}
+
+async function putKeyOnCooldown(supabase: any, keyId: string, minutes = 60) {
+  const cooldownUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+  console.warn(`[KeyRotation] Putting key ${keyId} on cooldown until ${cooldownUntil}`);
+  await supabase
+    .from("api_keys")
+    .update({ status: "cooldown", cooldown_until: cooldownUntil })
+    .eq("id", keyId);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SOURCE 1: RapidAPI with Key Rotation & 429 Handling
+// ═══════════════════════════════════════════════════════════════════
+async function fetchFromRapidAPIWithRotation(supabase: any, dateStr: string): Promise<{ matches: any[] | null; source: string }> {
+  // Try up to 3 keys
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const keyRow = await getNextApiKey(supabase);
+    if (!keyRow) {
+      console.warn(`[Source1-RapidAPI] No keys available (attempt ${attempt + 1})`);
+      break;
+    }
+
+    console.log(`[Source1-RapidAPI] Using key "${keyRow.key_name}" (attempt ${attempt + 1})`);
+
+    try {
+      const res = await fetch(
+        `https://v3.football.api-sports.io/fixtures?date=${dateStr}`,
+        {
+          headers: {
+            "x-apisports-key": keyRow.api_key,
+            "User-Agent": randomUA(),
+          },
+        }
+      );
+
+      // Handle 429 Too Many Requests
+      if (res.status === 429) {
+        console.warn(`[Source1-RapidAPI] 429 on key "${keyRow.key_name}" — putting on 1h cooldown`);
+        await putKeyOnCooldown(supabase, keyRow.id, 60);
+        await res.text(); // consume body
+        continue; // try next key
+      }
+
+      if (!res.ok) {
+        console.error(`[Source1-RapidAPI] HTTP ${res.status} with key "${keyRow.key_name}"`);
+        await res.text();
+        continue;
+      }
+
+      // Success — mark key as used
+      await markKeyUsed(supabase, keyRow.id);
+
+      const data = await res.json();
+      const fixtures = data?.response || [];
+      console.log(`[Source1-RapidAPI] Got ${fixtures.length} total fixtures with key "${keyRow.key_name}"`);
+
+      const premiumSet = new Set(RAPIDAPI_LEAGUE_IDS);
+      const filtered = fixtures.filter((f: any) => premiumSet.has(f.league?.id));
+      console.log(`[Source1-RapidAPI] ${filtered.length} premium fixtures`);
+
+      if (filtered.length === 0) return { matches: null, source: "none" };
+
+      const matches = filtered.map((f: any) => {
+        const shortStatus = f.fixture?.status?.short || "NS";
+        const elapsed = f.fixture?.status?.elapsed ?? null;
+        return {
+          id_partida: f.fixture?.id || 0,
+          homeTeamName: f.teams?.home?.name || "Time A",
+          awayTeamName: f.teams?.away?.name || "Time B",
+          homeScore: f.goals?.home ?? null,
+          awayScore: f.goals?.away ?? null,
+          leagueName: f.league?.name || "Desconhecida",
+          leagueId: f.league?.id || 0,
+          status: mapRapidAPIStatus(shortStatus, elapsed),
+          elapsed,
+          date: f.fixture?.date || new Date().toISOString(),
+          round: f.league?.round || null,
+        };
+      });
+
+      return { matches, source: `RapidAPI(${keyRow.key_name})` };
+    } catch (e: any) {
+      console.error(`[Source1-RapidAPI] Error with key "${keyRow.key_name}": ${e.message}`);
+      continue;
+    }
+  }
+
+  return { matches: null, source: "none" };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -310,7 +424,7 @@ async function fetchFromESPN(dateStr: string): Promise<any[] | null> {
     const fetches = ESPN_LEAGUE_SLUGS.map(async ({ slug, name }) => {
       try {
         const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${yyyymmdd}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: { "User-Agent": randomUA() } });
         if (!res.ok) { await res.text(); return []; }
         const data = await res.json();
         return (data?.events || []).map((ev: any) => ({ ...ev, _leagueName: name }));
@@ -376,18 +490,20 @@ async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
     console.log(`[Source3-TheSportsDB] Fetching events for ${dateStr}...`);
     const allEvents: any[] = [];
 
-    // Livescores
     try {
-      const liveRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/livescore.php?s=Soccer`);
+      const liveRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/livescore.php?s=Soccer`, {
+        headers: { "User-Agent": randomUA() },
+      });
       if (liveRes.ok) {
         const liveData = await liveRes.json();
         allEvents.push(...(liveData?.events || []));
       }
     } catch { /* silent */ }
 
-    // Events by day
     try {
-      const dayRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${dateStr}&s=Soccer`);
+      const dayRes = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${dateStr}&s=Soccer`, {
+        headers: { "User-Agent": randomUA() },
+      });
       if (dayRes.ok) {
         const dayData = await dayRes.json();
         const existingIds = new Set(allEvents.map((e: any) => e.idEvent));
@@ -457,16 +573,12 @@ async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
   try {
     console.log(`[Source4-APIFootball] Fetching for ${dateStr}...`);
     const url = `https://apiv3.apifootball.com/?action=get_events&from=${dateStr}&to=${dateStr}&timezone=America/Sao_Paulo&APIkey=${apiKey}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: { "User-Agent": randomUA() } });
     if (!res.ok) { console.error(`[Source4] HTTP ${res.status}`); await res.text(); return null; }
 
     const data = await res.json();
     if (!Array.isArray(data)) return null;
     console.log(`[Source4-APIFootball] Got ${data.length} total events`);
-
-    // Log sample of unique league names for debugging
-    const uniqueLeagues = [...new Set(data.map((e: any) => e.league_name || ""))].slice(0, 30);
-    console.log(`[Source4-APIFootball] Sample leagues: ${JSON.stringify(uniqueLeagues)}`);
 
     const EXCLUDED = [
       "welsh", "galês", "cymru", "northern ireland", "faroe", "gibraltar",
@@ -522,7 +634,6 @@ interface PollingDecision {
 }
 
 async function decidePolling(supabase: any, brDate: string): Promise<PollingDecision> {
-  // Check current state of jogos_ativos
   const { data: currentGames } = await supabase
     .from("jogos_ativos")
     .select("id_partida, status, horario_inicio, atualizado_em")
@@ -542,7 +653,7 @@ async function decidePolling(supabase: any, brDate: string): Promise<PollingDeci
     if (g.status !== "programado") return false;
     const startTime = new Date(g.horario_inicio).getTime();
     const diff = startTime - now.getTime();
-    return diff > 0 && diff <= 15 * 60 * 1000; // 15 min
+    return diff > 0 && diff <= 15 * 60 * 1000;
   });
   if (soonGames.length > 0) {
     return { shouldFetch: true, reason: `${soonGames.length} jogos começando em <15min`, hasLiveGames: false, gamesStartingSoon: soonGames.length };
@@ -568,6 +679,13 @@ async function decidePolling(supabase: any, brDate: string): Promise<PollingDeci
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// RANDOM JITTER (Anti-bot delay)
+// ═══════════════════════════════════════════════════════════════════
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════════
 Deno.serve(async (req) => {
@@ -589,7 +707,7 @@ Deno.serve(async (req) => {
         .from("jogos_ativos")
         .select("*")
         .eq("data_jogo", brDate)
-        .order("status", { ascending: true }) // ao_vivo first
+        .order("status", { ascending: true })
         .order("horario_inicio", { ascending: true });
 
       return new Response(JSON.stringify(data || []), {
@@ -597,39 +715,57 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ── CRON: Intelligent polling ──
+    // ── CRON: Probabilistic skip (makes timing unpredictable: ~50% chance = avg 4min) ──
+    const skipRoll = Math.random();
+    if (skipRoll < 0.5) {
+      console.log(`[Cron] Probabilistic skip (roll=${skipRoll.toFixed(2)}) — skipping this execution`);
+      return new Response(JSON.stringify({ skipped: true, reason: "probabilistic_skip", roll: skipRoll }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    console.log(`[Cron] Proceeding (roll=${skipRoll.toFixed(2)})`);
+
+    // ── CRON: Intelligent polling — check if there's a reason to fetch ──
     const decision = await decidePolling(supabase, brDate);
     console.log(`[Polling] Decision: shouldFetch=${decision.shouldFetch} | ${decision.reason}`);
 
     if (!decision.shouldFetch) {
-      console.log(`[Polling] Skipping API call — ${decision.reason}`);
+      console.log(`[Polling] Sem jogos ativos no momento — encerrando`);
       return new Response(JSON.stringify({ skipped: true, reason: decision.reason }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // ── Multi-source cascade ──
+    // ── JITTER: Random delay 5-40 seconds (anti-bot pattern breaking) ──
+    const jitterMs = 5000 + Math.floor(Math.random() * 35000);
+    console.log(`[Jitter] Aguardando ${(jitterMs / 1000).toFixed(1)}s antes de disparar...`);
+    await sleep(jitterMs);
+
+    // ── Multi-source cascade with key rotation ──
     console.log(`[Scraper] Starting multi-source fetch for ${brDate}`);
     let rawMatches: any[] | null = null;
     let source = "none";
 
-    // Source 1: RapidAPI
-    rawMatches = await fetchFromRapidAPI(brDate);
-    if (rawMatches && rawMatches.length > 0) source = "RapidAPI";
+    // Source 1: RapidAPI with key rotation
+    const rapidResult = await fetchFromRapidAPIWithRotation(supabase, brDate);
+    if (rapidResult.matches && rapidResult.matches.length > 0) {
+      rawMatches = rapidResult.matches;
+      source = rapidResult.source;
+    }
 
-    // Source 2: ESPN
+    // Source 2: ESPN (fallback)
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromESPN(brDate);
       if (rawMatches && rawMatches.length > 0) source = "ESPN-API";
     }
 
-    // Source 3: TheSportsDB
+    // Source 3: TheSportsDB (fallback)
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromTheSportsDB(brDate);
       if (rawMatches && rawMatches.length > 0) source = "TheSportsDB";
     }
 
-    // Source 4: APIFootball.com
+    // Source 4: APIFootball.com (fallback)
     if (!rawMatches || rawMatches.length === 0) {
       rawMatches = await fetchFromAPIFootball(brDate);
       if (rawMatches && rawMatches.length > 0) source = "APIFootball.com";
@@ -644,7 +780,7 @@ Deno.serve(async (req) => {
 
     console.log(`[Scraper] Using source: ${source} with ${rawMatches.length} matches`);
 
-    // ── Resolve team badges (from DB cache first, then API) ──
+    // ── Resolve team badges ──
     const uniqueTeams = [...new Set(rawMatches.flatMap((m: any) => [m.homeTeamName, m.awayTeamName]))];
     await loadBadgesFromDB(supabase, uniqueTeams);
 
@@ -688,7 +824,7 @@ Deno.serve(async (req) => {
       console.log(`[DB] Upserted ${upsertRows.length} matches into jogos_ativos`);
     }
 
-    // Also update legacy football_cache for backward compatibility
+    // Also update legacy football_cache
     const legacyMatches = rawMatches.map((m: any, i: number) => ({
       id: 9000 + i,
       league: { id: m.leagueId || 0, name: m.leagueName, logo: "", round: m.round },
@@ -707,7 +843,10 @@ Deno.serve(async (req) => {
       { onConflict: "cache_date" }
     );
 
-    return new Response(JSON.stringify({ success: true, source, count: upsertRows.length, decision: decision.reason }), {
+    return new Response(JSON.stringify({
+      success: true, source, count: upsertRows.length,
+      decision: decision.reason, jitter_ms: jitterMs,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
