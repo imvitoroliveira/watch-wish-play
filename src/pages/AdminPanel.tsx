@@ -151,12 +151,13 @@ const AdminPanel = () => {
         contato: formatContact(c['n'] || c['N'] || ''),
       }));
 
-      const res = await fetch(webhookUrl.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'expiring_clients', clients: payload, total: payload.length }),
+      const { data, error } = await supabase.functions.invoke('n8n-proxy', {
+        body: {
+          webhook_url: webhookUrl.trim(),
+          payload: { action: 'expiring_clients', clients: payload, total: payload.length },
+        },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (error) throw new Error(error.message || 'Erro ao chamar proxy');
       localStorage.setItem('msc_webhook_url', webhookUrl.trim());
       toast({ title: 'Webhook disparado!', description: `${payload.length} clientes enviados ao n8n com sucesso.` });
     } catch (e: any) {
@@ -176,12 +177,13 @@ const AdminPanel = () => {
     }
     setCampaignLoading(true);
     try {
-      const res = await fetch(campaignWebhookUrl.trim(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'campaign', title: campaignTitle.trim(), message: campaignMessage.trim() }),
+      const { data, error } = await supabase.functions.invoke('n8n-proxy', {
+        body: {
+          webhook_url: campaignWebhookUrl.trim(),
+          payload: { action: 'campaign', title: campaignTitle.trim(), message: campaignMessage.trim() },
+        },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (error) throw new Error(error.message || 'Erro ao chamar proxy');
       localStorage.setItem('msc_campaign_webhook_url', campaignWebhookUrl.trim());
       toast({ title: 'Campanha disparada!', description: 'Mensagem enviada via webhook.' });
       setCampaignTitle('');
