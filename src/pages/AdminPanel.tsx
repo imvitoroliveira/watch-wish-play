@@ -117,30 +117,39 @@ const AdminPanel = () => {
     setWebhookLoading(true);
     toast({ title: 'Processando disparos...', description: 'Filtrando clientes e enviando dados ao n8n.' });
     try {
-      const now = new Date();
-      const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-      const expiring = clientList.filter(c => {
-        if (!c.e) return false;
-        const exp = new Date(c.e);
-        return exp >= now && exp <= threeDaysLater;
-      });
+      // Filtrar apenas clientes com coluna '7' (expires72) igual a '1'
+      const expiring = clientList.filter(c => c['7'] === '1');
 
-      const payload = expiring.map(c => {
-        // Format expiration date as dd/mm/yyyy
-        let dataFormatada = c.e || '';
+      if (expiring.length === 0) {
+        toast({ title: 'Nenhum cliente encontrado', description: 'Não há clientes com vencimento próximo (coluna 7 = 1).', variant: 'destructive' });
+        setWebhookLoading(false);
+        return;
+      }
+
+      const formatDate = (dateStr: string): string => {
         try {
-          const d = new Date(c.e);
+          const d = new Date(dateStr);
           if (!isNaN(d.getTime())) {
-            dataFormatada = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const day = String(d.getDate()).padStart(2, '0');
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const year = d.getFullYear();
+            return `${day}/${month}/${year}`;
           }
-        } catch { /* keep original */ }
+        } catch { /* fallback */ }
+        return dateStr;
+      };
 
-        return {
-          usuario: c.u,
-          data_expiracao: dataFormatada,
-          contato: c['Notas'] || c['notas'] || c['NOTAS'] || '',
-        };
-      });
+      const formatContact = (contact: string | undefined): string => {
+        if (!contact) return '';
+        const cleaned = contact.replace(/\s/g, '');
+        return cleaned.startsWith('55') ? cleaned : `55${cleaned}`;
+      };
+
+      const payload = expiring.map(c => ({
+        usuario: c.u,
+        data_expiracao: formatDate(c.e),
+        contato: formatContact(c['n'] || c['N'] || ''),
+      }));
 
       const res = await fetch(webhookUrl.trim(), {
         method: 'POST',
@@ -149,7 +158,7 @@ const AdminPanel = () => {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       localStorage.setItem('msc_webhook_url', webhookUrl.trim());
-      toast({ title: 'Webhook disparado!', description: `${payload.length} clientes com vencimento em 3 dias enviados ao n8n.` });
+      toast({ title: 'Webhook disparado!', description: `${payload.length} clientes enviados ao n8n com sucesso.` });
     } catch (e: any) {
       toast({ title: 'Erro ao disparar webhook', description: e.message, variant: 'destructive' });
     }
