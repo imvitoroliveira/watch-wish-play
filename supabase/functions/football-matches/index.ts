@@ -715,15 +715,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ── CRON: Probabilistic skip (makes timing unpredictable: ~50% chance = avg 4min) ──
-    const skipRoll = Math.random();
-    if (skipRoll < 0.5) {
-      console.log(`[Cron] Probabilistic skip (roll=${skipRoll.toFixed(2)}) — skipping this execution`);
-      return new Response(JSON.stringify({ skipped: true, reason: "probabilistic_skip", roll: skipRoll }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    console.log(`[Cron] Proceeding (roll=${skipRoll.toFixed(2)})`);
+    // ── CRON: Interval is 5min, no probabilistic skip needed ──
+    console.log(`[Cron] Proceeding (interval=5min)`);
 
     // ── CRON: Intelligent polling — check if there's a reason to fetch ──
     const decision = await decidePolling(supabase, brDate);
@@ -792,37 +785,35 @@ Deno.serve(async (req) => {
       console.log(`[Badges] All ${uniqueTeams.length} badges served from DB cache`);
     }
 
-    // ── Upsert into jogos_ativos ──
-    const upsertRows = rawMatches.map((m: any) => ({
-      id_partida: m.id_partida,
-      liga_nome: m.leagueName,
-      liga_id: m.leagueId || 0,
-      liga_logo: "",
-      rodada: m.round || null,
-      time_casa: m.homeTeamName,
-      time_fora: m.awayTeamName,
-      emblema_casa: logoCache.get(m.homeTeamName) || "",
-      emblema_fora: logoCache.get(m.awayTeamName) || "",
-      placar_casa: m.homeScore,
-      placar_fora: m.awayScore,
-      horario_inicio: m.date,
-      status: m.status,
-      elapsed: m.elapsed,
-      transmissao: getBroadcast(m.leagueName),
-      data_jogo: brDate,
-      fonte: source,
-      atualizado_em: new Date().toISOString(),
-    }));
-
-    const { error: upsertError } = await supabase
-      .from("jogos_ativos")
-      .upsert(upsertRows, { onConflict: "id_partida,data_jogo" });
-
-    if (upsertError) {
-      console.error(`[DB] Upsert error:`, upsertError);
-    } else {
-      console.log(`[DB] Upserted ${upsertRows.length} matches into jogos_ativos`);
+    // ── Atomic upsert into jogos_ativos via DB function (advisory locks) ──
+    console.log(`[DB] Upserting ${rawMatches.length} matches via atomic function...`);
+    let upsertErrors = 0;
+    for (const m of rawMatches) {
+      const { error: rpcError } = await supabase.rpc("upsert_jogo_ativo", {
+        p_id_partida: m.id_partida,
+        p_liga_nome: m.leagueName,
+        p_liga_id: m.leagueId || 0,
+        p_liga_logo: "",
+        p_rodada: m.round || null,
+        p_time_casa: m.homeTeamName,
+        p_time_fora: m.awayTeamName,
+        p_emblema_casa: logoCache.get(m.homeTeamName) || "",
+        p_emblema_fora: logoCache.get(m.awayTeamName) || "",
+        p_placar_casa: m.homeScore,
+        p_placar_fora: m.awayScore,
+        p_horario_inicio: m.date,
+        p_status: m.status,
+        p_elapsed: m.elapsed,
+        p_transmissao: getBroadcast(m.leagueName),
+        p_data_jogo: brDate,
+        p_fonte: source,
+      });
+      if (rpcError) {
+        console.error(`[DB] RPC error for match ${m.id_partida}:`, rpcError.message);
+        upsertErrors++;
+      }
     }
+    console.log(`[DB] Upserted ${rawMatches.length - upsertErrors}/${rawMatches.length} matches (${upsertErrors} errors)`);
 
     // Also update legacy football_cache
     const legacyMatches = rawMatches.map((m: any, i: number) => ({
@@ -844,7 +835,7 @@ Deno.serve(async (req) => {
     );
 
     return new Response(JSON.stringify({
-      success: true, source, count: upsertRows.length,
+      success: true, source, count: rawMatches.length,
       decision: decision.reason, jitter_ms: jitterMs,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

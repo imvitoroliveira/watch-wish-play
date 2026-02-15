@@ -403,7 +403,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      upsert_jogo_ativo: {
+        Args: {
+          p_data_jogo: string
+          p_elapsed: number
+          p_emblema_casa: string
+          p_emblema_fora: string
+          p_fonte: string
+          p_horario_inicio: string
+          p_id_partida: number
+          p_liga_id: number
+          p_liga_logo: string
+          p_liga_nome: string
+          p_placar_casa: number
+          p_placar_fora: number
+          p_rodada: string
+          p_status: string
+          p_time_casa: string
+          p_time_fora: string
+          p_transmissao: string[]
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
