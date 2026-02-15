@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_keys: {
+        Row: {
+          api_key: string
+          cooldown_until: string | null
+          created_at: string
+          id: string
+          key_name: string
+          last_used_at: string | null
+          provider: string
+          status: string
+          total_calls: number
+        }
+        Insert: {
+          api_key: string
+          cooldown_until?: string | null
+          created_at?: string
+          id?: string
+          key_name: string
+          last_used_at?: string | null
+          provider?: string
+          status?: string
+          total_calls?: number
+        }
+        Update: {
+          api_key?: string
+          cooldown_until?: string | null
+          created_at?: string
+          id?: string
+          key_name?: string
+          last_used_at?: string | null
+          provider?: string
+          status?: string
+          total_calls?: number
+        }
+        Relationships: []
+      }
       clients_list: {
         Row: {
           clients: Json
