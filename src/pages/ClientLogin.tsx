@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Film, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Lock, User, Eye, EyeOff } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import eagleLogo from '@/assets/eagle-logo.png';
 
 const ClientLogin = () => {
   const [username, setUsername] = useState('');
@@ -53,8 +54,8 @@ const ClientLogin = () => {
             transition={{ delay: 0.2, type: 'spring' }}
             className="inline-flex items-center gap-3 mb-4"
           >
-            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center glow-red">
-              <Film className="w-7 h-7 text-primary-foreground" />
+            <div className="w-14 h-14 rounded-xl flex items-center justify-center">
+              <img src={eagleLogo} alt="StreamTV" className="w-14 h-14 object-contain" />
             </div>
             <h1 className="text-4xl font-display tracking-wide text-foreground">
               MEU STREAM
