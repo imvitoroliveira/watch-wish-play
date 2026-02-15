@@ -112,24 +112,24 @@ const logoCache = new Map<string, string>();
 
 // Hardcoded fallback badges for top Brazilian teams (TheSportsDB URLs)
 const FALLBACK_BADGES: Record<string, string> = {
-  "Flamengo": "https://r2.thesportsdb.com/images/media/team/badge/d0psg11658917318.png/small",
-  "Botafogo": "https://r2.thesportsdb.com/images/media/team/badge/pxwrq41720364498.png/small",
-  "Fluminense": "https://r2.thesportsdb.com/images/media/team/badge/bfryds1689287206.png/small",
-  "Vasco da Gama": "https://r2.thesportsdb.com/images/media/team/badge/0bhe2g1548977468.png/small",
-  "Palmeiras": "https://r2.thesportsdb.com/images/media/team/badge/yfynps1534075792.png/small",
-  "Corinthians": "https://r2.thesportsdb.com/images/media/team/badge/swyrwu1448975705.png/small",
-  "São Paulo": "https://r2.thesportsdb.com/images/media/team/badge/xqsutt1448975643.png/small",
-  "Sao Paulo": "https://r2.thesportsdb.com/images/media/team/badge/xqsutt1448975643.png/small",
-  "Santos": "https://r2.thesportsdb.com/images/media/team/badge/d8xyrp1534075902.png/small",
-  "Internacional": "https://r2.thesportsdb.com/images/media/team/badge/51ks2u1549229498.png/small",
-  "Gremio": "https://r2.thesportsdb.com/images/media/team/badge/m20quy1534182427.png/small",
-  "Atletico Mineiro": "https://r2.thesportsdb.com/images/media/team/badge/qmkqyv1534074719.png/small",
-  "Cruzeiro": "https://r2.thesportsdb.com/images/media/team/badge/quvrpx1423758422.png/small",
-  "Bahia": "https://r2.thesportsdb.com/images/media/team/badge/r29lkn1534071500.png/small",
-  "Fortaleza": "https://r2.thesportsdb.com/images/media/team/badge/7p6c4k1611591726.png/small",
-  "Athletico Paranaense": "https://r2.thesportsdb.com/images/media/team/badge/5rwrhs1558717280.png/small",
-  "Bragantino": "https://r2.thesportsdb.com/images/media/team/badge/2p7tl41701423595.png/small",
-  "Botafogo SP": "https://r2.thesportsdb.com/images/media/team/badge/r3pxcm1534071505.png/small",
+  "Flamengo": "https://r2.thesportsdb.com/images/media/team/badge/d0psg11658917318.png",
+  "Botafogo": "https://r2.thesportsdb.com/images/media/team/badge/pxwrq41720364498.png",
+  "Fluminense": "https://r2.thesportsdb.com/images/media/team/badge/bfryds1689287206.png",
+  "Vasco da Gama": "https://r2.thesportsdb.com/images/media/team/badge/0bhe2g1548977468.png",
+  "Palmeiras": "https://r2.thesportsdb.com/images/media/team/badge/yfynps1534075792.png",
+  "Corinthians": "https://r2.thesportsdb.com/images/media/team/badge/swyrwu1448975705.png",
+  "São Paulo": "https://r2.thesportsdb.com/images/media/team/badge/xqsutt1448975643.png",
+  "Sao Paulo": "https://r2.thesportsdb.com/images/media/team/badge/xqsutt1448975643.png",
+  "Santos": "https://r2.thesportsdb.com/images/media/team/badge/d8xyrp1534075902.png",
+  "Internacional": "https://r2.thesportsdb.com/images/media/team/badge/51ks2u1549229498.png",
+  "Gremio": "https://r2.thesportsdb.com/images/media/team/badge/m20quy1534182427.png",
+  "Atletico Mineiro": "https://r2.thesportsdb.com/images/media/team/badge/qmkqyv1534074719.png",
+  "Cruzeiro": "https://r2.thesportsdb.com/images/media/team/badge/quvrpx1423758422.png",
+  "Bahia": "https://r2.thesportsdb.com/images/media/team/badge/r29lkn1534071500.png",
+  "Fortaleza": "https://r2.thesportsdb.com/images/media/team/badge/7p6c4k1611591726.png",
+  "Athletico Paranaense": "https://r2.thesportsdb.com/images/media/team/badge/5rwrhs1558717280.png",
+  "Bragantino": "https://r2.thesportsdb.com/images/media/team/badge/2p7tl41701423595.png",
+  "Botafogo SP": "https://r2.thesportsdb.com/images/media/team/badge/r3pxcm1534071505.png",
 };
 
 const TEAM_ALIASES: Record<string, string> = {
@@ -219,13 +219,13 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
           if (data.teams?.length > 0) {
             const badge = data.teams[0].strBadge || data.teams[0].strTeamBadge || "";
             if (badge) {
-              const smallBadge = badge + "/small";
-              logoCache.set(teamName, smallBadge);
+              const badgeUrl = badge;
+              logoCache.set(teamName, badgeUrl);
               supabase.from("team_badges").upsert(
-                { team_name: teamName, badge_url: smallBadge, source: "thesportsdb", updated_at: new Date().toISOString() },
+                { team_name: teamName, badge_url: badgeUrl, source: "thesportsdb", updated_at: new Date().toISOString() },
                 { onConflict: "team_name" }
               ).then(() => {});
-              return smallBadge;
+              return badgeUrl;
             }
           }
         }
