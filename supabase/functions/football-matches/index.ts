@@ -187,39 +187,50 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
     namesToTry.push(stateMatch[1].trim());
   }
 
-  // Check hardcoded fallback FIRST (faster, no API call)
-  const aliasName = TEAM_ALIASES[teamName] || teamName;
-  const fallback = FALLBACK_BADGES[aliasName] || FALLBACK_BADGES[teamName];
-  if (fallback) {
-    logoCache.set(teamName, fallback);
-    supabase.from("team_badges").upsert(
-      { team_name: teamName, badge_url: fallback, source: "fallback", updated_at: new Date().toISOString() },
-      { onConflict: "team_name" }
-    ).then(() => {});
-    return fallback;
+  // Check hardcoded fallback for ALL name variants (faster, no API call)
+  for (const name of namesToTry) {
+    const fallback = FALLBACK_BADGES[name];
+    if (fallback) {
+      logoCache.set(teamName, fallback);
+      supabase.from("team_badges").upsert(
+        { team_name: teamName, badge_url: fallback, source: "fallback", updated_at: new Date().toISOString() },
+        { onConflict: "team_name" }
+      ).then(() => {});
+      return fallback;
+    }
   }
 
+  // Also strip accents for TheSportsDB search
+  const stripAccents = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
   for (const name of namesToTry) {
-    try {
-      const res = await fetch(
-        `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(name)}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.teams?.length > 0) {
-          const badge = data.teams[0].strBadge || data.teams[0].strTeamBadge || "";
-          if (badge) {
-            const smallBadge = badge + "/small";
-            logoCache.set(teamName, smallBadge);
-            supabase.from("team_badges").upsert(
-              { team_name: teamName, badge_url: smallBadge, source: "thesportsdb", updated_at: new Date().toISOString() },
-              { onConflict: "team_name" }
-            ).then(() => {});
-            return smallBadge;
+    // Try both original and accent-stripped versions
+    const searchNames = [name];
+    const stripped = stripAccents(name);
+    if (stripped !== name) searchNames.push(stripped);
+    
+    for (const searchName of searchNames) {
+      try {
+        const res = await fetch(
+          `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(searchName)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.teams?.length > 0) {
+            const badge = data.teams[0].strBadge || data.teams[0].strTeamBadge || "";
+            if (badge) {
+              const smallBadge = badge + "/small";
+              logoCache.set(teamName, smallBadge);
+              supabase.from("team_badges").upsert(
+                { team_name: teamName, badge_url: smallBadge, source: "thesportsdb", updated_at: new Date().toISOString() },
+                { onConflict: "team_name" }
+              ).then(() => {});
+              return smallBadge;
+            }
           }
         }
-      }
-    } catch { /* silent */ }
+      } catch { /* silent */ }
+    }
   }
   logoCache.set(teamName, "");
   return "";
