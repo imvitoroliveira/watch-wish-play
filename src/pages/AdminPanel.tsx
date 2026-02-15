@@ -240,8 +240,13 @@ const AdminPanel = () => {
         return;
       }
 
+      const semNotas = data.filter(c => !c['Notas'] && !c['notas'] && !c['NOTAS']).length;
       uploadClientList(data);
-      toast({ title: 'Sucesso!', description: `${data.length} clientes importados.` });
+      toast({ 
+        title: 'Sucesso!', 
+        description: `${data.length} clientes importados.${semNotas > 0 ? ` ⚠️ ${semNotas} cliente(s) sem contato na coluna "Notas".` : ''}`,
+        variant: semNotas > 0 ? 'destructive' : 'default',
+      });
     } catch (err) {
       toast({ title: 'Erro ao processar', description: 'Verifique o formato do arquivo', variant: 'destructive' });
     }
