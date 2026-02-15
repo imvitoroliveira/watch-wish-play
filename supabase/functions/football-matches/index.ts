@@ -120,6 +120,22 @@ const TEAM_ALIASES: Record<string, string> = {
   "Tottenham": "Tottenham Hotspur", "Newcastle": "Newcastle United",
   "West Ham": "West Ham United", "Sheffield Utd": "Sheffield United",
   "Stade Brestois": "Stade Brestois 29",
+  // Brazilian teams with state suffixes
+  "Botafogo RJ": "Botafogo", "Flamengo RJ": "Flamengo", "Fluminense RJ": "Fluminense",
+  "Vasco da Gama RJ": "Vasco da Gama", "Vasco RJ": "Vasco da Gama",
+  "Botafogo SP": "Botafogo SP", "Guarani SP": "Guarani",
+  "Portuguesa SP": "Portuguesa", "Ferroviária SP": "Ferroviaria",
+  "São Paulo SP": "Sao Paulo", "Corinthians SP": "Corinthians",
+  "Santos SP": "Santos", "Palmeiras SP": "Palmeiras",
+  "Red Bull Bragantino": "Bragantino", "RB Bragantino": "Bragantino",
+  "América MG": "America Mineiro", "América-MG": "America Mineiro",
+  "Athletico PR": "Athletico Paranaense", "Athletico-PR": "Athletico Paranaense",
+  "Atlético MG": "Atletico Mineiro", "Atlético-MG": "Atletico Mineiro",
+  "Cruzeiro MG": "Cruzeiro", "Internacional RS": "Internacional",
+  "Grêmio RS": "Gremio", "Sport RE": "Sport Recife",
+  "Ceará CE": "Ceara", "Fortaleza CE": "Fortaleza",
+  "Bahia BA": "Bahia", "Vitória BA": "Vitoria",
+  "Goiás GO": "Goias", "Coritiba PR": "Coritiba",
 };
 
 async function loadBadgesFromDB(supabase: any, teamNames: string[]) {
@@ -140,6 +156,12 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
 
   const namesToTry = [teamName];
   if (TEAM_ALIASES[teamName]) namesToTry.push(TEAM_ALIASES[teamName]);
+  
+  // Auto-strip Brazilian state suffixes (e.g. "Botafogo RJ" -> "Botafogo")
+  const stateMatch = teamName.match(/^(.+?)\s+(RJ|SP|MG|RS|PR|SC|BA|CE|PE|GO|PA|AM|MA|MT|MS|SE|AL|RN|PB|PI|ES|DF|RO|RR|AP|AC|TO)$/i);
+  if (stateMatch && !TEAM_ALIASES[teamName]) {
+    namesToTry.push(stateMatch[1].trim());
+  }
 
   for (const name of namesToTry) {
     try {
@@ -153,7 +175,6 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
           if (badge) {
             const smallBadge = badge + "/small";
             logoCache.set(teamName, smallBadge);
-            // Save to DB for future use (fire and forget)
             supabase.from("team_badges").upsert(
               { team_name: teamName, badge_url: smallBadge, source: "thesportsdb", updated_at: new Date().toISOString() },
               { onConflict: "team_name" }
