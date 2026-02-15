@@ -9,6 +9,8 @@ const corsHeaders = {
 // ─── Premium Leagues (STRICT WHITELIST) ─────────────────────────────
 const RAPIDAPI_LEAGUE_IDS = [
   71, 72, 73, 625, 13, 11, 535, 34, 10, 2, 3, 1,
+  480,  // Campeonato Paulista
+  352,  // Campeonato Carioca
 ];
 
 function isPremiumLeague(name: string, leagueId?: number): boolean {
@@ -30,6 +32,8 @@ function isPremiumLeague(name: string, leagueId?: number): boolean {
     "eliminatórias", "world cup qualif",
     "copa do mundo", "world cup", "fifa world cup",
     "amistoso", "amistosos", "friendly", "friendlies",
+    "campeonato paulista", "paulistão", "paulista a1",
+    "campeonato carioca", "cariocão", "carioca",
   ];
   for (const league of ALLOWED) {
     if (lower === league || lower.startsWith(league)) return true;
@@ -89,6 +93,10 @@ const BROADCAST_MAP: Record<string, string[]> = {
   "eliminatórias": ["Globo", "SporTV", "CazéTV"],
   "copa do mundo": ["Globo", "SporTV", "CazéTV"],
   "amistoso": ["SporTV", "ESPN"],
+  "paulista": ["Record", "CazéTV", "Nosso Futebol"],
+  "paulistão": ["Record", "CazéTV", "Nosso Futebol"],
+  "carioca": ["Band", "SporTV", "Premiere"],
+  "cariocão": ["Band", "SporTV", "Premiere"],
 };
 
 function getBroadcast(leagueName: string): string[] {
@@ -213,6 +221,8 @@ const ESPN_LEAGUE_SLUGS = [
   { slug: "bra.1", name: "Brasileirão Série A" },
   { slug: "bra.2", name: "Brasileirão Série B" },
   { slug: "bra.copa_do_brasil", name: "Copa do Brasil" },
+  { slug: "bra.paulista_a1", name: "Campeonato Paulista" },
+  { slug: "bra.carioca_a1", name: "Campeonato Carioca" },
   { slug: "conmebol.libertadores", name: "Copa Libertadores" },
   { slug: "conmebol.sudamericana", name: "Copa Sul-Americana" },
   { slug: "uefa.champions", name: "Champions League" },
