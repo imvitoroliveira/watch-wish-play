@@ -109,7 +109,7 @@ const AgendaJogos = () => {
           <AnimatePresence mode="popLayout">
             {filteredJogos.map((jogo, i) => (
               <motion.div
-                key={`${jogo.time_casa}-${jogo.time_fora}`}
+                key={jogo.id_partida}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
