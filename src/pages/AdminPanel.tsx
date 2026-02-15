@@ -38,10 +38,13 @@ const AdminPanel = () => {
   const [onlineLoading, setOnlineLoading] = useState(false);
 
   const loadOnlineUsers = async () => {
+    const adminAuth = sessionStorage.getItem('msc_admin_creds') || '';
+    if (!adminAuth) {
+      console.log('[presence] skipping — no admin creds in session');
+      return;
+    }
     setOnlineLoading(true);
     try {
-      const adminAuth = sessionStorage.getItem('msc_admin_creds') || '';
-      console.log('[presence] loading online users, auth present:', !!adminAuth);
       const { data, error } = await supabase.functions.invoke('user-presence', {
         method: 'POST',
         body: { action: 'list_online' },
