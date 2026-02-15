@@ -43,7 +43,7 @@ function isPremiumLeague(name: string, leagueId?: number): boolean {
 
 // ─── Status parsing ─────────────────────────────────────────────────
 function parseStatus(statusText: string): { status: string; elapsed: number | null } {
-  if (!statusText) return { status: "NS", elapsed: null };
+  if (!statusText || statusText.trim() === "") return { status: "programado", elapsed: null };
   const s = statusText.trim();
   if (["F", "FT", "Match Finished"].includes(s) || s.toLowerCase() === "encerrado" || s.toLowerCase() === "fin")
     return { status: "finalizado", elapsed: 90 };
@@ -172,7 +172,7 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
 // SOURCE 1: RapidAPI (API-Football v3) — paid, most reliable
 // ═══════════════════════════════════════════════════════════════════
 async function fetchFromRapidAPI(dateStr: string): Promise<any[] | null> {
-  const apiKey = Deno.env.get("RAPIDAPI_FOOTBALL_KEY");
+  const apiKey = (Deno.env.get("RAPIDAPI_FOOTBALL_KEY") || "").trim();
   if (!apiKey) { console.warn("[Source1] RAPIDAPI_FOOTBALL_KEY not set"); return null; }
 
   try {
@@ -394,6 +394,10 @@ async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
     const data = await res.json();
     if (!Array.isArray(data)) return null;
     console.log(`[Source4-APIFootball] Got ${data.length} total events`);
+
+    // Log sample of unique league names for debugging
+    const uniqueLeagues = [...new Set(data.map((e: any) => e.league_name || ""))].slice(0, 30);
+    console.log(`[Source4-APIFootball] Sample leagues: ${JSON.stringify(uniqueLeagues)}`);
 
     const EXCLUDED = [
       "welsh", "galês", "cymru", "northern ireland", "faroe", "gibraltar",
