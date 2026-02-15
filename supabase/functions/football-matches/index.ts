@@ -109,6 +109,29 @@ function getBroadcast(leagueName: string): string[] {
 
 // ─── Team badge resolution with DB cache ────────────────────────────
 const logoCache = new Map<string, string>();
+
+// Hardcoded fallback badges for top Brazilian teams (TheSportsDB URLs)
+const FALLBACK_BADGES: Record<string, string> = {
+  "Flamengo": "https://r2.thesportsdb.com/images/media/team/badge/d0psg11658917318.png/small",
+  "Botafogo": "https://r2.thesportsdb.com/images/media/team/badge/pxwrq41720364498.png/small",
+  "Fluminense": "https://r2.thesportsdb.com/images/media/team/badge/bfryds1689287206.png/small",
+  "Vasco da Gama": "https://r2.thesportsdb.com/images/media/team/badge/0bhe2g1548977468.png/small",
+  "Palmeiras": "https://r2.thesportsdb.com/images/media/team/badge/yfynps1534075792.png/small",
+  "Corinthians": "https://r2.thesportsdb.com/images/media/team/badge/swyrwu1448975705.png/small",
+  "São Paulo": "https://r2.thesportsdb.com/images/media/team/badge/xqsutt1448975643.png/small",
+  "Sao Paulo": "https://r2.thesportsdb.com/images/media/team/badge/xqsutt1448975643.png/small",
+  "Santos": "https://r2.thesportsdb.com/images/media/team/badge/d8xyrp1534075902.png/small",
+  "Internacional": "https://r2.thesportsdb.com/images/media/team/badge/51ks2u1549229498.png/small",
+  "Gremio": "https://r2.thesportsdb.com/images/media/team/badge/m20quy1534182427.png/small",
+  "Atletico Mineiro": "https://r2.thesportsdb.com/images/media/team/badge/qmkqyv1534074719.png/small",
+  "Cruzeiro": "https://r2.thesportsdb.com/images/media/team/badge/quvrpx1423758422.png/small",
+  "Bahia": "https://r2.thesportsdb.com/images/media/team/badge/r29lkn1534071500.png/small",
+  "Fortaleza": "https://r2.thesportsdb.com/images/media/team/badge/7p6c4k1611591726.png/small",
+  "Athletico Paranaense": "https://r2.thesportsdb.com/images/media/team/badge/5rwrhs1558717280.png/small",
+  "Bragantino": "https://r2.thesportsdb.com/images/media/team/badge/2p7tl41701423595.png/small",
+  "Botafogo SP": "https://r2.thesportsdb.com/images/media/team/badge/r3pxcm1534071505.png/small",
+};
+
 const TEAM_ALIASES: Record<string, string> = {
   "Paris Saint-Germain": "Paris SG", "PSG": "Paris SG",
   "Atlético de Madrid": "Atletico Madrid", "Atlético Madrid": "Atletico Madrid",
@@ -146,7 +169,8 @@ async function loadBadgesFromDB(supabase: any, teamNames: string[]) {
     .in("team_name", teamNames);
   if (data) {
     for (const row of data) {
-      if (row.badge_url) logoCache.set(row.team_name, row.badge_url);
+      // Only cache non-empty badge URLs
+      if (row.badge_url && row.badge_url.trim() !== "") logoCache.set(row.team_name, row.badge_url);
     }
   }
 }
@@ -161,6 +185,18 @@ async function resolveAndCacheBadge(supabase: any, teamName: string): Promise<st
   const stateMatch = teamName.match(/^(.+?)\s+(RJ|SP|MG|RS|PR|SC|BA|CE|PE|GO|PA|AM|MA|MT|MS|SE|AL|RN|PB|PI|ES|DF|RO|RR|AP|AC|TO)$/i);
   if (stateMatch && !TEAM_ALIASES[teamName]) {
     namesToTry.push(stateMatch[1].trim());
+  }
+
+  // Check hardcoded fallback FIRST (faster, no API call)
+  const aliasName = TEAM_ALIASES[teamName] || teamName;
+  const fallback = FALLBACK_BADGES[aliasName] || FALLBACK_BADGES[teamName];
+  if (fallback) {
+    logoCache.set(teamName, fallback);
+    supabase.from("team_badges").upsert(
+      { team_name: teamName, badge_url: fallback, source: "fallback", updated_at: new Date().toISOString() },
+      { onConflict: "team_name" }
+    ).then(() => {});
+    return fallback;
   }
 
   for (const name of namesToTry) {
