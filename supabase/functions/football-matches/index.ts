@@ -276,7 +276,7 @@ async function fetchFromRapidAPI(dateStr: string): Promise<any[] | null> {
         round: f.league?.round || null,
       };
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[Source1-RapidAPI] Error: ${e.message}`);
     return null;
   }
@@ -361,7 +361,7 @@ async function fetchFromESPN(dateStr: string): Promise<any[] | null> {
         round: null,
       };
     }).filter(Boolean);
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[Source2-ESPN] Error: ${e.message}`);
     return null;
   }
@@ -440,7 +440,7 @@ async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
         round: ev.intRound ? `Rodada ${ev.intRound}` : null,
       };
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[Source3-TheSportsDB] Error: ${e.message}`);
     return null;
   }
@@ -504,7 +504,7 @@ async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
         round: null,
       };
     });
-  } catch (e) {
+  } catch (e: any) {
     console.error(`[Source4-APIFootball] Error: ${e.message}`);
     return null;
   }
@@ -709,9 +709,9 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ success: true, source, count: upsertRows.length, decision: decision.reason }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error?.message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
