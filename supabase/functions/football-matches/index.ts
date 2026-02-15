@@ -659,6 +659,17 @@ async function decidePolling(supabase: any, brDate: string): Promise<PollingDeci
     return { shouldFetch: true, reason: `${soonGames.length} jogos começando em <15min`, hasLiveGames: false, gamesStartingSoon: soonGames.length };
   }
 
+  // Check games whose start time has passed but are still marked as "programado"
+  // This catches games that started but the DB wasn't updated yet
+  const staleScheduled = games.filter((g: any) => {
+    if (g.status !== "programado") return false;
+    const startTime = new Date(g.horario_inicio).getTime();
+    return now.getTime() - startTime > 2 * 60 * 1000; // started >2min ago
+  });
+  if (staleScheduled.length > 0) {
+    return { shouldFetch: true, reason: `${staleScheduled.length} jogos com horário ultrapassado ainda como programado`, hasLiveGames: false, gamesStartingSoon: 0 };
+  }
+
   // No live/soon games: check if we have any data at all for today
   if (games.length === 0) {
     return { shouldFetch: true, reason: "Nenhum dado para hoje — busca inicial", hasLiveGames: false, gamesStartingSoon: 0 };

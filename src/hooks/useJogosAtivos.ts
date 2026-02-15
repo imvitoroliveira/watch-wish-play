@@ -53,7 +53,9 @@ async function fetchJogosAtivos(): Promise<JogoAtivo[]> {
     const sa = statusOrder[a.status] ?? 99;
     const sb = statusOrder[b.status] ?? 99;
     if (sa !== sb) return sa - sb;
-    return new Date(a.horario_inicio).getTime() - new Date(b.horario_inicio).getTime();
+    const timeDiff = new Date(a.horario_inicio).getTime() - new Date(b.horario_inicio).getTime();
+    if (timeDiff !== 0) return timeDiff;
+    return a.id_partida - b.id_partida; // stable tiebreaker
   });
 
   console.log(`[Jogos] ${jogos.length} jogos carregados (${jogos.filter(j => j.status === 'ao_vivo').length} ao vivo)`);
