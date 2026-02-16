@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Lock, User, Eye, EyeOff } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import eagleLogo from '@/assets/eagle-logo.png';
@@ -12,10 +12,11 @@ const ClientLogin = () => {
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
-  const { loginClient } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const { loginClient, clientsLoading } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     const trimmedUser = username.trim();
@@ -24,13 +25,23 @@ const ClientLogin = () => {
       setError('Preencha todos os campos');
       return;
     }
-    const result = loginClient(trimmedUser, trimmedPass);
-    if (result.success) {
-      navigate('/dashboard');
-    } else if (result.reason === 'expired') {
-      navigate('/expirado');
-    } else {
-      setError('Usuário ou senha incorretos');
+
+    setLoading(true);
+    try {
+      const result = await loginClient(trimmedUser, trimmedPass);
+      if (result.success) {
+        navigate('/dashboard');
+      } else if (result.reason === 'expired') {
+        navigate('/expirado');
+      } else if (result.reason === 'already_online') {
+        setError('Esta conta já está em uso em outro dispositivo.');
+      } else if (result.reason === 'rate_limited') {
+        setError('Muitas tentativas. Aguarde 1 minuto.');
+      } else {
+        setError('Usuário ou senha incorretos');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -76,6 +87,7 @@ const ClientLogin = () => {
               placeholder="Usuário"
               className="pl-11 h-12 bg-card border-border text-foreground placeholder:text-muted-foreground"
               maxLength={100}
+              disabled={loading}
             />
           </div>
 
@@ -88,6 +100,7 @@ const ClientLogin = () => {
               placeholder="Senha"
               className="pl-11 pr-11 h-12 bg-card border-border text-foreground placeholder:text-muted-foreground"
               maxLength={100}
+              disabled={loading}
             />
             <button
               type="button"
@@ -108,8 +121,18 @@ const ClientLogin = () => {
             </motion.p>
           )}
 
-          <Button type="submit" className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground glow-red transition-all">
-            Entrar
+          <Button
+            type="submit"
+            disabled={loading || clientsLoading}
+            className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-primary-foreground glow-red transition-all"
+          >
+            {loading ? (
+              <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Entrando...</>
+            ) : clientsLoading ? (
+              <><Loader2 className="w-5 h-5 mr-2 animate-spin" /> Carregando...</>
+            ) : (
+              'Entrar'
+            )}
           </Button>
         </form>
 

@@ -128,8 +128,10 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       const randomTitles = await fetchRandomM3UTitles(100);
 
       if (randomTitles.length === 0) {
-        toast({ title: '⚠️ Catálogo vazio', description: 'Nenhum título encontrado no catálogo M3U.' });
+        toast({ title: '⚠️ Catálogo vazio', description: 'Nenhum título encontrado no catálogo M3U. Peça ao seu gestor para importar a lista M3U.', variant: 'destructive' });
         setLoading(false);
+        setSpinning(false);
+        setShowIndicator(false);
         return;
       }
 
@@ -147,7 +149,10 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       combined = dedupeMovies(combined);
 
       if (combined.length === 0) {
+        toast({ title: '🎲 Sem resultados', description: 'Nenhum filme encontrado com esses filtros. Tente outro gênero.', variant: 'destructive' });
         setLoading(false);
+        setSpinning(false);
+        setShowIndicator(false);
         return;
       }
 

@@ -59,8 +59,8 @@ const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, on
         <p className="text-sm font-semibold text-foreground line-clamp-2">{title}</p>
       </div>
 
-      {/* Quick action buttons */}
-      <div className="absolute top-2 right-2 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Quick action buttons - visible on hover AND touch (always visible on mobile) */}
+      <div className="absolute top-2 right-2 flex flex-col gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
         {onToggleFavorite && (
           <button
             onClick={onToggleFavorite}

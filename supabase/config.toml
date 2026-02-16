@@ -23,3 +23,12 @@ verify_jwt = false
 
 [functions.user-presence]
 verify_jwt = false
+
+[functions.tmdb-proxy]
+verify_jwt = false
+
+[functions.client-login]
+verify_jwt = false
+
+[functions.n8n-proxy]
+verify_jwt = false

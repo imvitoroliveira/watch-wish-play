@@ -1,26 +1,49 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.png" type="image/png" />
-    <!-- TODO: Set the document title to the name of your application -->
-    <title>StreamTV</title>
-    <meta name="description" content="Meu Stream Clientes" />
-    <meta name="author" content="StreamTV" />
+    <title>Meu Stream | Seu cinema pessoal</title>
+    <meta name="description" content="Meu Stream - Seu cinema pessoal com filmes, séries, agenda esportiva e muito mais. Acesse seu catálogo completo." />
+    <meta name="author" content="Meu Stream" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://watch-wish-play.lovable.app/" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#000000" />
     <link rel="apple-touch-icon" href="/pwa-icon-512.png" />
 
-    <!-- TODO: Update og:title to match your application name -->
-    <meta property="og:title" content="Lovable App" />
-    <meta property="og:description" content="Lovable Generated Project" />
+    <!-- Open Graph -->
+    <meta property="og:title" content="Meu Stream | Seu cinema pessoal" />
+    <meta property="og:description" content="Filmes, séries, agenda esportiva e Cine-Roleta. Seu catálogo completo num só lugar." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta property="og:url" content="https://watch-wish-play.lovable.app/" />
+    <meta property="og:image" content="/pwa-icon-512.png" />
+    <meta property="og:locale" content="pt_BR" />
 
+    <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@Lovable" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta name="twitter:title" content="Meu Stream | Seu cinema pessoal" />
+    <meta name="twitter:description" content="Filmes, séries, agenda esportiva e Cine-Roleta." />
+    <meta name="twitter:image" content="/pwa-icon-512.png" />
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Meu Stream",
+      "description": "Seu cinema pessoal com filmes, séries e agenda esportiva.",
+      "url": "https://watch-wish-play.lovable.app/",
+      "applicationCategory": "EntertainmentApplication",
+      "operatingSystem": "Any",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "BRL"
+      }
+    }
+    </script>
 
     <!-- PushAlert Unified Code -->
     <script type="text/javascript">
@@ -31,7 +54,6 @@
           s.parentNode.insertBefore(g, s);
       }(document, "script"));
     </script>
-    <!-- End PushAlert Unified Code -->
   </head>
 
   <body>

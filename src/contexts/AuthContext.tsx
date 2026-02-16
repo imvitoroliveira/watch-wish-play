@@ -16,7 +16,7 @@ interface AuthContextType {
   currentClient: ClientData | null;
   clientList: ClientData[];
   loginAdmin: (user: string, pass: string) => Promise<boolean>;
-  loginClient: (user: string, pass: string) => { success: boolean; reason?: string };
+  loginClient: (user: string, pass: string) => Promise<{ success: boolean; reason?: string }>;
   logout: () => void;
   uploadClientList: (data: ClientData[]) => void;
   isExpiringSoon: boolean;
@@ -83,18 +83,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const loginClient = (user: string, pass: string): { success: boolean; reason?: string } => {
-    const client = clientList.find(c => c.u === user && c.p === pass);
-    if (!client) return { success: false, reason: 'invalid' };
+  const loginClient = async (user: string, pass: string): Promise<{ success: boolean; reason?: string }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('client-login', {
+        body: { action: 'login', username: user, password: pass },
+      });
 
-    const isExpired = client.t?.toLowerCase() === 'expirado' || 
-      (client.e && new Date(client.e) < new Date());
+      if (error) {
+        return { success: false, reason: 'error' };
+      }
 
-    if (isExpired) return { success: false, reason: 'expired' };
+      if (!data?.success) {
+        return { success: false, reason: data?.reason || 'invalid' };
+      }
 
-    setCurrentClient(client);
-    localStorage.setItem('msc_client', JSON.stringify(client));
-    return { success: true };
+      // Reconstruct client data with password for local session
+      const client: ClientData = { ...data.client, p: pass };
+      setCurrentClient(client);
+      localStorage.setItem('msc_client', JSON.stringify(client));
+      return { success: true };
+    } catch {
+      // Fallback to local validation if edge function fails
+      const client = clientList.find(c => c.u === user && c.p === pass);
+      if (!client) return { success: false, reason: 'invalid' };
+
+      const isExpired = client.t?.toLowerCase() === 'expirado' ||
+        (client.e && new Date(client.e) < new Date());
+      if (isExpired) return { success: false, reason: 'expired' };
+
+      setCurrentClient(client);
+      localStorage.setItem('msc_client', JSON.stringify(client));
+      return { success: true };
+    }
   };
 
   const logout = () => {
@@ -107,7 +127,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const uploadClientList = async (data: ClientData[]) => {
     setClientList(data);
     localStorage.setItem('msc_clients', JSON.stringify(data));
-    
+
     try {
       await supabase.functions.invoke('manage-clients', {
         method: 'POST',
