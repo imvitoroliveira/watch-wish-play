@@ -135,7 +135,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         return;
       }
 
-      // 2. Search TMDB for those M3U titles to get metadata (posters, etc.)
+      // 2. Search TMDB for those M3U titles to get metadata
       let combined = await searchByTitles(randomTitles, randomTitles.length, mediaType);
 
       // 2b. Strict media_type filtering
@@ -150,36 +150,12 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         if (genreFiltered.length >= 3) combined = genreFiltered;
       }
 
-      // 3b. For TV: validate that top candidates actually have seasons (discard movies mislabeled as TV)
-      if (mediaType === 'tv' && combined.length > 0) {
-        const validated: TMDBMovie[] = [];
-        // Check up to 30 candidates for season info
-        const candidates = combined.slice(0, Math.min(30, combined.length));
-        const checks = await Promise.all(
-          candidates.map(async (m) => {
-            try {
-              const details = await getMovieDetails(m.id, 'tv');
-              if (details && (details.number_of_seasons > 0 || details.number_of_episodes > 0)) {
-                return m;
-              }
-            } catch {}
-            return null;
-          })
-        );
-        validated.push(...checks.filter(Boolean) as TMDBMovie[]);
-        // Add remaining unchecked ones as fallback
-        if (validated.length < 5) {
-          combined.slice(30).forEach(m => validated.push(m));
-        }
-        combined = validated.length > 0 ? validated : combined;
-      }
-
-      // 4. Filter out movies without posters
+      // 4. Filter out items without posters & dedupe
       combined = combined.filter(m => m.poster_path);
       combined = dedupeMovies(combined);
 
       if (combined.length === 0) {
-        toast({ title: '🎲 Sem resultados', description: 'Nenhum filme encontrado com esses filtros. Tente outro gênero.', variant: 'destructive' });
+        toast({ title: '🎲 Sem resultados', description: 'Nenhum título encontrado com esses filtros. Tente outro gênero.', variant: 'destructive' });
         setLoading(false);
         setSpinning(false);
         setShowIndicator(false);
@@ -192,43 +168,61 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         [combined[i], combined[j]] = [combined[j], combined[i]];
       }
 
-      // 6. Pick winner
-      const winnerIndex = Math.floor(Math.random() * combined.length);
-      const winner = combined[winnerIndex];
+      // 5. Pick winner
+      let winnerIndex = Math.floor(Math.random() * combined.length);
+      let winner = combined[winnerIndex];
 
-      // 7. Update display and wait for render
+      // 5b. For TV: validate winner has seasons; if not, try others
+      if (mediaType === 'tv') {
+        let validated = false;
+        const tried = new Set<number>();
+        for (let attempt = 0; attempt < Math.min(5, combined.length); attempt++) {
+          const candidate = combined[(winnerIndex + attempt) % combined.length];
+          if (tried.has(candidate.id)) continue;
+          tried.add(candidate.id);
+          try {
+            const details = await getMovieDetails(candidate.id, 'tv');
+            if (details && (details.number_of_seasons > 0 || details.number_of_episodes > 0)) {
+              winner = candidate;
+              winnerIndex = (winnerIndex + attempt) % combined.length;
+              validated = true;
+              break;
+            }
+          } catch {}
+        }
+        // If none validated, keep original winner as fallback
+      }
+
+      // 6. Update display and wait for render
       setDisplayPool(combined);
       setLoading(false);
 
-      // Wait for DOM to update with new pool
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       await new Promise(r => setTimeout(r, 50));
 
-      // 8. Start spinning animation
+      // 7. Start spinning animation — SAME duration for both movies & series
       setSpinning(true);
       const ctx = getAudioCtx();
       const strip = stripRef.current;
       const container = containerRef.current;
       if (!strip || !container) { setSpinning(false); return; }
 
-      // Calculate where the winner lands in the repeated strip
-      // The strip repeats `combined`, so occurrence N of winnerIndex is at position: N * combined.length + winnerIndex
       const poolLen = combined.length;
-      const deepOccurrence = 3; // Land on the 3rd repetition for a long spin
+      const deepOccurrence = 3;
       const targetIdx = deepOccurrence * poolLen + winnerIndex;
       const containerW = container.clientWidth;
-      // Center the target card: offset = targetIdx * STEP, center = containerW/2 - CARD_W/2
       const finalX = -(targetIdx * STEP - (containerW / 2 - CARD_W / 2));
 
       strip.style.transition = 'none';
       strip.style.transform = 'translateX(0)';
       void strip.offsetHeight;
 
+      // Fixed duration: 10-11.5s for both types
       const duration = 10000 + Math.random() * 1500;
       strip.style.transition = `transform ${duration}ms cubic-bezier(0.12, 0.8, 0.2, 1)`;
       strip.style.transform = `translateX(${finalX}px)`;
 
-      // Click sounds
+      // Click sounds during spin
       let clickCount = 0;
       let lastClickX = 0;
 
@@ -253,7 +247,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         setShowResult(true);
         playSuccessSound(ctx);
 
-        // Pre-fetch trailer key
         const type = winner.media_type === 'tv' ? 'tv' : 'movie';
         getMovieVideos(winner.id, type).then(key => setTrailerKey(key));
       }, duration + 100);
