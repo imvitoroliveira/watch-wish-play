@@ -138,6 +138,13 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       // 2. Search TMDB for those M3U titles to get metadata (posters, etc.)
       let combined = await searchByTitles(randomTitles, randomTitles.length, mediaType);
 
+      // 2b. Strictly filter by media type to avoid movies appearing in series mode
+      if (mediaType === 'tv') {
+        combined = combined.filter(m => !m.release_date); // TV shows use first_air_date, not release_date
+      } else {
+        combined = combined.filter(m => !m.first_air_date || m.release_date); // Movies have release_date
+      }
+
       // 3. Filter by genre if selected
       if (selectedGenre) {
         const genreFiltered = combined.filter(m => m.genre_ids?.some(g => g === selectedGenre));
