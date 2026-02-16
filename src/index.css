@@ -42,6 +42,11 @@
     --glow-red: 0 0 30px hsl(357 92% 47% / 0.4);
     --glow-gold: 0 0 30px hsl(43 96% 56% / 0.3);
 
+    --neon-red: 0 100% 50%;
+    --neon-white: 0 0% 90%;
+    --neon-gray: 0 0% 30%;
+    --neon-green: 142 76% 46%;
+
     --sidebar-background: 0 0% 5%;
     --sidebar-foreground: 0 0% 90%;
     --sidebar-primary: 357 92% 47%;

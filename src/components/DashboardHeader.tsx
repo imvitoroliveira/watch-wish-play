@@ -1,19 +1,20 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, Heart, Dices, HelpCircle, LogOut, Trophy, Menu, Film } from 'lucide-react';
+import { Search, Heart, Dices, HelpCircle, LogOut, Trophy, Menu, Film, CircleDot } from 'lucide-react';
 import eagleLogo from '@/assets/eagle-logo.png';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
 
-export type Tab = 'home' | 'watchlist' | 'roleta' | 'jogos' | 'support';
+export type Tab = 'home' | 'watchlist' | 'roleta' | 'jogos' | 'double' | 'support';
 
 const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'home', label: 'Explorar', icon: <Film className="w-4 h-4" /> },
   { id: 'watchlist', label: 'Minha Lista', icon: <Heart className="w-4 h-4" /> },
   { id: 'roleta', label: 'Cine-Roleta', icon: <Dices className="w-4 h-4" /> },
   { id: 'jogos', label: 'Agenda Esportiva', icon: <Trophy className="w-4 h-4" /> },
+  { id: 'double', label: 'Double', icon: <CircleDot className="w-4 h-4" /> },
   { id: 'support', label: 'Central de Ajuda', icon: <HelpCircle className="w-4 h-4" /> },
 ];
 
