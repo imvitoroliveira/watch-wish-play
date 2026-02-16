@@ -25,14 +25,14 @@ const CARD_H = 210;
 const GAP = 12;
 const STEP = CARD_W + GAP;
 
-const playClickSound = (ctx: AudioContext) => {
+const playClickSound = (ctx: AudioContext, volume: number = 0.08) => {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.connect(gain);
   gain.connect(ctx.destination);
   osc.frequency.value = 1200 + Math.random() * 400;
   osc.type = 'sine';
-  gain.gain.setValueAtTime(0.08, ctx.currentTime);
+  gain.gain.setValueAtTime(Math.max(0.001, volume), ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + 0.05);
@@ -217,26 +217,33 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       strip.style.transform = 'translateX(0)';
       void strip.offsetHeight;
 
-      // Fixed duration: 10-11.5s for both types
-      const duration = 10000 + Math.random() * 1500;
-      strip.style.transition = `transform ${duration}ms cubic-bezier(0.12, 0.8, 0.2, 1)`;
+      // Fixed duration: 5-6s for both types — deceleration roulette feel
+      const duration = 5000 + Math.random() * 1000;
+      strip.style.transition = `transform ${duration}ms cubic-bezier(0.25, 1, 0.5, 1)`;
       strip.style.transform = `translateX(${finalX}px)`;
 
-      // Click sounds during spin
-      let clickCount = 0;
+      // Click sounds during spin — volume fades as roulette decelerates
+      const spinStartTime = performance.now();
       let lastClickX = 0;
 
       const checkPosition = () => {
-        if (clickCount >= 100) return;
+        const elapsed = performance.now() - spinStartTime;
+        const progress = Math.min(elapsed / duration, 1);
+
         const currentTransform = getComputedStyle(strip).transform;
         const matrix = new DOMMatrix(currentTransform);
         const currentX = Math.abs(matrix.m41);
+
         if (currentX - lastClickX > STEP) {
-          playClickSound(ctx);
+          // Volume fades from 0.10 → 0.01 as progress goes 0 → 1
+          const vol = 0.10 * (1 - progress * 0.9);
+          playClickSound(ctx, vol);
           lastClickX = currentX - (currentX % STEP);
-          clickCount++;
         }
-        animFrameRef.current = requestAnimationFrame(checkPosition);
+
+        if (progress < 1) {
+          animFrameRef.current = requestAnimationFrame(checkPosition);
+        }
       };
       animFrameRef.current = requestAnimationFrame(checkPosition);
 
