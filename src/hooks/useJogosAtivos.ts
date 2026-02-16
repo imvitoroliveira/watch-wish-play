@@ -15,7 +15,7 @@ export interface JogoAtivo {
   placar_casa: number | null;
   placar_fora: number | null;
   horario_inicio: string;
-  status: 'programado' | 'ao_vivo' | 'finalizado' | 'suspenso' | 'adiado' | 'cancelado';
+  status: 'programado' | 'ao_vivo' | 'intervalo' | 'finalizado' | 'suspenso' | 'adiado' | 'cancelado';
   elapsed: number | null;
   transmissao: string[];
   data_jogo: string;
@@ -42,11 +42,12 @@ async function fetchJogosAtivos(): Promise<JogoAtivo[]> {
   // Sort: ao_vivo first, then programado, then finalizado
   const statusOrder: Record<string, number> = {
     ao_vivo: 0,
-    programado: 1,
-    finalizado: 2,
-    suspenso: 3,
-    adiado: 4,
-    cancelado: 5,
+    intervalo: 1,
+    programado: 2,
+    finalizado: 3,
+    suspenso: 4,
+    adiado: 5,
+    cancelado: 6,
   };
 
   jogos.sort((a, b) => {

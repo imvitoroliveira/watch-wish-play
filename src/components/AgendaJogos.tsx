@@ -61,7 +61,7 @@ const AgendaJogos = () => {
   const filteredJogos = filter === 'all'
     ? jogos
     : filter === 'ao_vivo'
-      ? jogos.filter(j => j.status === 'ao_vivo')
+      ? jogos.filter(j => j.status === 'ao_vivo' || j.status === 'intervalo')
       : jogos.filter(j => j.liga_nome === filter);
 
   const formatTime = (dateStr: string) => {
@@ -149,6 +149,7 @@ function getStatusLabel(status: JogoAtivo['status']): string {
   const map: Record<string, string> = {
     programado: 'A iniciar',
     ao_vivo: 'Ao Vivo',
+    intervalo: 'Intervalo',
     finalizado: 'Encerrado',
     suspenso: 'Suspenso',
     adiado: 'Adiado',
@@ -169,14 +170,18 @@ function MatchCard({
   formatTime: (d: string) => string;
 }) {
   const live = jogo.status === 'ao_vivo';
+  const halftime = jogo.status === 'intervalo';
   const finished = jogo.status === 'finalizado';
   const upcoming = jogo.status === 'programado';
+  const showScore = live || halftime || finished;
 
   return (
     <div className={`relative rounded-xl border overflow-hidden transition-all ${
       live
         ? 'border-primary/50 bg-gradient-to-r from-primary/5 via-card to-primary/5 shadow-lg shadow-primary/10'
-        : 'border-border bg-card hover:border-border/80'
+        : halftime
+          ? 'border-yellow-500/40 bg-gradient-to-r from-yellow-500/5 via-card to-yellow-500/5'
+          : 'border-border bg-card hover:border-border/80'
     }`}>
       {/* League header */}
       <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-b border-border/50">
@@ -199,6 +204,12 @@ function MatchCard({
             <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium uppercase tracking-wider">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               Ao Vivo {jogo.elapsed ? `• ${jogo.elapsed}'` : ''}
+            </span>
+          )}
+          {halftime && (
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-500 text-[10px] font-medium uppercase tracking-wider">
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+              Intervalo
             </span>
           )}
           {finished && (
@@ -231,14 +242,14 @@ function MatchCard({
 
           {/* Score / VS */}
           <div className="flex-shrink-0 mx-4 text-center">
-            {(live || finished) ? (
+            {showScore ? (
               <div className="flex items-center gap-2">
                 <motion.span
                   key={`home-${jogo.placar_casa}`}
                   initial={{ scale: 1.3 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}
+                  className="text-3xl sm:text-4xl font-display text-gray-300"
                 >
                   {jogo.placar_casa ?? 0}
                 </motion.span>
@@ -248,7 +259,7 @@ function MatchCard({
                   initial={{ scale: 1.3 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className={`text-3xl sm:text-4xl font-display ${live ? 'text-primary' : 'text-foreground'}`}
+                  className="text-3xl sm:text-4xl font-display text-gray-300"
                 >
                   {jogo.placar_fora ?? 0}
                 </motion.span>
@@ -257,6 +268,11 @@ function MatchCard({
               <div className="flex flex-col items-center">
                 <span className="text-2xl font-display text-muted-foreground">VS</span>
               </div>
+            )}
+            {halftime && (
+              <span className="text-[10px] text-yellow-500 font-medium mt-1 block">
+                Intervalo
+              </span>
             )}
             {live && (
               <span className="text-[10px] text-primary font-medium mt-1 block">

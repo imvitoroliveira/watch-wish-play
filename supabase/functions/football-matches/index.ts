@@ -48,7 +48,7 @@ function parseStatus(statusText: string): { status: string; elapsed: number | nu
   if (["F", "FT", "Match Finished"].includes(s) || s.toLowerCase() === "encerrado" || s.toLowerCase() === "fin")
     return { status: "finalizado", elapsed: 90 };
   if (["HT", "Halftime"].includes(s) || s.toLowerCase() === "intervalo" || s.toLowerCase() === "int")
-    return { status: "ao_vivo", elapsed: 45 };
+    return { status: "intervalo", elapsed: 45 };
   if (["AET", "After Extra Time"].includes(s) || s.toLowerCase() === "prorrogação")
     return { status: "finalizado", elapsed: 120 };
   if (["PEN", "Penalty In Progress"].includes(s) || s.toLowerCase() === "pênaltis")
@@ -68,7 +68,8 @@ function parseStatus(statusText: string): { status: string; elapsed: number | nu
 }
 
 function mapRapidAPIStatus(shortStatus: string, elapsed: number | null): string {
-  if (["LIVE", "1H", "HT", "2H", "ET", "BT", "P", "INT"].includes(shortStatus)) return "ao_vivo";
+  if (shortStatus === "HT") return "intervalo";
+  if (["LIVE", "1H", "2H", "ET", "BT", "P", "INT"].includes(shortStatus)) return "ao_vivo";
   if (["FT", "AET", "PEN"].includes(shortStatus)) return "finalizado";
   if (["PST"].includes(shortStatus)) return "adiado";
   if (["CANC", "ABD", "AWD", "WO"].includes(shortStatus)) return "cancelado";
