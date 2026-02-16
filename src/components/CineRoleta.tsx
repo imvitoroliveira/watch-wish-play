@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { TMDBMovie, tmdbImg, getMovieVideos, searchByTitles } from '@/lib/tmdb';
+import { TMDBMovie, tmdbImg, getMovieVideos, getMovieDetails, searchByTitles } from '@/lib/tmdb';
 import { GENRES } from '@/lib/tmdb';
 import { fetchRandomM3UTitles } from '@/lib/m3u-parser';
 import { Dices, Sparkles, Star, Play, Volume2, VolumeX, Loader2, X } from 'lucide-react';
@@ -138,17 +138,40 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       // 2. Search TMDB for those M3U titles to get metadata (posters, etc.)
       let combined = await searchByTitles(randomTitles, randomTitles.length, mediaType);
 
-      // 2b. Strictly filter by media type to avoid movies appearing in series mode
-      if (mediaType === 'tv') {
-        combined = combined.filter(m => !m.release_date); // TV shows use first_air_date, not release_date
-      } else {
-        combined = combined.filter(m => !m.first_air_date || m.release_date); // Movies have release_date
-      }
+      // 2b. Strict media_type filtering
+      combined = combined.filter(m => {
+        const type = m.media_type || (m.first_air_date && !m.release_date ? 'tv' : 'movie');
+        return type === mediaType;
+      });
 
       // 3. Filter by genre if selected
       if (selectedGenre) {
         const genreFiltered = combined.filter(m => m.genre_ids?.some(g => g === selectedGenre));
         if (genreFiltered.length >= 3) combined = genreFiltered;
+      }
+
+      // 3b. For TV: validate that top candidates actually have seasons (discard movies mislabeled as TV)
+      if (mediaType === 'tv' && combined.length > 0) {
+        const validated: TMDBMovie[] = [];
+        // Check up to 30 candidates for season info
+        const candidates = combined.slice(0, Math.min(30, combined.length));
+        const checks = await Promise.all(
+          candidates.map(async (m) => {
+            try {
+              const details = await getMovieDetails(m.id, 'tv');
+              if (details && (details.number_of_seasons > 0 || details.number_of_episodes > 0)) {
+                return m;
+              }
+            } catch {}
+            return null;
+          })
+        );
+        validated.push(...checks.filter(Boolean) as TMDBMovie[]);
+        // Add remaining unchecked ones as fallback
+        if (validated.length < 5) {
+          combined.slice(30).forEach(m => validated.push(m));
+        }
+        combined = validated.length > 0 ? validated : combined;
       }
 
       // 4. Filter out movies without posters
@@ -239,7 +262,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       setLoading(false);
       setSpinning(false);
     }
-  }, [spinning, loading, selectedGenre, movies, getAudioCtx, currentClient?.u, onTrailerWatched]);
+  }, [spinning, loading, selectedGenre, mediaType, movies, getAudioCtx, currentClient?.u, onTrailerWatched]);
 
   useEffect(() => {
     return () => {
