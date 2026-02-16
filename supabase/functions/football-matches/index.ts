@@ -11,34 +11,54 @@ const RAPIDAPI_LEAGUE_IDS = [
   71, 72, 73, 625, 13, 11, 535, 34, 10, 2, 3, 1,
   480,  // Campeonato Paulista
   352,  // Campeonato Carioca
+  // Secondary leagues (La Liga, Serie A, Premier League)
+  140,  // La Liga
+  135,  // Serie A (Italy)
+  39,   // Premier League
 ];
 
-function isPremiumLeague(name: string, leagueId?: number): boolean {
-  const lower = name.toLowerCase().trim();
-  const REJECTED = [
-    "u17", "u18", "u19", "u20", "u21", "u23", "sub-", "sub ",
-    "frauen", "women", "feminino", "reserve", "youth", "amateur", "group stage",
-  ];
-  for (const ex of REJECTED) { if (lower.includes(ex)) return false; }
-  if (lower.includes("caf champions")) return false;
+// ─── League classification: Priority vs Secondary ───────────────────
+const PRIORITY_KEYWORDS = [
+  "brasileirão", "campeonato brasileiro", "série a", "série b",
+  "copa do brasil", "supercopa", "supercopa do brasil",
+  "copa libertadores", "libertadores", "copa sul-americana", "sul-americana",
+  "recopa sul-americana", "recopa",
+  "champions league", "uefa champions league", "liga dos campeões",
+  "europa league", "uefa europa league", "liga europa",
+  "eliminatórias", "world cup qualif",
+  "copa do mundo", "world cup", "fifa world cup",
+  "amistoso", "amistosos", "friendly", "friendlies",
+  "campeonato paulista", "paulistão", "paulista a1",
+  "campeonato carioca", "cariocão", "carioca",
+];
 
-  const ALLOWED = [
-    "brasileirão", "campeonato brasileiro", "série a", "série b",
-    "copa do brasil", "supercopa", "supercopa do brasil",
-    "copa libertadores", "libertadores", "copa sul-americana", "sul-americana",
-    "recopa sul-americana", "recopa",
-    "champions league", "uefa champions league", "liga dos campeões",
-    "europa league", "uefa europa league", "liga europa",
-    "eliminatórias", "world cup qualif",
-    "copa do mundo", "world cup", "fifa world cup",
-    "amistoso", "amistosos", "friendly", "friendlies",
-    "campeonato paulista", "paulistão", "paulista a1",
-    "campeonato carioca", "cariocão", "carioca",
-  ];
-  for (const league of ALLOWED) {
-    if (lower === league || lower.startsWith(league)) return true;
+const SECONDARY_KEYWORDS = [
+  "la liga", "primera division", "liga espanhola",
+  "serie a", "serie a tim", "campeonato italiano", "lega serie a",
+  "premier league", "campeonato inglês", "english premier",
+];
+
+const REJECTED_KEYWORDS = [
+  "u17", "u18", "u19", "u20", "u21", "u23", "sub-", "sub ",
+  "frauen", "women", "feminino", "reserve", "youth", "amateur", "group stage",
+];
+
+function classifyLeague(name: string, leagueId?: number): 'priority' | 'secondary' | 'rejected' {
+  const lower = name.toLowerCase().trim();
+  for (const ex of REJECTED_KEYWORDS) { if (lower.includes(ex)) return 'rejected'; }
+  if (lower.includes("caf champions")) return 'rejected';
+
+  for (const kw of PRIORITY_KEYWORDS) {
+    if (lower === kw || lower.startsWith(kw)) return 'priority';
   }
-  return false;
+  for (const kw of SECONDARY_KEYWORDS) {
+    if (lower.includes(kw)) return 'secondary';
+  }
+  return 'rejected';
+}
+
+function isPremiumLeague(name: string, leagueId?: number): boolean {
+  return classifyLeague(name, leagueId) !== 'rejected';
 }
 
 // ─── Status parsing ─────────────────────────────────────────────────
@@ -97,6 +117,12 @@ const BROADCAST_MAP: Record<string, string[]> = {
   "paulistão": ["Record", "CazéTV", "Nosso Futebol"],
   "carioca": ["Band", "SporTV", "Premiere"],
   "cariocão": ["Band", "SporTV", "Premiere"],
+  // Secondary leagues
+  "la liga": ["ESPN", "Star+"],
+  "primera division": ["ESPN", "Star+"],
+  "serie a tim": ["ESPN", "Star+"],
+  "lega serie a": ["ESPN", "Star+"],
+  "premier league": ["ESPN", "Star+"],
 };
 
 function getBroadcast(leagueName: string): string[] {
@@ -402,6 +428,7 @@ async function fetchFromRapidAPIWithRotation(supabase: any, dateStr: string): Pr
 // SOURCE 2: ESPN Public API (free, unlimited)
 // ═══════════════════════════════════════════════════════════════════
 const ESPN_LEAGUE_SLUGS = [
+  // Priority
   { slug: "bra.1", name: "Brasileirão Série A" },
   { slug: "bra.2", name: "Brasileirão Série B" },
   { slug: "bra.copa_do_brasil", name: "Copa do Brasil" },
@@ -414,6 +441,10 @@ const ESPN_LEAGUE_SLUGS = [
   { slug: "fifa.worldq.conmebol", name: "Eliminatórias CONMEBOL" },
   { slug: "fifa.world", name: "Copa do Mundo" },
   { slug: "fifa.friendly", name: "Amistosos Internacionais" },
+  // Secondary
+  { slug: "esp.1", name: "La Liga" },
+  { slug: "ita.1", name: "Lega Serie A" },
+  { slug: "eng.1", name: "Premier League" },
 ];
 
 async function fetchFromESPN(dateStr: string): Promise<any[] | null> {
@@ -447,7 +478,7 @@ async function fetchFromESPN(dateStr: string): Promise<any[] | null> {
       let elapsed: number | null = null;
 
       if (["STATUS_FULL_TIME", "STATUS_FINAL"].includes(espnStatus)) status = "finalizado";
-      else if (espnStatus === "STATUS_HALFTIME") { status = "ao_vivo"; elapsed = 45; }
+      else if (espnStatus === "STATUS_HALFTIME") { status = "intervalo"; elapsed = 45; }
       else if (["STATUS_IN_PROGRESS", "STATUS_FIRST_HALF"].includes(espnStatus)) {
         status = "ao_vivo"; elapsed = parseInt(comp.status?.displayClock || "0") || null;
       }
@@ -643,8 +674,8 @@ async function decidePolling(supabase: any, brDate: string): Promise<PollingDeci
   const games = currentGames || [];
   const now = new Date();
 
-  // Count live games
-  const liveGames = games.filter((g: any) => g.status === "ao_vivo");
+  // Count live games (including halftime)
+  const liveGames = games.filter((g: any) => g.status === "ao_vivo" || g.status === "intervalo");
   if (liveGames.length > 0) {
     return { shouldFetch: true, reason: `${liveGames.length} jogos ao vivo`, hasLiveGames: true, gamesStartingSoon: 0 };
   }
@@ -783,7 +814,39 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[Scraper] Using source: ${source} with ${rawMatches.length} matches`);
+    console.log(`[Scraper] Using source: ${source} with ${rawMatches.length} matches (before volume filter)`);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // VOLUME FILTER: Priority vs Secondary league selection
+    // ═══════════════════════════════════════════════════════════════════
+    const priorityMatches = rawMatches.filter((m: any) => classifyLeague(m.leagueName) === 'priority');
+    const secondaryMatches = rawMatches.filter((m: any) => classifyLeague(m.leagueName) === 'secondary');
+    const PRIORITY_THRESHOLD = 4;
+    let usedRule: string;
+    let secondaryIncluded = false;
+
+    if (priorityMatches.length > PRIORITY_THRESHOLD) {
+      // RULE A: Enough priority matches — ignore secondary
+      rawMatches = priorityMatches;
+      usedRule = `Regra A: ${priorityMatches.length} jogos prioritários (>${PRIORITY_THRESHOLD}) — ignorando ${secondaryMatches.length} secundários`;
+    } else {
+      // RULE B: Few priority matches — include secondary to fill agenda
+      rawMatches = [...priorityMatches, ...secondaryMatches];
+      secondaryIncluded = true;
+      usedRule = `Regra B: ${priorityMatches.length} jogos prioritários (≤${PRIORITY_THRESHOLD}) — incluindo ${secondaryMatches.length} secundários`;
+    }
+    console.log(`[VolumeFilter] ${usedRule}`);
+
+    // If Rule A applied, remove secondary matches from DB that might exist from a previous Rule B cycle
+    if (!secondaryIncluded && secondaryMatches.length > 0) {
+      const secondaryIds = secondaryMatches.map((m: any) => m.id_partida);
+      console.log(`[VolumeFilter] Removing ${secondaryIds.length} secondary matches from DB...`);
+      await supabase
+        .from("jogos_ativos")
+        .delete()
+        .eq("data_jogo", brDate)
+        .in("id_partida", secondaryIds);
+    }
 
     // ── Resolve team badges ──
     const uniqueTeams = [...new Set(rawMatches.flatMap((m: any) => [m.homeTeamName, m.awayTeamName]))];
@@ -834,7 +897,7 @@ Deno.serve(async (req) => {
       homeTeam: { id: 0, name: m.homeTeamName, logo: logoCache.get(m.homeTeamName) || "" },
       awayTeam: { id: 0, name: m.awayTeamName, logo: logoCache.get(m.awayTeamName) || "" },
       date: m.date,
-      status: m.status === "ao_vivo" ? "1H" : m.status === "finalizado" ? "FT" : m.status === "programado" ? "NS" : m.status.toUpperCase(),
+      status: m.status === "ao_vivo" ? "1H" : m.status === "intervalo" ? "HT" : m.status === "finalizado" ? "FT" : m.status === "programado" ? "NS" : m.status.toUpperCase(),
       elapsed: m.elapsed,
       goals: { home: m.homeScore, away: m.awayScore },
       broadcast: getBroadcast(m.leagueName),
