@@ -48,12 +48,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    const res = await fetch(url.toString(), {
-      headers: {
-        'Authorization': `Bearer ${TMDB_TOKEN}`,
-        'accept': 'application/json',
-      },
-    });
+    // Support both v4 (Bearer token starting with "ey") and v3 (api_key query param)
+    const isV4 = TMDB_TOKEN.startsWith('ey');
+    const headers: Record<string, string> = { 'accept': 'application/json' };
+    if (isV4) {
+      headers['Authorization'] = `Bearer ${TMDB_TOKEN}`;
+    } else {
+      url.searchParams.set('api_key', TMDB_TOKEN);
+    }
+
+    const res = await fetch(url.toString(), { headers });
 
     const data = await res.json();
     return new Response(JSON.stringify(data), {
