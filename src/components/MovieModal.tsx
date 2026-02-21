@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { TMDBMovie, tmdbImg, tmdbBackdrop, getMovieVideos } from '@/lib/tmdb';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Star, Heart, Check, Calendar, Tv, Loader2 } from 'lucide-react';
+import { X, Play, Star, Heart, Check, Calendar, Tv, Loader2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,6 +24,8 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [showTrailer, setShowTrailer] = useState(false);
   const [streamLoading, setStreamLoading] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [showStream, setShowStream] = useState(false);
   const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trailerCreditedRef = useRef(false);
 
@@ -35,16 +37,16 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     return () => {
       setTrailerKey(null);
       setShowTrailer(false);
+      setShowStream(false);
+      setStreamUrl(null);
       if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
       trailerCreditedRef.current = false;
     };
   }, [movie]);
 
-  // Open stream in external player/new tab (IPTV servers validate client IP, proxy won't work)
-  const openStreamExternal = useCallback((url: string) => {
-    // Convert mkv to mp4 for better compatibility
-    const playableUrl = url.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
-    window.open(playableUrl, '_blank');
+  // Format stream URL for better compatibility
+  const formatStreamUrl = useCallback((url: string) => {
+    return url.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
   }, []);
 
   const handlePlayTrailer = useCallback(() => {
@@ -96,11 +98,12 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
         return;
       }
 
-      // Open directly — IPTV servers validate client IP, so proxy won't work
-      openStreamExternal(data.stream_url);
+      const playableUrl = formatStreamUrl(data.stream_url);
+      setStreamUrl(playableUrl);
+      setShowStream(true);
       toast({
         title: '🎬 Reproduzindo',
-        description: 'O conteúdo foi aberto em uma nova aba.',
+        description: 'O conteúdo está sendo carregado no player.',
       });
     } catch {
       toast({
@@ -110,7 +113,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     } finally {
       setStreamLoading(false);
     }
-  }, [movie, openStreamExternal]);
+  }, [movie, formatStreamUrl]);
 
   if (!movie) return null;
 
@@ -138,7 +141,33 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
         >
           {/* Media area */}
           <div className="relative aspect-video bg-secondary overflow-hidden">
-            {showTrailer && trailerKey ? (
+            {showStream && streamUrl ? (
+              <div className="w-full h-full relative">
+                <iframe
+                  src={streamUrl}
+                  className="w-full h-full border-0"
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                  title={`Player - ${title}`}
+                  sandbox="allow-same-origin allow-scripts"
+                />
+                <div className="absolute bottom-2 right-2 flex gap-2 z-10">
+                  <button
+                    onClick={() => window.open(streamUrl, '_blank')}
+                    className="px-3 py-1.5 rounded-lg bg-background/80 text-foreground text-xs flex items-center gap-1 hover:bg-background transition-colors"
+                    title="Abrir em nova aba"
+                  >
+                    <ExternalLink className="w-3 h-3" /> Abrir externa
+                  </button>
+                  <button
+                    onClick={() => { setShowStream(false); setStreamUrl(null); }}
+                    className="px-3 py-1.5 rounded-lg bg-background/80 text-foreground text-xs hover:bg-background transition-colors"
+                  >
+                    Fechar Player
+                  </button>
+                </div>
+              </div>
+            ) : showTrailer && trailerKey ? (
               <iframe
                 src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
                 className="w-full h-full"
