@@ -50,28 +50,30 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     };
   }, [movie]);
 
-  // Attach HLS when stream URL is ready
+  // Attach video source when stream URL is ready
   useEffect(() => {
     if (!streamUrl || !videoRef.current) return;
     const video = videoRef.current;
+
+    console.log('[player] Loading stream:', streamUrl);
 
     const tryPlay = async () => {
       try {
         await video.play();
       } catch {
-        // Autoplay blocked, mute and retry
         video.muted = true;
         try {
           await video.play();
         } catch {
-          // Even muted failed, user must click play manually
           console.log('[player] Autoplay blocked, user must press play');
         }
       }
     };
 
-    if (Hls.isSupported() && (streamUrl.includes('.m3u8') || streamUrl.includes('.ts') || !streamUrl.match(/\.(mp4|mkv|avi|webm)$/i))) {
-      // Try HLS for most IPTV streams (even without .m3u8 extension)
+    // Only use HLS.js for explicit .m3u8 URLs
+    const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
+
+    if (isHls && Hls.isSupported()) {
       const hls = new Hls({ maxBufferLength: 30, enableWorker: true });
       hlsRef.current = hls;
       hls.loadSource(streamUrl);
@@ -79,40 +81,39 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
       hls.on(Hls.Events.MANIFEST_PARSED, () => tryPlay());
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
-          // HLS failed, try direct source as fallback
-          console.log('[player] HLS failed, trying direct playback');
+          console.log('[player] HLS fatal error, trying direct');
           hls.destroy();
           hlsRef.current = null;
           video.src = streamUrl;
           video.load();
           tryPlay();
-          video.onerror = () => {
-            toast({ title: '❌ Erro no stream', description: 'Não foi possível reproduzir este conteúdo.' });
-            setShowStream(false);
-            setStreamUrl(null);
-          };
         }
       });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS
       video.src = streamUrl;
       video.load();
       tryPlay();
     } else {
+      // Direct stream (MP4, TS, or IPTV direct URL) - no CORS needed for <video src>
       video.src = streamUrl;
       video.load();
       tryPlay();
-      video.onerror = () => {
-        toast({ title: '❌ Erro no stream', description: 'Formato não suportado pelo navegador.' });
-        setShowStream(false);
-        setStreamUrl(null);
-      };
     }
+
+    video.onerror = () => {
+      console.error('[player] Video error:', video.error);
+      toast({ title: '❌ Erro no stream', description: 'Não foi possível reproduzir este conteúdo. O servidor pode estar bloqueando a reprodução.' });
+      setShowStream(false);
+      setStreamUrl(null);
+    };
 
     return () => {
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
       }
+      video.onerror = null;
     };
   }, [streamUrl]);
 
