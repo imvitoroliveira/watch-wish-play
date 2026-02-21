@@ -77,13 +77,14 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Check concurrent sessions - block if user is online (last seen < 5 min)
-      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      // Check concurrent sessions - block if user is online (last seen < 2 min)
+      // Use a shorter window to reduce false positives from stale heartbeats
+      const twoMinAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
       const { data: presence } = await supabase
         .from('user_presence')
         .select('last_seen')
         .eq('client_username', username)
-        .gte('last_seen', fiveMinAgo)
+        .gte('last_seen', twoMinAgo)
         .maybeSingle();
 
       if (presence) {
@@ -91,6 +92,12 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      // Clear any stale presence so the new session starts clean
+      await supabase
+        .from('user_presence')
+        .update({ last_seen: new Date(0).toISOString() })
+        .eq('client_username', username);
 
       // Return sanitized client data (no password)
       const safeClient = { ...client };
