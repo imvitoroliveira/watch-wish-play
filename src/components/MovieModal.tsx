@@ -273,21 +273,19 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
             <p className="text-muted-foreground leading-relaxed mb-6">{movie.overview || 'Sem descrição disponível.'}</p>
 
             <div className="flex gap-3 flex-wrap">
-              {/* ASSISTIR AGORA - only for available content */}
-              {isAvailable && (
-                <Button
-                  onClick={handleWatchNow}
-                  disabled={streamLoading || showStream}
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-600/30"
-                >
-                  {streamLoading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Tv className="w-4 h-4 mr-2" />
-                  )}
-                  {streamLoading ? 'Buscando...' : showStream ? 'Reproduzindo' : 'Assistir Agora'}
-                </Button>
-              )}
+              {/* ASSISTIR AGORA */}
+              <Button
+                onClick={handleWatchNow}
+                disabled={streamLoading || showStream}
+                className="bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-600/30"
+              >
+                {streamLoading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Tv className="w-4 h-4 mr-2" />
+                )}
+                {streamLoading ? 'Buscando...' : showStream ? 'Reproduzindo' : 'Assistir Agora'}
+              </Button>
               {trailerKey && !showTrailer && !showStream && (
                 <Button onClick={handlePlayTrailer} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
                   <Play className="w-4 h-4 mr-2" /> Assistir Trailer
