@@ -1,9 +1,8 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 Deno.serve(async (req) => {
@@ -12,53 +11,54 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { url } = await req.json();
-    if (!url || typeof url !== "string") {
+    let streamUrl: string | null = null;
+
+    // Accept URL from query param (GET) or body (POST)
+    if (req.method === "GET") {
+      const url = new URL(req.url);
+      streamUrl = url.searchParams.get("url");
+    } else {
+      const body = await req.json();
+      streamUrl = body.url || body.streamUrl || null;
+    }
+
+    if (!streamUrl) {
       return new Response(
-        JSON.stringify({ error: "URL is required" }),
+        JSON.stringify({ error: "Stream URL is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[stream-proxy] Proxying: ${url.substring(0, 80)}...`);
+    console.log(`[stream-proxy] Proxying: ${streamUrl.substring(0, 100)}...`);
 
-    // Fetch the stream from the IPTV server
-    const streamRes = await fetch(url, {
+    const streamRes = await fetch(streamUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "*/*",
-        "Referer": new URL(url).origin + "/",
       },
     });
 
-    if (!streamRes.ok) {
-      console.error(`[stream-proxy] Upstream error: HTTP ${streamRes.status}`);
+    if (!streamRes.ok || !streamRes.body) {
+      console.error(`[stream-proxy] Upstream HTTP ${streamRes.status}`);
       return new Response(
-        JSON.stringify({ error: `Upstream returned HTTP ${streamRes.status}` }),
+        JSON.stringify({ error: `Upstream HTTP ${streamRes.status}` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Determine content type
     const contentType = streamRes.headers.get("content-type") || "video/mp2t";
     const contentLength = streamRes.headers.get("content-length");
 
-    const responseHeaders: Record<string, string> = {
+    const headers: Record<string, string> = {
       ...corsHeaders,
       "Content-Type": contentType,
       "Cache-Control": "no-cache",
-      "Access-Control-Expose-Headers": "Content-Length, Content-Type",
+      "Accept-Ranges": "none",
     };
+    if (contentLength) headers["Content-Length"] = contentLength;
 
-    if (contentLength) {
-      responseHeaders["Content-Length"] = contentLength;
-    }
-
-    // Stream the response body directly through
-    return new Response(streamRes.body, {
-      status: 200,
-      headers: responseHeaders,
-    });
+    // Stream the body directly - no buffering
+    return new Response(streamRes.body, { status: 200, headers });
   } catch (error) {
     console.error("[stream-proxy] Error:", (error as Error).message);
     return new Response(
