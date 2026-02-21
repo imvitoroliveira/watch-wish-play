@@ -50,42 +50,50 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     };
   }, [movie]);
 
-  // Build proxied URL and set as video source (streaming, not download)
+  // Load stream directly into video element (IPTV servers allow direct <video> access)
   useEffect(() => {
     if (!streamUrl || !videoRef.current) return;
     const video = videoRef.current;
 
-    // Build proxy URL - the browser will stream directly from the proxy
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    const proxyUrl = `${supabaseUrl}/functions/v1/stream-proxy?url=${encodeURIComponent(streamUrl)}&apikey=${supabaseKey}`;
+    console.log('[player] Loading stream directly:', streamUrl.substring(0, 80));
 
-    console.log('[player] Setting proxied stream URL');
+    // Destroy any previous HLS instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
 
-    // Check if it's HLS
     const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
 
-    if (isHls && Hls.isSupported()) {
-      const hls = new Hls({ maxBufferLength: 30, enableWorker: true });
-      hlsRef.current = hls;
-      hls.loadSource(proxyUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    if (isHls) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari handles HLS natively
+        video.src = streamUrl;
+        video.load();
         video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
-      });
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          console.error('[player] HLS error, trying direct');
-          hls.destroy();
-          hlsRef.current = null;
-          video.src = proxyUrl;
-          video.load();
-          video.play().catch(() => {});
-        }
-      });
+      } else if (Hls.isSupported()) {
+        const hls = new Hls({ maxBufferLength: 30, enableWorker: true });
+        hlsRef.current = hls;
+        hls.loadSource(streamUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+        });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            console.error('[player] HLS fatal error:', data.type, data.details);
+            hls.destroy();
+            hlsRef.current = null;
+            // Fallback: try direct
+            video.src = streamUrl;
+            video.load();
+            video.play().catch(() => {});
+          }
+        });
+      }
     } else {
-      // Direct stream via proxy - browser handles streaming natively
-      video.src = proxyUrl;
+      // Direct video (mp4, mkv, etc.) — browsers can play these directly from IPTV servers
+      video.src = streamUrl;
       video.load();
       video.play().catch(() => {
         video.muted = true;
@@ -96,7 +104,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     }
 
     video.onerror = () => {
-      console.error('[player] Video error:', video.error);
+      console.error('[player] Video error:', video.error?.code, video.error?.message);
       toast({ title: '❌ Erro no stream', description: 'Não foi possível reproduzir. Tente novamente.' });
       setShowStream(false);
       setStreamUrl(null);
