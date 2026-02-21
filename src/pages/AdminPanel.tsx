@@ -25,8 +25,9 @@ const AdminPanel = () => {
   const [m3uTitleCount, setM3uTitleCount] = useState(0);
   const [m3uLastUpdate, setM3uLastUpdate] = useState<string | null>(null);
   
-  // Webhook states
-  const [webhookUrl, setWebhookUrl] = useState(() => localStorage.getItem('msc_webhook_url') || '');
+  // Google Sheets states
+  const [spreadsheetId, setSpreadsheetId] = useState(() => localStorage.getItem('msc_spreadsheet_id') || '');
+  const [sheetName, setSheetName] = useState(() => localStorage.getItem('msc_sheet_name') || 'Vencimentos');
   const [webhookLoading, setWebhookLoading] = useState(false);
   const [campaignTitle, setCampaignTitle] = useState('');
   const [campaignMessage, setCampaignMessage] = useState('');
@@ -110,12 +111,12 @@ const AdminPanel = () => {
   };
 
   const handleCheckExpiring = async () => {
-    if (!webhookUrl.trim()) {
-      toast({ title: 'URL não definida', description: 'Configure a URL do Google Apps Script primeiro.', variant: 'destructive' });
+    if (!spreadsheetId.trim()) {
+      toast({ title: 'ID não definido', description: 'Configure o ID da planilha primeiro.', variant: 'destructive' });
       return;
     }
     setWebhookLoading(true);
-    toast({ title: 'Processando...', description: 'Filtrando clientes e enviando à planilha Google Sheets.' });
+    toast({ title: 'Processando...', description: 'Filtrando clientes e enviando ao Google Sheets.' });
     try {
       const expiring = clientList.filter(c => c['7'] === '1');
 
@@ -151,14 +152,19 @@ const AdminPanel = () => {
         data_expiracao: formatDate(c.e),
       }));
 
-      const { data, error } = await supabase.functions.invoke('n8n-proxy', {
+      const adminAuth = sessionStorage.getItem('msc_admin_creds') || '';
+      const { data, error } = await supabase.functions.invoke('google-sheets-sync', {
         body: {
-          webhook_url: webhookUrl.trim(),
-          payload: { action: 'update_sheet', clients: payload, total: payload.length },
+          spreadsheet_id: spreadsheetId.trim(),
+          sheet_name: sheetName.trim() || 'Vencimentos',
+          clients: payload,
         },
+        headers: { 'x-admin-auth': adminAuth },
       });
       if (error) throw new Error(error.message || 'Erro ao enviar');
-      localStorage.setItem('msc_webhook_url', webhookUrl.trim());
+      if (data?.error) throw new Error(data.error);
+      localStorage.setItem('msc_spreadsheet_id', spreadsheetId.trim());
+      localStorage.setItem('msc_sheet_name', sheetName.trim());
       toast({ title: 'Planilha atualizada!', description: `${payload.length} clientes enviados ao Google Sheets.` });
     } catch (e: any) {
       toast({ title: 'Erro ao enviar', description: e.message, variant: 'destructive' });
@@ -477,21 +483,28 @@ const AdminPanel = () => {
                 VENCIMENTOS → GOOGLE SHEETS
               </h2>
               <p className="text-sm text-muted-foreground">
-                Envie os dados dos clientes com vencimento próximo (3 dias) diretamente para uma planilha no Google Sheets.
+                Envie os dados dos clientes com vencimento próximo (3 dias) diretamente para uma planilha no Google Sheets via Service Account.
                 Os campos enviados: <code className="text-accent">usuario</code>, <code className="text-accent">telefone</code>, <code className="text-accent">status</code> e <code className="text-accent">data_expiracao</code>.
               </p>
               <div className="bg-secondary/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
                 <p className="font-medium text-foreground">Como configurar:</p>
-                <p>1. Crie um Google Apps Script vinculado à planilha</p>
-                <p>2. Implante como "Aplicativo da Web" (acesso: qualquer pessoa)</p>
-                <p>3. Cole a URL gerada abaixo</p>
+                <p>1. Compartilhe a planilha com o e-mail da Service Account como <strong>Editor</strong></p>
+                <p>2. Copie o ID da planilha (da URL: docs.google.com/spreadsheets/d/<strong>ID_AQUI</strong>/edit)</p>
+                <p>3. Informe o nome da aba destino abaixo</p>
               </div>
               <Input
-                value={webhookUrl}
-                onChange={e => setWebhookUrl(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
-                placeholder="URL do Google Apps Script (https://script.google.com/macros/s/...)"
+                value={spreadsheetId}
+                onChange={e => setSpreadsheetId(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
+                placeholder="ID da Planilha (ex: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms)"
                 className="h-10 bg-background border-border text-foreground"
-                maxLength={500}
+                maxLength={200}
+              />
+              <Input
+                value={sheetName}
+                onChange={e => setSheetName(e.target.value)}
+                placeholder="Nome da aba (ex: Vencimentos)"
+                className="h-10 bg-background border-border text-foreground"
+                maxLength={100}
               />
               <Button onClick={handleCheckExpiring} disabled={webhookLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                 {webhookLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
