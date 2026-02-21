@@ -130,9 +130,11 @@ Deno.serve(async (req) => {
     const streamUrl = await findStreamUrl(res.body, searchNormalized);
 
     if (streamUrl) {
-      console.log(`[stream-lookup] Found stream URL for "${title}"`);
+      // Force HTTPS to avoid mixed-content blocks on HTTPS pages
+      const secureUrl = streamUrl.replace(/^http:\/\//i, 'https://');
+      console.log(`[stream-lookup] Found stream URL for "${title}" -> HTTPS: ${secureUrl.substring(0, 80)}`);
       return new Response(
-        JSON.stringify({ stream_url: streamUrl }),
+        JSON.stringify({ stream_url: secureUrl }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
