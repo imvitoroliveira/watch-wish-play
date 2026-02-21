@@ -31,11 +31,18 @@ Deno.serve(async (req) => {
 
     console.log(`[stream-proxy] Proxying: ${streamUrl.substring(0, 100)}...`);
 
+    // Parse the stream URL to extract origin for Referer
+    const parsedUrl = new URL(streamUrl);
+    const origin = parsedUrl.origin;
+
     const streamRes = await fetch(streamUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "*/*",
+        "Referer": origin + "/",
+        "Origin": origin,
       },
+      redirect: "follow",
     });
 
     if (!streamRes.ok || !streamRes.body) {
