@@ -50,12 +50,19 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     };
   }, [movie]);
 
-  // Load stream directly into video element (IPTV servers allow direct <video> access)
+  // Convert incompatible formats (mkv, avi, etc.) to mp4 for browser playback
+  const toBrowserUrl = (url: string): string => {
+    // IPTV servers typically support multiple formats - swap mkv/avi/etc to mp4
+    return url.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
+  };
+
+  // Load stream directly into video element
   useEffect(() => {
     if (!streamUrl || !videoRef.current) return;
     const video = videoRef.current;
+    const playableUrl = toBrowserUrl(streamUrl);
 
-    console.log('[player] Loading stream directly:', streamUrl.substring(0, 80));
+    console.log('[player] Loading stream:', playableUrl.substring(0, 100));
 
     // Destroy any previous HLS instance
     if (hlsRef.current) {
@@ -63,18 +70,17 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
       hlsRef.current = null;
     }
 
-    const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
+    const isHls = /\.m3u8(\?|$)/i.test(playableUrl);
 
     if (isHls) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        // Safari handles HLS natively
-        video.src = streamUrl;
+        video.src = playableUrl;
         video.load();
         video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
       } else if (Hls.isSupported()) {
         const hls = new Hls({ maxBufferLength: 30, enableWorker: true });
         hlsRef.current = hls;
-        hls.loadSource(streamUrl);
+        hls.loadSource(playableUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
@@ -84,16 +90,15 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
             console.error('[player] HLS fatal error:', data.type, data.details);
             hls.destroy();
             hlsRef.current = null;
-            // Fallback: try direct
-            video.src = streamUrl;
+            video.src = playableUrl;
             video.load();
             video.play().catch(() => {});
           }
         });
       }
     } else {
-      // Direct video (mp4, mkv, etc.) — browsers can play these directly from IPTV servers
-      video.src = streamUrl;
+      // Direct video (mp4, ts, etc.)
+      video.src = playableUrl;
       video.load();
       video.play().catch(() => {
         video.muted = true;
