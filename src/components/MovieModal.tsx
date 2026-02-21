@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { TMDBMovie, tmdbImg, tmdbBackdrop, getMovieVideos } from '@/lib/tmdb';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Star, Heart, Check, Calendar } from 'lucide-react';
+import { X, Play, Star, Heart, Check, Calendar, Tv, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
+import Hls from 'hls.js';
 
 interface MovieModalProps {
   movie: TMDBMovie | null;
@@ -15,14 +16,20 @@ interface MovieModalProps {
   onToggleFavorite?: () => void;
   onToggleWatched?: () => void;
   onTrailerWatched?: () => void;
+  availability?: 'available' | 'soon' | 'unknown';
 }
 
-const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, onToggleWatched, onTrailerWatched }: MovieModalProps) => {
+const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, onToggleWatched, onTrailerWatched, availability }: MovieModalProps) => {
   const { currentClient } = useAuth();
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [showTrailer, setShowTrailer] = useState(false);
+  const [showStream, setShowStream] = useState(false);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trailerCreditedRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   useEffect(() => {
     if (movie) {
@@ -32,15 +39,59 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     return () => {
       setTrailerKey(null);
       setShowTrailer(false);
+      setShowStream(false);
+      setStreamUrl(null);
       if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
       trailerCreditedRef.current = false;
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
     };
   }, [movie]);
 
+  // Attach HLS when stream URL is ready
+  useEffect(() => {
+    if (!streamUrl || !videoRef.current) return;
+    const video = videoRef.current;
+
+    if (streamUrl.includes('.m3u8') && Hls.isSupported()) {
+      const hls = new Hls({ maxBufferLength: 30 });
+      hlsRef.current = hls;
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          toast({ title: '❌ Erro no stream', description: 'Não foi possível reproduzir. Tente novamente.' });
+          setShowStream(false);
+          setStreamUrl(null);
+        }
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS
+      video.src = streamUrl;
+      video.play().catch(() => {});
+    } else {
+      // Direct MP4 or other format
+      video.src = streamUrl;
+      video.play().catch(() => {});
+    }
+
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [streamUrl]);
+
   const handlePlayTrailer = useCallback(() => {
     setShowTrailer(true);
+    setShowStream(false);
     trailerCreditedRef.current = false;
-    // Start 30-second timer for trailer watch validation
     trailerTimerRef.current = setTimeout(async () => {
       if (trailerCreditedRef.current) return;
       trailerCreditedRef.current = true;
@@ -66,11 +117,45 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     }, 30000);
   }, [currentClient?.u, onTrailerWatched]);
 
+  const handleWatchNow = useCallback(async () => {
+    if (!movie) return;
+    const title = movie.title || movie.name || '';
+    setStreamLoading(true);
+    setShowTrailer(false);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('stream-lookup', {
+        method: 'POST',
+        body: { title },
+      });
+
+      if (error || !data?.stream_url) {
+        toast({
+          title: '😕 Stream não encontrado',
+          description: 'Não foi possível localizar este conteúdo no catálogo M3U.',
+        });
+        setStreamLoading(false);
+        return;
+      }
+
+      setStreamUrl(data.stream_url);
+      setShowStream(true);
+    } catch {
+      toast({
+        title: '❌ Erro',
+        description: 'Falha ao buscar o stream. Tente novamente.',
+      });
+    } finally {
+      setStreamLoading(false);
+    }
+  }, [movie]);
+
   if (!movie) return null;
 
   const title = movie.title || movie.name || 'Sem título';
   const date = movie.release_date || movie.first_air_date;
   const backdrop = tmdbBackdrop(movie.backdrop_path);
+  const isAvailable = availability === 'available';
 
   return (
     <AnimatePresence>
@@ -89,9 +174,17 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
           className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-card border border-border shadow-2xl"
           onClick={e => e.stopPropagation()}
         >
-          {/* Backdrop image */}
+          {/* Media area */}
           <div className="relative aspect-video bg-secondary overflow-hidden">
-            {showTrailer && trailerKey ? (
+            {showStream && streamUrl ? (
+              <video
+                ref={videoRef}
+                className="w-full h-full bg-black"
+                controls
+                autoPlay
+                playsInline
+              />
+            ) : showTrailer && trailerKey ? (
               <iframe
                 src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
                 className="w-full h-full"
@@ -147,12 +240,32 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
               <span className="text-xs uppercase px-2 py-0.5 rounded bg-secondary text-secondary-foreground">
                 {movie.media_type === 'tv' ? 'Série' : 'Filme'}
               </span>
+              {isAvailable && (
+                <span className="text-xs uppercase px-2 py-0.5 rounded bg-green-600/20 text-green-400 border border-green-600/30">
+                  Disponível
+                </span>
+              )}
             </div>
 
             <p className="text-muted-foreground leading-relaxed mb-6">{movie.overview || 'Sem descrição disponível.'}</p>
 
-            <div className="flex gap-3">
-              {trailerKey && !showTrailer && (
+            <div className="flex gap-3 flex-wrap">
+              {/* ASSISTIR AGORA - only when available in M3U */}
+              {isAvailable && (
+                <Button
+                  onClick={handleWatchNow}
+                  disabled={streamLoading || showStream}
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-600/30"
+                >
+                  {streamLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Tv className="w-4 h-4 mr-2" />
+                  )}
+                  {streamLoading ? 'Buscando...' : showStream ? 'Reproduzindo' : 'Assistir Agora'}
+                </Button>
+              )}
+              {trailerKey && !showTrailer && !showStream && (
                 <Button onClick={handlePlayTrailer} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
                   <Play className="w-4 h-4 mr-2" /> Assistir Trailer
                 </Button>
