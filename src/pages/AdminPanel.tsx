@@ -26,8 +26,8 @@ const AdminPanel = () => {
   const [m3uLastUpdate, setM3uLastUpdate] = useState<string | null>(null);
   
   // Google Sheets states
-  const [spreadsheetId, setSpreadsheetId] = useState(() => localStorage.getItem('msc_spreadsheet_id') || '');
-  const [sheetName, setSheetName] = useState(() => localStorage.getItem('msc_sheet_name') || 'Vencimentos');
+  const [spreadsheetId, setSpreadsheetId] = useState(() => localStorage.getItem('msc_spreadsheet_id') || '1gtVH1bE8ucMUlBZvnrA4C1q6NdIzaszE28xedXBKnM8');
+  const [sheetName, setSheetName] = useState(() => localStorage.getItem('msc_sheet_name') || '[HOJE]');
   const [webhookLoading, setWebhookLoading] = useState(false);
 
   // Online users state
@@ -167,6 +167,16 @@ const AdminPanel = () => {
     }
     setWebhookLoading(false);
   };
+
+  // Persist default values on mount if not already saved
+  useEffect(() => {
+    if (!localStorage.getItem('msc_spreadsheet_id') && spreadsheetId) {
+      localStorage.setItem('msc_spreadsheet_id', spreadsheetId);
+    }
+    if (!localStorage.getItem('msc_sheet_name') && sheetName) {
+      localStorage.setItem('msc_sheet_name', sheetName);
+    }
+  }, []);
 
 
   const [loginLoading, setLoginLoading] = useState(false);
