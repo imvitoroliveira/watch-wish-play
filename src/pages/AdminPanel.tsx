@@ -111,13 +111,12 @@ const AdminPanel = () => {
 
   const handleCheckExpiring = async () => {
     if (!webhookUrl.trim()) {
-      toast({ title: 'URL não definida', description: 'Configure a URL do webhook primeiro.', variant: 'destructive' });
+      toast({ title: 'URL não definida', description: 'Configure a URL do Google Apps Script primeiro.', variant: 'destructive' });
       return;
     }
     setWebhookLoading(true);
-    toast({ title: 'Processando disparos...', description: 'Filtrando clientes e enviando dados ao n8n.' });
+    toast({ title: 'Processando...', description: 'Filtrando clientes e enviando à planilha Google Sheets.' });
     try {
-      // Filtrar apenas clientes com coluna '7' (expires72) igual a '1'
       const expiring = clientList.filter(c => c['7'] === '1');
 
       if (expiring.length === 0) {
@@ -147,21 +146,22 @@ const AdminPanel = () => {
 
       const payload = expiring.map(c => ({
         usuario: c.u,
+        telefone: formatContact(c['n'] || c['N'] || c['Notas'] || c['notas'] || ''),
+        status: c.t || 'Ativo',
         data_expiracao: formatDate(c.e),
-        contato: formatContact(c['n'] || c['N'] || ''),
       }));
 
       const { data, error } = await supabase.functions.invoke('n8n-proxy', {
         body: {
           webhook_url: webhookUrl.trim(),
-          payload: { action: 'expiring_clients', clients: payload, total: payload.length },
+          payload: { action: 'update_sheet', clients: payload, total: payload.length },
         },
       });
-      if (error) throw new Error(error.message || 'Erro ao chamar proxy');
+      if (error) throw new Error(error.message || 'Erro ao enviar');
       localStorage.setItem('msc_webhook_url', webhookUrl.trim());
-      toast({ title: 'Webhook disparado!', description: `${payload.length} clientes enviados ao n8n com sucesso.` });
+      toast({ title: 'Planilha atualizada!', description: `${payload.length} clientes enviados ao Google Sheets.` });
     } catch (e: any) {
-      toast({ title: 'Erro ao disparar webhook', description: e.message, variant: 'destructive' });
+      toast({ title: 'Erro ao enviar', description: e.message, variant: 'destructive' });
     }
     setWebhookLoading(false);
   };
@@ -474,21 +474,28 @@ const AdminPanel = () => {
             <div className="bg-card rounded-xl border border-border p-6 space-y-4">
               <h2 className="text-xl font-display text-foreground flex items-center gap-2">
                 <Bell className="w-5 h-5 text-accent" />
-                AUTOMAÇÃO DE VENCIMENTOS
+                VENCIMENTOS → GOOGLE SHEETS
               </h2>
               <p className="text-sm text-muted-foreground">
-                Dispare um webhook com a lista de clientes cujas mensalidades expiram nos próximos 3 dias.
+                Envie os dados dos clientes com vencimento próximo (3 dias) diretamente para uma planilha no Google Sheets.
+                Os campos enviados: <code className="text-accent">usuario</code>, <code className="text-accent">telefone</code>, <code className="text-accent">status</code> e <code className="text-accent">data_expiracao</code>.
               </p>
+              <div className="bg-secondary/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">Como configurar:</p>
+                <p>1. Crie um Google Apps Script vinculado à planilha</p>
+                <p>2. Implante como "Aplicativo da Web" (acesso: qualquer pessoa)</p>
+                <p>3. Cole a URL gerada abaixo</p>
+              </div>
               <Input
                 value={webhookUrl}
                 onChange={e => setWebhookUrl(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
-                placeholder="URL do Webhook (n8n/Evolution)"
+                placeholder="URL do Google Apps Script (https://script.google.com/macros/s/...)"
                 className="h-10 bg-background border-border text-foreground"
                 maxLength={500}
               />
               <Button onClick={handleCheckExpiring} disabled={webhookLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                 {webhookLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                Verificar Vencimentos
+                Enviar para Google Sheets
               </Button>
             </div>
           </TabsContent>
