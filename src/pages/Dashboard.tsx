@@ -12,7 +12,7 @@ import SupportTickets from '@/components/SupportTickets';
 import ExpirationBanner from '@/components/ExpirationBanner';
 import AgendaJogos from '@/components/AgendaJogos';
 import CineTrailerChallenge from '@/components/CineTrailerChallenge';
-import DoubleBankroll from '@/components/DoubleBankroll';
+
 import { supabase } from '@/integrations/supabase/client';
 
 const Dashboard = () => {
@@ -136,11 +136,6 @@ const Dashboard = () => {
           </motion.div>
         )}
 
-        {tab === 'double' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <DoubleBankroll />
-          </motion.div>
-        )}
 
         {tab === 'support' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
