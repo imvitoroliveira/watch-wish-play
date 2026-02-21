@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { TMDBMovie, tmdbImg, tmdbBackdrop, getMovieVideos } from '@/lib/tmdb';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Play, Star, Heart, Check, Calendar, Tv, Loader2, ExternalLink } from 'lucide-react';
+import { X, Play, Star, Heart, Check, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,9 +23,6 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
   const { currentClient } = useAuth();
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [showTrailer, setShowTrailer] = useState(false);
-  const [streamLoading, setStreamLoading] = useState(false);
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [showStream, setShowStream] = useState(false);
   const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trailerCreditedRef = useRef(false);
 
@@ -37,17 +34,10 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     return () => {
       setTrailerKey(null);
       setShowTrailer(false);
-      setShowStream(false);
-      setStreamUrl(null);
       if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
       trailerCreditedRef.current = false;
     };
   }, [movie]);
-
-  // Format stream URL for better compatibility
-  const formatStreamUrl = useCallback((url: string) => {
-    return url.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
-  }, []);
 
   const handlePlayTrailer = useCallback(() => {
     setShowTrailer(true);
@@ -77,44 +67,6 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     }, 30000);
   }, [currentClient?.u, onTrailerWatched]);
 
-  const handleWatchNow = useCallback(async () => {
-    if (!movie) return;
-    const title = movie.title || movie.name || '';
-    setStreamLoading(true);
-    setShowTrailer(false);
-
-    try {
-      const { data, error } = await supabase.functions.invoke('stream-lookup', {
-        method: 'POST',
-        body: { title },
-      });
-
-      if (error || !data?.stream_url) {
-        toast({
-          title: '😕 Stream não encontrado',
-          description: 'Não foi possível localizar este conteúdo no catálogo M3U.',
-        });
-        setStreamLoading(false);
-        return;
-      }
-
-      const playableUrl = formatStreamUrl(data.stream_url);
-      setStreamUrl(playableUrl);
-      setShowStream(true);
-      toast({
-        title: '🎬 Reproduzindo',
-        description: 'O conteúdo está sendo carregado no player.',
-      });
-    } catch {
-      toast({
-        title: '❌ Erro',
-        description: 'Falha ao buscar o stream. Tente novamente.',
-      });
-    } finally {
-      setStreamLoading(false);
-    }
-  }, [movie, formatStreamUrl]);
-
   if (!movie) return null;
 
   const title = movie.title || movie.name || 'Sem título';
@@ -141,41 +93,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
         >
           {/* Media area */}
           <div className="relative aspect-video bg-secondary overflow-hidden">
-            {showStream && streamUrl ? (
-              <div className="w-full h-full relative bg-black">
-                <video
-                  src={streamUrl}
-                  controls
-                  autoPlay
-                  playsInline
-                  className="w-full h-full"
-                  onError={() => {
-                    toast({
-                      title: '⚠️ Erro no player',
-                      description: 'Não foi possível reproduzir. Tentando abrir externamente...',
-                    });
-                    window.open(streamUrl, '_blank');
-                    setShowStream(false);
-                    setStreamUrl(null);
-                  }}
-                />
-                <div className="absolute top-2 right-2 flex gap-2 z-10">
-                  <button
-                    onClick={() => window.open(streamUrl, '_blank')}
-                    className="px-3 py-1.5 rounded-lg bg-background/80 text-foreground text-xs flex items-center gap-1 hover:bg-background transition-colors"
-                    title="Abrir em nova aba"
-                  >
-                    <ExternalLink className="w-3 h-3" /> Externa
-                  </button>
-                  <button
-                    onClick={() => { setShowStream(false); setStreamUrl(null); }}
-                    className="px-3 py-1.5 rounded-lg bg-background/80 text-foreground text-xs hover:bg-background transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ) : showTrailer && trailerKey ? (
+            {showTrailer && trailerKey ? (
               <iframe
                 src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
                 className="w-full h-full"
@@ -241,19 +159,6 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
             <p className="text-muted-foreground leading-relaxed mb-6">{movie.overview || 'Sem descrição disponível.'}</p>
 
             <div className="flex gap-3 flex-wrap">
-              {/* ASSISTIR AGORA */}
-              <Button
-                onClick={handleWatchNow}
-                disabled={streamLoading}
-                className="bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-600/30"
-              >
-                {streamLoading ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Tv className="w-4 h-4 mr-2" />
-                )}
-                {streamLoading ? 'Buscando...' : 'Assistir Agora'}
-              </Button>
               {trailerKey && !showTrailer && (
                 <Button onClick={handlePlayTrailer} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
                   <Play className="w-4 h-4 mr-2" /> Assistir Trailer
