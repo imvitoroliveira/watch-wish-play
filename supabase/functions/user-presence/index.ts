@@ -19,6 +19,17 @@ Deno.serve(async (req) => {
   try {
     const { action, username } = await req.json();
 
+    // Logout: set last_seen to far past so user is no longer "online"
+    if (action === 'logout' && username) {
+      await supabase
+        .from('user_presence')
+        .update({ last_seen: new Date(0).toISOString() })
+        .eq('client_username', username);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Heartbeat: upsert last_seen
     if (action === 'heartbeat' && username) {
       await supabase
