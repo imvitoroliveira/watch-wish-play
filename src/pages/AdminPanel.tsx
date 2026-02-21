@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Megaphone, Bell, Wifi } from 'lucide-react';
+import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -29,10 +29,6 @@ const AdminPanel = () => {
   const [spreadsheetId, setSpreadsheetId] = useState(() => localStorage.getItem('msc_spreadsheet_id') || '');
   const [sheetName, setSheetName] = useState(() => localStorage.getItem('msc_sheet_name') || 'Vencimentos');
   const [webhookLoading, setWebhookLoading] = useState(false);
-  const [campaignTitle, setCampaignTitle] = useState('');
-  const [campaignMessage, setCampaignMessage] = useState('');
-  const [campaignWebhookUrl, setCampaignWebhookUrl] = useState(() => localStorage.getItem('msc_campaign_webhook_url') || '');
-  const [campaignLoading, setCampaignLoading] = useState(false);
 
   // Online users state
   const [onlineUsers, setOnlineUsers] = useState<{ client_username: string; last_seen: string }[]>([]);
@@ -172,33 +168,6 @@ const AdminPanel = () => {
     setWebhookLoading(false);
   };
 
-  const handleSendCampaign = async () => {
-    if (!campaignWebhookUrl.trim()) {
-      toast({ title: 'URL não definida', description: 'Configure a URL do webhook de campanhas.', variant: 'destructive' });
-      return;
-    }
-    if (!campaignTitle.trim() || !campaignMessage.trim()) {
-      toast({ title: 'Campos obrigatórios', description: 'Preencha o título e a mensagem.', variant: 'destructive' });
-      return;
-    }
-    setCampaignLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('n8n-proxy', {
-        body: {
-          webhook_url: campaignWebhookUrl.trim(),
-          payload: { action: 'campaign', title: campaignTitle.trim(), message: campaignMessage.trim() },
-        },
-      });
-      if (error) throw new Error(error.message || 'Erro ao chamar proxy');
-      localStorage.setItem('msc_campaign_webhook_url', campaignWebhookUrl.trim());
-      toast({ title: 'Campanha disparada!', description: 'Mensagem enviada via webhook.' });
-      setCampaignTitle('');
-      setCampaignMessage('');
-    } catch (e: any) {
-      toast({ title: 'Erro ao disparar campanha', description: e.message, variant: 'destructive' });
-    }
-    setCampaignLoading(false);
-  };
 
   const [loginLoading, setLoginLoading] = useState(false);
 
@@ -369,7 +338,7 @@ const AdminPanel = () => {
             <TabsTrigger value="geral">Geral</TabsTrigger>
             <TabsTrigger value="online" onClick={() => loadOnlineUsers()}>Status em Tempo Real</TabsTrigger>
             <TabsTrigger value="vencimentos">Vencimentos</TabsTrigger>
-            <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
+            
           </TabsList>
 
           <TabsContent value="geral" className="space-y-8">
@@ -533,42 +502,6 @@ const AdminPanel = () => {
             </div>
           </TabsContent>
 
-          <TabsContent value="campanhas">
-            <div className="bg-card rounded-xl border border-border p-6 space-y-4">
-              <h2 className="text-xl font-display text-foreground flex items-center gap-2">
-                <Megaphone className="w-5 h-5 text-accent" />
-                CAMPANHAS DE MARKETING
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                Envie mensagens de marketing para seus clientes via webhook n8n/Evolution.
-              </p>
-              <Input
-                value={campaignWebhookUrl}
-                onChange={e => setCampaignWebhookUrl(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
-                placeholder="URL do Webhook de Campanhas"
-                className="h-10 bg-background border-border text-foreground"
-                maxLength={500}
-              />
-              <Input
-                value={campaignTitle}
-                onChange={e => setCampaignTitle(e.target.value)}
-                placeholder="Título da campanha"
-                className="h-10 bg-background border-border text-foreground"
-                maxLength={200}
-              />
-              <textarea
-                value={campaignMessage}
-                onChange={e => setCampaignMessage(e.target.value)}
-                placeholder="Mensagem da campanha..."
-                className="w-full h-32 rounded-lg bg-background border border-border text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                maxLength={2000}
-              />
-              <Button onClick={handleSendCampaign} disabled={campaignLoading} className="bg-accent text-accent-foreground hover:bg-accent/90">
-                {campaignLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                Disparar via n8n
-              </Button>
-            </div>
-          </TabsContent>
         </Tabs>
       </div>
     </div>
