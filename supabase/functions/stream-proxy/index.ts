@@ -13,7 +13,6 @@ Deno.serve(async (req) => {
   try {
     let streamUrl: string | null = null;
 
-    // Accept URL from query param (GET) or body (POST)
     if (req.method === "GET") {
       const url = new URL(req.url);
       streamUrl = url.searchParams.get("url");
@@ -29,36 +28,68 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[stream-proxy] Proxying: ${streamUrl.substring(0, 100)}...`);
+    // Convert .mkv to .mp4 for browser compatibility
+    const playableUrl = streamUrl.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
+    
+    console.log(`[stream-proxy] Proxying: ${playableUrl.substring(0, 100)}...`);
 
-    const streamRes = await fetch(streamUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-      },
-    });
+    // Try fetching with various User-Agents and headers that IPTV servers expect
+    const headers: Record<string, string> = {
+      "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
+      "Accept": "*/*",
+      "Connection": "keep-alive",
+    };
+
+    // Extract range header from client request to support seeking
+    const rangeHeader = req.headers.get("range");
+    if (rangeHeader) {
+      headers["Range"] = rangeHeader;
+    }
+
+    const streamRes = await fetch(playableUrl, { headers, redirect: "follow" });
 
     if (!streamRes.ok || !streamRes.body) {
-      console.error(`[stream-proxy] Upstream HTTP ${streamRes.status}`);
+      console.error(`[stream-proxy] Upstream HTTP ${streamRes.status} for ${playableUrl.substring(0, 80)}`);
+      
+      // If mp4 fails, try the original URL
+      if (playableUrl !== streamUrl) {
+        console.log(`[stream-proxy] Retrying with original URL...`);
+        const retryRes = await fetch(streamUrl, { headers, redirect: "follow" });
+        if (retryRes.ok && retryRes.body) {
+          const contentType = retryRes.headers.get("content-type") || "video/mp4";
+          const contentLength = retryRes.headers.get("content-length");
+          const resHeaders: Record<string, string> = {
+            ...corsHeaders,
+            "Content-Type": contentType,
+            "Cache-Control": "no-cache",
+          };
+          if (contentLength) resHeaders["Content-Length"] = contentLength;
+          if (retryRes.headers.get("accept-ranges")) resHeaders["Accept-Ranges"] = retryRes.headers.get("accept-ranges")!;
+          return new Response(retryRes.body, { status: retryRes.status, headers: resHeaders });
+        }
+        const retryBody = await retryRes.text().catch(() => "");
+        console.error(`[stream-proxy] Retry also failed: HTTP ${retryRes.status} ${retryBody.substring(0, 200)}`);
+      }
+
       return new Response(
         JSON.stringify({ error: `Upstream HTTP ${streamRes.status}` }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const contentType = streamRes.headers.get("content-type") || "video/mp2t";
+    const contentType = streamRes.headers.get("content-type") || "video/mp4";
     const contentLength = streamRes.headers.get("content-length");
 
-    const headers: Record<string, string> = {
+    const resHeaders: Record<string, string> = {
       ...corsHeaders,
       "Content-Type": contentType,
       "Cache-Control": "no-cache",
-      "Accept-Ranges": "none",
     };
-    if (contentLength) headers["Content-Length"] = contentLength;
+    if (contentLength) resHeaders["Content-Length"] = contentLength;
+    if (streamRes.headers.get("accept-ranges")) resHeaders["Accept-Ranges"] = streamRes.headers.get("accept-ranges")!;
+    if (streamRes.headers.get("content-range")) resHeaders["Content-Range"] = streamRes.headers.get("content-range")!;
 
-    // Stream the body directly - no buffering
-    return new Response(streamRes.body, { status: 200, headers });
+    return new Response(streamRes.body, { status: streamRes.status, headers: resHeaders });
   } catch (error) {
     console.error("[stream-proxy] Error:", (error as Error).message);
     return new Response(
