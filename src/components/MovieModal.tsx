@@ -50,19 +50,20 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     };
   }, [movie]);
 
-  // Convert incompatible formats (mkv, avi, etc.) to mp4 for browser playback
-  const toBrowserUrl = (url: string): string => {
-    // IPTV servers typically support multiple formats - swap mkv/avi/etc to mp4
-    return url.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
+  // Build proxy URL to avoid mixed content (HTTP stream inside HTTPS page)
+  const getProxyUrl = (url: string): string => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    return `${supabaseUrl}/functions/v1/stream-proxy?url=${encodeURIComponent(url)}&apikey=${supabaseKey}`;
   };
 
-  // Load stream directly into video element
+  // Load stream via HTTPS proxy
   useEffect(() => {
     if (!streamUrl || !videoRef.current) return;
     const video = videoRef.current;
-    const playableUrl = toBrowserUrl(streamUrl);
+    const proxyUrl = getProxyUrl(streamUrl);
 
-    console.log('[player] Loading stream:', playableUrl.substring(0, 100));
+    console.log('[player] Loading via proxy:', streamUrl.substring(0, 80));
 
     // Destroy any previous HLS instance
     if (hlsRef.current) {
@@ -70,35 +71,34 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
       hlsRef.current = null;
     }
 
-    const isHls = /\.m3u8(\?|$)/i.test(playableUrl);
+    const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
 
     if (isHls) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = playableUrl;
+        video.src = proxyUrl;
         video.load();
         video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
       } else if (Hls.isSupported()) {
         const hls = new Hls({ maxBufferLength: 30, enableWorker: true });
         hlsRef.current = hls;
-        hls.loadSource(playableUrl);
+        hls.loadSource(proxyUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
         });
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
-            console.error('[player] HLS fatal error:', data.type, data.details);
+            console.error('[player] HLS fatal error');
             hls.destroy();
             hlsRef.current = null;
-            video.src = playableUrl;
+            video.src = proxyUrl;
             video.load();
             video.play().catch(() => {});
           }
         });
       }
     } else {
-      // Direct video (mp4, ts, etc.)
-      video.src = playableUrl;
+      video.src = proxyUrl;
       video.load();
       video.play().catch(() => {
         video.muted = true;
