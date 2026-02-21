@@ -50,99 +50,62 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     };
   }, [movie]);
 
-  // Attach video source when stream URL is ready
-  // Build proxied URL and load video
+  // Build proxied URL and set as video source (streaming, not download)
   useEffect(() => {
     if (!streamUrl || !videoRef.current) return;
     const video = videoRef.current;
-    let cancelled = false;
 
-    console.log('[player] Got raw stream URL, proxying via backend...');
+    // Build proxy URL - the browser will stream directly from the proxy
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const proxyUrl = `${supabaseUrl}/functions/v1/stream-proxy?url=${encodeURIComponent(streamUrl)}&apikey=${supabaseKey}`;
 
-    const loadViaProxy = async () => {
-      try {
-        // Use the stream-proxy edge function to bypass CORS
-        const { data, error } = await supabase.functions.invoke('stream-proxy', {
-          method: 'POST',
-          body: { url: streamUrl },
-        });
+    console.log('[player] Setting proxied stream URL');
 
-        // The response comes as a blob from the proxy
-        // But since supabase.functions.invoke parses JSON, we need to use fetch directly
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    // Check if it's HLS
+    const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
 
-        const proxyRes = await fetch(`${supabaseUrl}/functions/v1/stream-proxy`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseKey}`,
-            'apikey': supabaseKey,
-          },
-          body: JSON.stringify({ url: streamUrl }),
-        });
-
-        if (!proxyRes.ok) {
-          throw new Error(`Proxy returned HTTP ${proxyRes.status}`);
-        }
-
-        if (cancelled) return;
-
-        const blob = await proxyRes.blob();
-        const blobUrl = URL.createObjectURL(blob);
-
-        if (cancelled) {
-          URL.revokeObjectURL(blobUrl);
-          return;
-        }
-
-        console.log('[player] Blob ready, loading into video element');
-        video.src = blobUrl;
-        video.load();
-
-        try {
-          await video.play();
-        } catch {
-          video.muted = true;
-          try {
-            await video.play();
-          } catch {
-            console.log('[player] Autoplay blocked, user must press play');
-          }
-        }
-      } catch (err) {
-        console.error('[player] Proxy error:', err);
-        // Fallback: try direct URL anyway
-        console.log('[player] Falling back to direct URL');
-        video.src = streamUrl;
-        video.load();
-        try {
-          await video.play();
-        } catch {
-          video.muted = true;
+    if (isHls && Hls.isSupported()) {
+      const hls = new Hls({ maxBufferLength: 30, enableWorker: true });
+      hlsRef.current = hls;
+      hls.loadSource(proxyUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+      });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          console.error('[player] HLS error, trying direct');
+          hls.destroy();
+          hlsRef.current = null;
+          video.src = proxyUrl;
+          video.load();
           video.play().catch(() => {});
         }
-      }
-    };
+      });
+    } else {
+      // Direct stream via proxy - browser handles streaming natively
+      video.src = proxyUrl;
+      video.load();
+      video.play().catch(() => {
+        video.muted = true;
+        video.play().catch(() => {
+          console.log('[player] Autoplay blocked, user must press play');
+        });
+      });
+    }
 
     video.onerror = () => {
       console.error('[player] Video error:', video.error);
-      toast({ title: '❌ Erro no stream', description: 'Não foi possível reproduzir este conteúdo.' });
+      toast({ title: '❌ Erro no stream', description: 'Não foi possível reproduzir. Tente novamente.' });
       setShowStream(false);
       setStreamUrl(null);
     };
 
-    loadViaProxy();
-
     return () => {
-      cancelled = true;
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
-      }
-      // Revoke blob URL if exists
-      if (video.src.startsWith('blob:')) {
-        URL.revokeObjectURL(video.src);
       }
       video.onerror = null;
     };
