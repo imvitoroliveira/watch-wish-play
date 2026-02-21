@@ -158,6 +158,7 @@ const Dashboard = () => {
           onToggleFavorite={() => toggleFavorite(selectedMovie)}
           onToggleWatched={() => toggleWatched(selectedMovie)}
           onTrailerWatched={() => setChallengeKey(k => k + 1)}
+          availability={getAvailability(selectedMovie)}
         />
       )}
     </div>
