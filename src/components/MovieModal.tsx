@@ -142,28 +142,36 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
           {/* Media area */}
           <div className="relative aspect-video bg-secondary overflow-hidden">
             {showStream && streamUrl ? (
-              <div className="w-full h-full relative">
-                <iframe
+              <div className="w-full h-full relative bg-black">
+                <video
                   src={streamUrl}
-                  className="w-full h-full border-0"
-                  allow="autoplay; fullscreen"
-                  allowFullScreen
-                  title={`Player - ${title}`}
-                  sandbox="allow-same-origin allow-scripts"
+                  controls
+                  autoPlay
+                  playsInline
+                  className="w-full h-full"
+                  onError={() => {
+                    toast({
+                      title: '⚠️ Erro no player',
+                      description: 'Não foi possível reproduzir. Tentando abrir externamente...',
+                    });
+                    window.open(streamUrl, '_blank');
+                    setShowStream(false);
+                    setStreamUrl(null);
+                  }}
                 />
-                <div className="absolute bottom-2 right-2 flex gap-2 z-10">
+                <div className="absolute top-2 right-2 flex gap-2 z-10">
                   <button
                     onClick={() => window.open(streamUrl, '_blank')}
                     className="px-3 py-1.5 rounded-lg bg-background/80 text-foreground text-xs flex items-center gap-1 hover:bg-background transition-colors"
                     title="Abrir em nova aba"
                   >
-                    <ExternalLink className="w-3 h-3" /> Abrir externa
+                    <ExternalLink className="w-3 h-3" /> Externa
                   </button>
                   <button
                     onClick={() => { setShowStream(false); setStreamUrl(null); }}
                     className="px-3 py-1.5 rounded-lg bg-background/80 text-foreground text-xs hover:bg-background transition-colors"
                   >
-                    Fechar Player
+                    ✕
                   </button>
                 </div>
               </div>
