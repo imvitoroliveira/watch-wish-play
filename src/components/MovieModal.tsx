@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
-import Hls from 'hls.js';
+
 
 interface MovieModalProps {
   movie: TMDBMovie | null;
@@ -23,13 +23,9 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
   const { currentClient } = useAuth();
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
   const [showTrailer, setShowTrailer] = useState(false);
-  const [showStream, setShowStream] = useState(false);
   const [streamLoading, setStreamLoading] = useState(false);
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trailerCreditedRef = useRef(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
 
   useEffect(() => {
     if (movie) {
@@ -39,94 +35,20 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     return () => {
       setTrailerKey(null);
       setShowTrailer(false);
-      setShowStream(false);
-      setStreamUrl(null);
       if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
       trailerCreditedRef.current = false;
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
     };
   }, [movie]);
 
-  // Build proxy URL to avoid mixed content (HTTP stream inside HTTPS page)
-  const getProxyUrl = (url: string): string => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    return `${supabaseUrl}/functions/v1/stream-proxy?url=${encodeURIComponent(url)}&apikey=${supabaseKey}`;
-  };
-
-  // Load stream via HTTPS proxy
-  useEffect(() => {
-    if (!streamUrl || !videoRef.current) return;
-    const video = videoRef.current;
-    const proxyUrl = getProxyUrl(streamUrl);
-
-    console.log('[player] Loading via proxy:', streamUrl.substring(0, 80));
-
-    // Destroy any previous HLS instance
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
-
-    const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
-
-    if (isHls) {
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = proxyUrl;
-        video.load();
-        video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
-      } else if (Hls.isSupported()) {
-        const hls = new Hls({ maxBufferLength: 30, enableWorker: true });
-        hlsRef.current = hls;
-        hls.loadSource(proxyUrl);
-        hls.attachMedia(video);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
-        });
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (data.fatal) {
-            console.error('[player] HLS fatal error');
-            hls.destroy();
-            hlsRef.current = null;
-            video.src = proxyUrl;
-            video.load();
-            video.play().catch(() => {});
-          }
-        });
-      }
-    } else {
-      video.src = proxyUrl;
-      video.load();
-      video.play().catch(() => {
-        video.muted = true;
-        video.play().catch(() => {
-          console.log('[player] Autoplay blocked, user must press play');
-        });
-      });
-    }
-
-    video.onerror = () => {
-      console.error('[player] Video error:', video.error?.code, video.error?.message);
-      toast({ title: '❌ Erro no stream', description: 'Não foi possível reproduzir. Tente novamente.' });
-      setShowStream(false);
-      setStreamUrl(null);
-    };
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-      video.onerror = null;
-    };
-  }, [streamUrl]);
+  // Open stream in external player/new tab (IPTV servers validate client IP, proxy won't work)
+  const openStreamExternal = useCallback((url: string) => {
+    // Convert mkv to mp4 for better compatibility
+    const playableUrl = url.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
+    window.open(playableUrl, '_blank');
+  }, []);
 
   const handlePlayTrailer = useCallback(() => {
     setShowTrailer(true);
-    setShowStream(false);
     trailerCreditedRef.current = false;
     trailerTimerRef.current = setTimeout(async () => {
       if (trailerCreditedRef.current) return;
@@ -174,8 +96,12 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
         return;
       }
 
-      setStreamUrl(data.stream_url);
-      setShowStream(true);
+      // Open directly — IPTV servers validate client IP, so proxy won't work
+      openStreamExternal(data.stream_url);
+      toast({
+        title: '🎬 Reproduzindo',
+        description: 'O conteúdo foi aberto em uma nova aba.',
+      });
     } catch {
       toast({
         title: '❌ Erro',
@@ -184,7 +110,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
     } finally {
       setStreamLoading(false);
     }
-  }, [movie]);
+  }, [movie, openStreamExternal]);
 
   if (!movie) return null;
 
@@ -212,15 +138,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
         >
           {/* Media area */}
           <div className="relative aspect-video bg-secondary overflow-hidden">
-            {showStream && streamUrl ? (
-              <video
-                ref={videoRef}
-                className="w-full h-full bg-black"
-                controls
-                autoPlay
-                playsInline
-              />
-            ) : showTrailer && trailerKey ? (
+            {showTrailer && trailerKey ? (
               <iframe
                 src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
                 className="w-full h-full"
@@ -289,7 +207,7 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
               {/* ASSISTIR AGORA */}
               <Button
                 onClick={handleWatchNow}
-                disabled={streamLoading || showStream}
+                disabled={streamLoading}
                 className="bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-600/30"
               >
                 {streamLoading ? (
@@ -297,9 +215,9 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
                 ) : (
                   <Tv className="w-4 h-4 mr-2" />
                 )}
-                {streamLoading ? 'Buscando...' : showStream ? 'Reproduzindo' : 'Assistir Agora'}
+                {streamLoading ? 'Buscando...' : 'Assistir Agora'}
               </Button>
-              {trailerKey && !showTrailer && !showStream && (
+              {trailerKey && !showTrailer && (
                 <Button onClick={handlePlayTrailer} className="bg-primary hover:bg-primary/90 text-primary-foreground glow-red">
                   <Play className="w-4 h-4 mr-2" /> Assistir Trailer
                 </Button>
