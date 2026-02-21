@@ -117,7 +117,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Clear presence before logging out
+    if (currentClient?.u) {
+      try {
+        await supabase.functions.invoke('user-presence', {
+          method: 'POST',
+          body: { action: 'logout', username: currentClient.u },
+        });
+      } catch {}
+    }
     setIsAdmin(false);
     setCurrentClient(null);
     localStorage.removeItem('msc_admin_token');
