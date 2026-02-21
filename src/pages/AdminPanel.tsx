@@ -492,20 +492,40 @@ const AdminPanel = () => {
                 <p>2. Copie o ID da planilha (da URL: docs.google.com/spreadsheets/d/<strong>ID_AQUI</strong>/edit)</p>
                 <p>3. Informe o nome da aba destino abaixo</p>
               </div>
-              <Input
-                value={spreadsheetId}
-                onChange={e => setSpreadsheetId(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
-                placeholder="ID da Planilha (ex: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms)"
-                className="h-10 bg-background border-border text-foreground"
-                maxLength={200}
-              />
-              <Input
-                value={sheetName}
-                onChange={e => setSheetName(e.target.value)}
-                placeholder="Nome da aba (ex: Vencimentos)"
-                className="h-10 bg-background border-border text-foreground"
-                maxLength={100}
-              />
+              <div className="space-y-3">
+                <Input
+                  value={spreadsheetId}
+                  onChange={e => setSpreadsheetId(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
+                  placeholder="ID da Planilha (ex: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms)"
+                  className="h-10 bg-background border-border text-foreground"
+                  maxLength={200}
+                />
+                <Input
+                  value={sheetName}
+                  onChange={e => setSheetName(e.target.value)}
+                  placeholder="Nome da aba (ex: Vencimentos)"
+                  className="h-10 bg-background border-border text-foreground"
+                  maxLength={100}
+                />
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      localStorage.setItem('msc_spreadsheet_id', spreadsheetId.trim());
+                      localStorage.setItem('msc_sheet_name', sheetName.trim());
+                      toast({ title: 'Configuração salva!', description: 'ID e aba salvos localmente.' });
+                    }}
+                    disabled={!spreadsheetId.trim()}
+                    className="border-accent text-accent hover:bg-accent/10"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" /> Salvar Configuração
+                  </Button>
+                  {localStorage.getItem('msc_spreadsheet_id') && (
+                    <span className="text-xs text-accent">✅ Configuração salva</span>
+                  )}
+                </div>
+              </div>
               <Button onClick={handleCheckExpiring} disabled={webhookLoading} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                 {webhookLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
                 Enviar para Google Sheets
