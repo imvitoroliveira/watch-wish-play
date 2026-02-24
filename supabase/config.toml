@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.google-sheets-sync]
 verify_jwt = false
+
+[functions.m3u-auto-refresh]
+verify_jwt = false
