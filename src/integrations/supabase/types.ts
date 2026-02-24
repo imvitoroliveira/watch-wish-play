@@ -203,6 +203,33 @@ export type Database = {
         }
         Relationships: []
       }
+      m3u_updates: {
+        Row: {
+          current_count: number
+          id: string
+          new_titles: Json
+          previous_count: number
+          total_new: number
+          updated_at: string
+        }
+        Insert: {
+          current_count?: number
+          id?: string
+          new_titles?: Json
+          previous_count?: number
+          total_new?: number
+          updated_at?: string
+        }
+        Update: {
+          current_count?: number
+          id?: string
+          new_titles?: Json
+          previous_count?: number
+          total_new?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       match_reminders: {
         Row: {
           away_team: string
