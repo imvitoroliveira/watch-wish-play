@@ -131,6 +131,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setIsAdmin(false);
     setCurrentClient(null);
     localStorage.removeItem('msc_admin_token');
+    localStorage.removeItem('msc_admin_creds');
     localStorage.removeItem('msc_client');
   };
 

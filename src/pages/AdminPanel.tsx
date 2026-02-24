@@ -35,7 +35,7 @@ const AdminPanel = () => {
   const [onlineLoading, setOnlineLoading] = useState(false);
 
   const loadOnlineUsers = async () => {
-    const adminAuth = sessionStorage.getItem('msc_admin_creds') || '';
+    const adminAuth = localStorage.getItem('msc_admin_creds') || '';
     if (!adminAuth) {
       console.log('[presence] skipping — no admin creds in session');
       return;
@@ -148,7 +148,7 @@ const AdminPanel = () => {
         data_expiracao: formatDate(c.e),
       }));
 
-      const adminAuth = sessionStorage.getItem('msc_admin_creds') || '';
+      const adminAuth = localStorage.getItem('msc_admin_creds') || '';
       const { data, error } = await supabase.functions.invoke('google-sheets-sync', {
         body: {
           spreadsheet_id: spreadsheetId.trim(),
@@ -188,7 +188,7 @@ const AdminPanel = () => {
     setLoginLoading(false);
     if (success) {
       setError('');
-      sessionStorage.setItem('msc_admin_creds', btoa(`${user.trim()}:${pass.trim()}`));
+      localStorage.setItem('msc_admin_creds', btoa(`${user.trim()}:${pass.trim()}`));
     } else {
       setError('Credenciais inválidas');
     }
