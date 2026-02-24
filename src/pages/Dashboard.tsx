@@ -12,6 +12,7 @@ import SupportTickets from '@/components/SupportTickets';
 import ExpirationBanner from '@/components/ExpirationBanner';
 import AgendaJogos from '@/components/AgendaJogos';
 import CineTrailerChallenge from '@/components/CineTrailerChallenge';
+import CatalogUpdates from '@/components/CatalogUpdates';
 
 import { supabase } from '@/integrations/supabase/client';
 
@@ -136,6 +137,12 @@ const Dashboard = () => {
           </motion.div>
         )}
 
+        {tab === 'updates' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <h2 className="text-2xl font-display text-foreground mb-4">ATUALIZAÇÕES DO CATÁLOGO</h2>
+            <CatalogUpdates />
+          </motion.div>
+        )}
 
         {tab === 'support' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
