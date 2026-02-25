@@ -206,16 +206,15 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const { url, content } = body;
 
-      // Clear previous catalog first
-      await supabase.from("m3u_catalog").upsert(
-        {
-          id: "00000000-0000-0000-0000-000000000001",
-          titles: [],
-          source_url: null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "id" }
-      );
+      // Get previous titles for diff BEFORE clearing
+      const { data: prevData } = await supabase
+        .from("m3u_catalog")
+        .select("titles")
+        .eq("id", "00000000-0000-0000-0000-000000000001")
+        .maybeSingle();
+
+      const previousTitles = new Set<string>((prevData?.titles as string[]) || []);
+      const previousCount = previousTitles.size;
 
       let titles: string[];
       let rawCount = 0;
@@ -238,6 +237,10 @@ Deno.serve(async (req) => {
 
       console.log(`Parsed ${rawCount} raw entries -> ${titles.length} unique titles`);
 
+      // Find new titles (diff)
+      const newTitles = titles.filter((t: string) => !previousTitles.has(t));
+      console.log(`Found ${newTitles.length} new titles (prev: ${previousCount}, now: ${titles.length})`);
+
       // Save to DB
       await supabase.from("m3u_catalog").upsert(
         {
@@ -249,8 +252,29 @@ Deno.serve(async (req) => {
         { onConflict: "id" }
       );
 
+      // Store update diff if there are new titles
+      if (newTitles.length > 0) {
+        await supabase.from("m3u_updates").insert({
+          new_titles: newTitles.slice(0, 500),
+          total_new: newTitles.length,
+          previous_count: previousCount,
+          current_count: titles.length,
+          updated_at: new Date().toISOString(),
+        });
+
+        // Cleanup old updates (keep last 30)
+        const { data: allUpdates } = await supabase
+          .from("m3u_updates")
+          .select("id")
+          .order("updated_at", { ascending: false });
+        if (allUpdates && allUpdates.length > 30) {
+          const toDelete = allUpdates.slice(30).map((u: any) => u.id);
+          await supabase.from("m3u_updates").delete().in("id", toDelete);
+        }
+      }
+
       return new Response(
-        JSON.stringify({ success: true, count: titles.length, raw_count: rawCount, titles }),
+        JSON.stringify({ success: true, count: titles.length, raw_count: rawCount, new_titles: newTitles.length, titles }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
