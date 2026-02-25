@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { TMDBMovie, tmdbImg, getMovieVideos, getMovieDetails, searchByTitles } from '@/lib/tmdb';
+import { TMDBMovie, tmdbImg, getMovieVideos, getMovieDetails, searchByTitles, getTrendingByType } from '@/lib/tmdb';
 import { GENRES } from '@/lib/tmdb';
+import { normalizeTitle } from '@/lib/m3u-parser';
 import { fetchRandomM3UTitles } from '@/lib/m3u-parser';
 import { Dices, Sparkles, Star, Play, Volume2, VolumeX, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -162,36 +163,84 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         return;
       }
 
-      // Shuffle for variety
-      for (let i = combined.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [combined[i], combined[j]] = [combined[j], combined[i]];
+      // 5. WEIGHTED ALGORITHM: 50% trending, 35% non-trending, 15% random
+      // Fetch TMDB trending to identify what's "buzzing"
+      const trendingList = await getTrendingByType(mediaType);
+      const trendingIds = new Set(trendingList.map(t => t.id));
+      const trendingNames = new Set(trendingList.map(t => normalizeTitle(t.title || t.name || '')));
+
+      // Split M3U-available pool into trending vs non-trending
+      const poolTrending: TMDBMovie[] = [];
+      const poolRegular: TMDBMovie[] = [];
+
+      for (const movie of combined) {
+        const isTrending = trendingIds.has(movie.id) ||
+          trendingNames.has(normalizeTitle(movie.title || movie.name || ''));
+        if (isTrending) {
+          poolTrending.push(movie);
+        } else {
+          poolRegular.push(movie);
+        }
       }
 
-      // 5. Pick winner
-      let winnerIndex = Math.floor(Math.random() * combined.length);
-      let winner = combined[winnerIndex];
+      console.log(`[CineRoleta] Pools: ${poolTrending.length} trending, ${poolRegular.length} regular (total ${combined.length})`);
 
-      // 5b. For TV: validate winner has seasons; if not, try others
+      // Weighted selection: pick which pool to draw from
+      const roll = Math.random();
+      let winner: TMDBMovie;
+      let winnerPool: TMDBMovie[];
+
+      if (roll < 0.50 && poolTrending.length > 0) {
+        // 50% chance: trending pool
+        winnerPool = poolTrending;
+      } else if (roll < 0.85 && poolRegular.length > 0) {
+        // 35% chance: non-trending pool
+        winnerPool = poolRegular;
+      } else {
+        // 15% chance: any from combined (current algorithm)
+        winnerPool = combined;
+      }
+
+      // Within the chosen pool, use popularity as weight
+      winnerPool.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+
+      // Weighted random within pool using popularity
+      const weights = winnerPool.map(m => Math.max(1, m.vote_average || 1));
+      const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+      let pickRoll = Math.random() * totalWeight;
+      let winnerIndex = 0;
+      for (let i = 0; i < weights.length; i++) {
+        pickRoll -= weights[i];
+        if (pickRoll <= 0) { winnerIndex = i; break; }
+      }
+      winner = winnerPool[winnerIndex];
+
+      // 5b. For TV: validate winner has seasons; if not, try others from winnerPool
       if (mediaType === 'tv') {
-        let validated = false;
         const tried = new Set<number>();
-        for (let attempt = 0; attempt < Math.min(5, combined.length); attempt++) {
-          const candidate = combined[(winnerIndex + attempt) % combined.length];
+        for (let attempt = 0; attempt < Math.min(5, winnerPool.length); attempt++) {
+          const candidate = winnerPool[(winnerIndex + attempt) % winnerPool.length];
           if (tried.has(candidate.id)) continue;
           tried.add(candidate.id);
           try {
             const details = await getMovieDetails(candidate.id, 'tv');
             if (details && (details.number_of_seasons > 0 || details.number_of_episodes > 0)) {
               winner = candidate;
-              winnerIndex = (winnerIndex + attempt) % combined.length;
-              validated = true;
               break;
             }
           } catch {}
         }
-        // If none validated, keep original winner as fallback
       }
+
+      // Find winner's index in combined for carousel animation
+      // Shuffle combined but ensure winner is placed at a known position
+      for (let i = combined.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [combined[i], combined[j]] = [combined[j], combined[i]];
+      }
+      // Ensure winner is in combined and find its index
+      const combinedWinnerIdx = combined.findIndex(m => m.id === winner.id);
+      const finalWinnerIndex = combinedWinnerIdx >= 0 ? combinedWinnerIdx : 0;
 
       // 6. Update display and wait for render
       setDisplayPool(combined);
@@ -209,7 +258,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
 
       const poolLen = combined.length;
       const deepOccurrence = 3;
-      const targetIdx = deepOccurrence * poolLen + winnerIndex;
+      const targetIdx = deepOccurrence * poolLen + finalWinnerIndex;
       const containerW = container.clientWidth;
       const finalX = -(targetIdx * STEP - (containerW / 2 - CARD_W / 2));
 
