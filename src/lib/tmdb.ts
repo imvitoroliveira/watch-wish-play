@@ -47,6 +47,12 @@ export const getTrending = async (): Promise<TMDBMovie[]> => {
   return data?.results || getMockMovies();
 };
 
+/** Fetch trending titles for a specific media type (movie or tv) */
+export const getTrendingByType = async (type: 'movie' | 'tv'): Promise<TMDBMovie[]> => {
+  const data = await fetchTMDB(`/trending/${type}/week`);
+  return (data?.results || []).map((m: any) => ({ ...m, media_type: type }));
+};
+
 export const getMovieDetails = async (id: number, type: 'movie' | 'tv' = 'movie') => {
   return fetchTMDB(`/${type}/${id}`);
 };
