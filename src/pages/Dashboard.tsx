@@ -13,6 +13,7 @@ import ExpirationBanner from '@/components/ExpirationBanner';
 import AgendaJogos from '@/components/AgendaJogos';
 import CineTrailerChallenge from '@/components/CineTrailerChallenge';
 import CatalogUpdates from '@/components/CatalogUpdates';
+import RenewalModal from '@/components/RenewalModal';
 
 import { supabase } from '@/integrations/supabase/client';
 
@@ -21,6 +22,23 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('home');
   const [selectedMovie, setSelectedMovie] = useState<TMDBMovie | null>(null);
+  const [showRenewalPopup, setShowRenewalPopup] = useState(false);
+
+  // Show renewal popup on first access when expiring soon
+  useEffect(() => {
+    if (isExpiringSoon) {
+      const dismissed = sessionStorage.getItem('renewal_popup_dismissed');
+      if (!dismissed) {
+        const timer = setTimeout(() => setShowRenewalPopup(true), 1500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isExpiringSoon]);
+
+  const dismissRenewalPopup = () => {
+    setShowRenewalPopup(false);
+    sessionStorage.setItem('renewal_popup_dismissed', '1');
+  };
 
   const {
     movies,
