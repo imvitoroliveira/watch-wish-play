@@ -1,11 +1,17 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { AlertTriangle, MessageCircle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { useState } from 'react';
+import RenewalModal from '@/components/RenewalModal';
 import { Button } from '@/components/ui/button';
 
 const ExpiredScreen = () => {
   const navigate = useNavigate();
-  const whatsappLink = 'https://wa.me/5500000000000?text=Olá! Gostaria de renovar minha assinatura.';
+  const [showRenewal, setShowRenewal] = useState(false);
+
+  // Try to get username from localStorage
+  const savedClient = localStorage.getItem('msc_client');
+  const username = savedClient ? JSON.parse(savedClient)?.u || '' : '';
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -22,12 +28,12 @@ const ExpiredScreen = () => {
           Sua assinatura expirou. Renove agora para continuar aproveitando todo o conteúdo do seu cinema pessoal.
         </p>
 
-        <a href={whatsappLink} target="_blank" rel="noopener noreferrer">
-          <Button className="w-full h-14 text-base font-semibold bg-green-600 hover:bg-green-700 text-primary-foreground mb-4">
-            <MessageCircle className="w-5 h-5 mr-2" />
-            Renovar via WhatsApp
-          </Button>
-        </a>
+        <Button
+          onClick={() => setShowRenewal(true)}
+          className="w-full h-14 text-base font-semibold bg-green-600 hover:bg-green-700 text-primary-foreground mb-4"
+        >
+          🔄 Renovar Assinatura
+        </Button>
 
         <button
           onClick={() => navigate('/')}
@@ -36,6 +42,10 @@ const ExpiredScreen = () => {
           ← Voltar ao login
         </button>
       </motion.div>
+
+      {showRenewal && (
+        <RenewalModal username={username} onClose={() => setShowRenewal(false)} />
+      )}
     </div>
   );
 };
