@@ -1,4 +1,4 @@
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, X, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import RenewalModal from '@/components/RenewalModal';
@@ -12,22 +12,29 @@ const ExpirationBanner = () => {
 
   return (
     <>
-      <div className="bg-accent/10 border-b border-accent/20 px-4 py-3">
+      <div className="bg-gradient-to-r from-accent/15 via-accent/10 to-primary/10 border-b border-accent/20 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-accent shrink-0" />
-            <p className="text-sm text-accent font-medium">
-              Sua assinatura vence em breve! Garanta sua renovação.
-            </p>
+            <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center animate-pulse">
+              <AlertTriangle className="w-4 h-4 text-accent" />
+            </div>
+            <div>
+              <p className="text-sm text-foreground font-semibold">
+                Sua assinatura vence em breve!
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Renove agora e não perca seu acesso
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setShowRenewal(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold bg-green-600 text-primary-foreground px-3 py-1.5 rounded-full hover:bg-green-700 transition-colors"
+              className="flex items-center gap-1 text-xs font-bold bg-accent text-accent-foreground px-4 py-2 rounded-full hover:brightness-110 transition-all shadow-lg shadow-accent/20"
             >
-              🔄 Renovar
+              Renovar agora <ChevronRight className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => setDismissed(true)} className="text-accent/60 hover:text-accent">
+            <button onClick={() => setDismissed(true)} className="text-muted-foreground hover:text-foreground p-1">
               <X className="w-4 h-4" />
             </button>
           </div>

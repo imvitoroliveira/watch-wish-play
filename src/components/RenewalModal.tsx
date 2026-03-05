@@ -1,4 +1,4 @@
-import { X, CreditCard, Clock } from 'lucide-react';
+import { X, Shield, Zap, Crown, Star, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface RenewalModalProps {
@@ -10,23 +10,35 @@ const plans = [
   {
     id: 'mensal',
     label: '1 Mês',
-    price: 'Mensal',
+    badge: null,
     url: 'https://pay.cakto.com.br/33r6n8m_738327',
-    icon: '📅',
+    icon: Zap,
+    color: 'from-blue-500 to-blue-600',
+    borderColor: 'border-blue-500/30',
+    bgGlow: 'bg-blue-500/5',
+    perks: ['Acesso completo', 'Suporte 24h'],
   },
   {
     id: 'trimestral',
     label: '3 Meses',
-    price: 'Trimestral',
+    badge: 'POPULAR',
     url: 'https://pay.cakto.com.br/3czpic5',
-    icon: '📆',
+    icon: Crown,
+    color: 'from-primary to-red-500',
+    borderColor: 'border-primary/40',
+    bgGlow: 'bg-primary/5',
+    perks: ['Acesso completo', 'Suporte prioritário', 'Economia garantida'],
   },
   {
     id: 'semestral',
     label: '6 Meses',
-    price: 'Semestral',
+    badge: 'MELHOR VALOR',
     url: 'https://pay.cakto.com.br/9mgrzzt',
-    icon: '🗓️',
+    icon: Star,
+    color: 'from-accent to-yellow-500',
+    borderColor: 'border-accent/40',
+    bgGlow: 'bg-accent/5',
+    perks: ['Acesso completo', 'Suporte VIP', 'Maior economia', 'Tranquilidade total'],
   },
 ];
 
@@ -42,56 +54,104 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
         onClick={onClose}
       >
         <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-6 border border-border"
+          initial={{ scale: 0.9, opacity: 0, y: 20 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.9, opacity: 0, y: 20 }}
+          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          className="bg-card rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-border"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-5 h-5 text-primary" />
-              <h2 className="text-lg font-display text-foreground">Escolha seu plano</h2>
-            </div>
-            <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          {/* Header com gradiente */}
+          <div className="relative px-6 pt-6 pb-4 bg-gradient-to-b from-primary/15 to-transparent">
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
               <X className="w-5 h-5" />
             </button>
+
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-xl font-display text-foreground tracking-wide">
+                  RENOVE SUA ASSINATURA
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Continue assistindo sem interrupções
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-accent/10 border border-accent/20 rounded-lg px-3 py-2 mt-3">
+              <p className="text-xs text-accent font-medium flex items-center gap-1.5">
+                ⚡ Ativação instantânea após o pagamento
+              </p>
+            </div>
           </div>
 
-          <p className="text-sm text-muted-foreground mb-4">
-            Selecione o plano de renovação. O pagamento é processado de forma segura e sua ativação é automática!
-          </p>
+          {/* Plans */}
+          <div className="px-6 pb-6 space-y-3 mt-2">
+            {plans.map((plan, index) => {
+              const Icon = plan.icon;
+              return (
+                <motion.button
+                  key={plan.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  onClick={() => handleSelectPlan(plan)}
+                  className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group`}
+                >
+                  {plan.badge && (
+                    <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.color} text-white`}>
+                      {plan.badge}
+                    </span>
+                  )}
 
-          <div className="space-y-3">
-            {plans.map((plan) => (
-              <button
-                key={plan.id}
-                onClick={() => handleSelectPlan(plan)}
-                className="w-full flex items-center gap-4 p-4 rounded-xl border border-border bg-background hover:bg-accent/5 hover:border-primary/30 transition-all text-left group"
-              >
-                <span className="text-2xl">{plan.icon}</span>
-                <div className="flex-1">
-                  <p className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                    {plan.label}
-                  </p>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> Plano {plan.price}
-                  </p>
-                </div>
-                <span className="text-xs font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                  Selecionar →
-                </span>
-              </button>
-            ))}
+                  <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${plan.color} flex items-center justify-center shrink-0 shadow-lg`}>
+                    <Icon className="w-5 h-5 text-white" />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-foreground text-base">
+                      {plan.label}
+                    </p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                      {plan.perks.map((perk) => (
+                        <span key={perk} className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-green-500" />
+                          {perk}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <span className="text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
+                    Assinar →
+                  </span>
+                </motion.button>
+              );
+            })}
           </div>
 
-          <p className="text-[11px] text-muted-foreground text-center mt-4">
-            Após o pagamento, sua conta será ativada automaticamente.
-          </p>
+          {/* Footer */}
+          <div className="px-6 pb-5 border-t border-border pt-3">
+            <div className="flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Shield className="w-3 h-3" /> Pagamento seguro
+              </span>
+              <span>•</span>
+              <span>Ativação automática</span>
+              <span>•</span>
+              <span>Sem burocracia</span>
+            </div>
+          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>
