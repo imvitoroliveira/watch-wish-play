@@ -181,6 +181,13 @@ const Dashboard = () => {
           availability={getAvailability(selectedMovie)}
         />
       )}
+
+      {showRenewalPopup && (
+        <RenewalModal
+          username={currentClient?.u || ''}
+          onClose={dismissRenewalPopup}
+        />
+      )}
     </div>
   );
 };
