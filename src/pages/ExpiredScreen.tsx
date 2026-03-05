@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Shield } from 'lucide-react';
 import { useState } from 'react';
 import RenewalModal from '@/components/RenewalModal';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,6 @@ const ExpiredScreen = () => {
   const navigate = useNavigate();
   const [showRenewal, setShowRenewal] = useState(false);
 
-  // Try to get username from localStorage
   const savedClient = localStorage.getItem('msc_client');
   const username = savedClient ? JSON.parse(savedClient)?.u || '' : '';
 
@@ -20,19 +19,33 @@ const ExpiredScreen = () => {
         animate={{ opacity: 1, scale: 1 }}
         className="text-center max-w-md"
       >
-        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-6">
+        <motion.div
+          animate={{ scale: [1, 1.05, 1] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-6"
+        >
           <AlertTriangle className="w-10 h-10 text-primary" />
-        </div>
-        <h1 className="text-4xl font-display text-foreground mb-3">ASSINATURA VENCIDA</h1>
-        <p className="text-muted-foreground mb-8">
-          Sua assinatura expirou. Renove agora para continuar aproveitando todo o conteúdo do seu cinema pessoal.
+        </motion.div>
+
+        <h1 className="text-4xl font-display text-foreground mb-3 tracking-wide">
+          ASSINATURA EXPIRADA
+        </h1>
+        <p className="text-muted-foreground mb-3">
+          Seu acesso foi suspenso. Renove agora e volte a aproveitar todo o conteúdo em poucos segundos.
         </p>
+
+        <div className="bg-accent/10 border border-accent/20 rounded-lg px-4 py-2 mb-6 inline-flex items-center gap-2">
+          <Shield className="w-4 h-4 text-accent" />
+          <span className="text-xs text-accent font-medium">
+            Ativação instantânea após o pagamento
+          </span>
+        </div>
 
         <Button
           onClick={() => setShowRenewal(true)}
-          className="w-full h-14 text-base font-semibold bg-green-600 hover:bg-green-700 text-primary-foreground mb-4"
+          className="w-full h-14 text-base font-bold bg-gradient-to-r from-primary to-red-500 hover:brightness-110 text-primary-foreground mb-4 shadow-lg shadow-primary/30 transition-all"
         >
-          🔄 Renovar Assinatura
+          🔄 Renovar Assinatura Agora
         </Button>
 
         <button
