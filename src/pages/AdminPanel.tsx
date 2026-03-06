@@ -39,6 +39,7 @@ const AdminPanel = () => {
   const [billingEnabled, setBillingEnabled] = useState(false);
   const [billingLoading, setBillingLoading] = useState(true);
   const [billingToggling, setBillingToggling] = useState(false);
+  const [clientFilter, setClientFilter] = useState<'todos' | 'ativos' | 'inativos'>('todos');
 
   useEffect(() => {
     const loadBilling = async () => {
@@ -470,8 +471,21 @@ const AdminPanel = () => {
             {/* Client list preview */}
             {clientList.length > 0 && (
               <div className="bg-card rounded-xl border border-border overflow-hidden">
-                <div className="p-4 border-b border-border">
+              <div className="p-4 border-b border-border flex items-center justify-between flex-wrap gap-3">
                   <h3 className="font-display text-lg text-foreground">LISTA DE CLIENTES</h3>
+                  <div className="flex items-center gap-2">
+                    {(['todos', 'ativos', 'inativos'] as const).map((filter) => (
+                      <Button
+                        key={filter}
+                        variant={clientFilter === filter ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setClientFilter(filter)}
+                        className={clientFilter === filter ? 'bg-accent text-accent-foreground' : 'border-border text-muted-foreground'}
+                      >
+                        {filter === 'todos' ? 'Todos' : filter === 'ativos' ? 'Ativos' : 'Inativos'}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 <div className="overflow-x-auto max-h-96 overflow-y-auto">
                   <table className="w-full text-sm">
@@ -483,7 +497,13 @@ const AdminPanel = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {clientList.slice(0, 50).map((c, i) => (
+                      {clientList
+                        .filter(c => {
+                          if (clientFilter === 'ativos') return c.t?.toLowerCase() === 'ativo';
+                          if (clientFilter === 'inativos') return c.t?.toLowerCase() !== 'ativo';
+                          return true;
+                        })
+                        .slice(0, 50).map((c, i) => (
                         <tr key={i} className="border-t border-border hover:bg-secondary/50 transition-colors">
                           <td className="p-3 text-foreground">{c.u}</td>
                           <td className="p-3 text-muted-foreground">{c.e || '-'}</td>
