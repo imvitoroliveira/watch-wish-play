@@ -4,10 +4,12 @@ import { AlertTriangle, Shield } from 'lucide-react';
 import { useState } from 'react';
 import RenewalModal from '@/components/RenewalModal';
 import { Button } from '@/components/ui/button';
+import { useBillingEnabled } from '@/hooks/useBillingEnabled';
 
 const ExpiredScreen = () => {
   const navigate = useNavigate();
   const [showRenewal, setShowRenewal] = useState(false);
+  const { billingEnabled } = useBillingEnabled();
 
   const savedClient = localStorage.getItem('msc_client');
   const username = savedClient ? JSON.parse(savedClient)?.u || '' : '';
@@ -34,19 +36,23 @@ const ExpiredScreen = () => {
           Seu acesso foi suspenso. Renove agora e volte a aproveitar todo o conteúdo em poucos segundos.
         </p>
 
-        <div className="bg-accent/10 border border-accent/20 rounded-lg px-4 py-2 mb-6 inline-flex items-center gap-2">
-          <Shield className="w-4 h-4 text-accent" />
-          <span className="text-xs text-accent font-medium">
-            Ativação instantânea após o pagamento
-          </span>
-        </div>
+        {billingEnabled && (
+          <>
+            <div className="bg-accent/10 border border-accent/20 rounded-lg px-4 py-2 mb-6 inline-flex items-center gap-2">
+              <Shield className="w-4 h-4 text-accent" />
+              <span className="text-xs text-accent font-medium">
+                Ativação instantânea após o pagamento
+              </span>
+            </div>
 
-        <Button
-          onClick={() => setShowRenewal(true)}
-          className="w-full h-14 text-base font-bold bg-gradient-to-r from-primary to-red-500 hover:brightness-110 text-primary-foreground mb-4 shadow-lg shadow-primary/30 transition-all"
-        >
-          🔄 Renovar Assinatura Agora
-        </Button>
+            <Button
+              onClick={() => setShowRenewal(true)}
+              className="w-full h-14 text-base font-bold bg-gradient-to-r from-primary to-red-500 hover:brightness-110 text-primary-foreground mb-4 shadow-lg shadow-primary/30 transition-all"
+            >
+              🔄 Renovar Assinatura Agora
+            </Button>
+          </>
+        )}
 
         <button
           onClick={() => navigate('/')}
@@ -56,7 +62,7 @@ const ExpiredScreen = () => {
         </button>
       </motion.div>
 
-      {showRenewal && (
+      {billingEnabled && showRenewal && (
         <RenewalModal username={username} onClose={() => setShowRenewal(false)} />
       )}
     </div>
