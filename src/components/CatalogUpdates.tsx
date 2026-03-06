@@ -185,7 +185,7 @@ const CatalogUpdates = ({ onMovieClick }: CatalogUpdatesProps) => {
     const entry = posterMap[title];
     if (!entry?.mediaType) return null;
     if (entry.mediaType === 'tv') {
-      return { label: 'Novos Episódios', icon: Tv, color: 'bg-accent text-accent-foreground' };
+      return { label: 'Novos Episódios', icon: Tv, color: 'bg-primary text-primary-foreground' };
     }
     return { label: 'Filme Adicionado', icon: Film, color: 'bg-primary text-primary-foreground' };
   };
@@ -245,12 +245,12 @@ const CatalogUpdates = ({ onMovieClick }: CatalogUpdatesProps) => {
                 {/* Media type badge */}
                 <div className="absolute top-1 left-1">
                   {badge ? (
-                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded flex items-center gap-0.5 ${badge.color}`}>
-                      <badge.icon className="w-2.5 h-2.5" />
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 ${badge.color}`}>
+                      <badge.icon className="w-3 h-3" />
                       {badge.label}
                     </span>
                   ) : (
-                    <span className="text-[9px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-bold bg-primary text-primary-foreground px-2 py-1 rounded">
                       NOVO
                     </span>
                   )}
