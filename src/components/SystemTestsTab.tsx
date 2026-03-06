@@ -141,14 +141,15 @@ export default function SystemTestsTab() {
               <Bell className="w-3.5 h-3.5 mr-1" />
               Testar PushAlert
             </Button>
-          <Button
-            onClick={runTests}
-            disabled={running}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-            {running ? 'Executando...' : 'Rodar Agora'}
-          </Button>
+            <Button
+              onClick={runTests}
+              disabled={running}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+              {running ? 'Executando...' : 'Rodar Agora'}
+            </Button>
+          </div>
         </div>
 
         {/* Latest run summary */}
