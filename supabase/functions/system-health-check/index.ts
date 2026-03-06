@@ -335,7 +335,7 @@ Deno.serve(async (req) => {
       }
 
       if (body.all) {
-        const { error } = await supabase.from("test_results").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        const { error } = await supabase.from("test_results").delete().gte("run_at", "1970-01-01T00:00:00Z");
         if (error) throw error;
 
         return new Response(JSON.stringify({ success: true, deleted: "all" }), {
