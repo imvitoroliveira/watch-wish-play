@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader2, Bell, Zap, Trash2 } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader2, Zap, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -58,6 +58,7 @@ export default function SystemTestsTab() {
   const [running, setRunning] = useState(false);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [liveSeconds, setLiveSeconds] = useState(0);
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
@@ -69,16 +70,17 @@ export default function SystemTestsTab() {
 
   useEffect(() => { loadRuns(); }, [loadRuns]);
 
+  // Live timer that ticks every second while running
+  useEffect(() => {
+    if (!running) return;
+    setLiveSeconds(0);
+    const interval = setInterval(() => setLiveSeconds(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [running]);
+
   const runTests = async () => {
     setRunning(true);
     try {
-      // Fire and forget — don't await completion
-      const runPromise = supabase.functions.invoke('system-health-check', {
-        method: 'POST',
-        body: { trigger: 'manual' },
-      });
-
-      // Poll for updates every 3s while running
       const pollInterval = setInterval(async () => {
         try {
           const { data } = await supabase.functions.invoke('system-health-check', { method: 'GET' });
@@ -86,50 +88,14 @@ export default function SystemTestsTab() {
         } catch {}
       }, 3000);
 
-      await runPromise;
+      await supabase.functions.invoke('system-health-check', {
+        method: 'POST',
+        body: { trigger: 'manual' },
+      });
+
       clearInterval(pollInterval);
-      await loadRuns(); // Final load
+      await loadRuns();
     } catch {} finally { setRunning(false); }
-  };
-
-  const testPushAlert = async () => {
-    try {
-      const adminAuth = localStorage.getItem('msc_admin_creds');
-      if (!adminAuth) { toast.error('Login de admin necessário'); return; }
-      
-      const { data } = await supabase.functions.invoke('push-test', {
-        body: { action: 'validate' },
-        headers: { 'x-admin-auth': adminAuth },
-      });
-      
-      if (data?.success) {
-        toast.success(`PushAlert OK! API status: ${data.api_status}`);
-      } else {
-        toast.error(`PushAlert falhou: ${data?.error || data?.api_response || 'Erro desconhecido'}`);
-      }
-    } catch (e) {
-      toast.error('Erro ao testar PushAlert');
-    }
-  };
-
-  const sendTestPush = async (username: string) => {
-    try {
-      const adminAuth = localStorage.getItem('msc_admin_creds');
-      if (!adminAuth) { toast.error('Login de admin necessário'); return; }
-      
-      const { data } = await supabase.functions.invoke('push-test', {
-        body: { action: 'send', username },
-        headers: { 'x-admin-auth': adminAuth },
-      });
-      
-      if (data?.success) {
-        toast.success(`Push enviado para ${username}!`);
-      } else {
-        toast.error(`Falha: ${JSON.stringify(data?.push_response || data?.error)}`);
-      }
-    } catch (e) {
-      toast.error('Erro ao enviar push de teste');
-    }
   };
 
   const getCategoryIcon = (cat: string) => {
@@ -153,6 +119,9 @@ export default function SystemTestsTab() {
   };
 
   const latestRun = runs[0];
+  const progressValue = latestRun
+    ? (latestRun.passed / Math.max(latestRun.total_tests, 1)) * 100
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -169,45 +138,47 @@ export default function SystemTestsTab() {
             </p>
           </div>
           <Button
-              onClick={runTests}
-              disabled={running}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-              {running ? 'Executando...' : 'Rodar Agora'}
-            </Button>
+            onClick={runTests}
+            disabled={running}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+          >
+            {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+            {running ? 'Executando...' : 'Rodar Agora'}
+          </Button>
         </div>
 
         {/* Latest run summary */}
-        {latestRun && (
+        {(latestRun || running) && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div className="bg-secondary/50 rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-foreground">
-                <AnimatedCounter value={latestRun.total_tests} />
+                <AnimatedCounter value={latestRun?.total_tests ?? 0} />
               </p>
               <p className="text-xs text-muted-foreground">Total</p>
             </div>
             <div className="bg-green-500/10 rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-green-400">
-                <AnimatedCounter value={latestRun.passed} />
+                <AnimatedCounter value={latestRun?.passed ?? 0} />
               </p>
               <p className="text-xs text-muted-foreground">Passou</p>
             </div>
-            <div className={`rounded-lg p-3 text-center ${latestRun.failed > 0 ? 'bg-red-500/10' : 'bg-secondary/50'}`}>
-              <p className={`text-2xl font-bold ${latestRun.failed > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
-                <AnimatedCounter value={latestRun.failed} />
+            <div className={`rounded-lg p-3 text-center ${(latestRun?.failed ?? 0) > 0 ? 'bg-red-500/10' : 'bg-secondary/50'}`}>
+              <p className={`text-2xl font-bold ${(latestRun?.failed ?? 0) > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                <AnimatedCounter value={latestRun?.failed ?? 0} />
               </p>
               <p className="text-xs text-muted-foreground">Falhou</p>
             </div>
             <div className="bg-secondary/50 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-accent">{(latestRun.duration_ms / 1000).toFixed(1)}s</p>
+              <p className="text-2xl font-bold text-accent">
+                {running ? `${liveSeconds}s` : `${((latestRun?.duration_ms ?? 0) / 1000).toFixed(1)}s`}
+              </p>
               <p className="text-xs text-muted-foreground">Duração</p>
             </div>
           </div>
         )}
 
-        {latestRun && (
-          <Progress value={(latestRun.passed / latestRun.total_tests) * 100} className="h-2" />
+        {(latestRun || running) && (
+          <Progress value={running ? undefined : progressValue} className={`h-2 ${running ? 'animate-pulse' : ''}`} />
         )}
       </div>
 

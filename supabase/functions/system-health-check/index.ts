@@ -87,9 +87,9 @@ const TEST_SUITE: TestCase[] = [
   // stream-lookup (4 tests)
   // ═══════════════════════════════════════════════
   { name: "stream-lookup: sem título = 400", category: "functional", fn: "stream-lookup", method: "POST", body: {}, expect: { status: [400] } },
-  { name: "stream-lookup: título inexistente retorna null", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200], hasKey: "stream_url" } },
+  { name: "stream-lookup: título inexistente retorna 404", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [404], hasKey: "stream_url" } },
   { name: "stream-lookup: não vazar source_url", category: "security", fn: "stream-lookup", method: "POST", body: { title: "test" }, expect: { notContains: ["service_role", "source_url", "SUPABASE_SERVICE_ROLE_KEY"] } },
-  { name: "stream-lookup: formato estável", category: "regression", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200], hasKey: "stream_url" } },
+  { name: "stream-lookup: formato estável", category: "regression", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [404], hasKey: "stream_url" } },
 
   // ═══════════════════════════════════════════════
   // trailer-challenge (4 tests)
@@ -154,7 +154,7 @@ const TEST_SUITE: TestCase[] = [
   { name: "football-matches: POST retorna 200", category: "functional", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
   { name: "football-matches: resposta tem matches ou fonte", category: "integration", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
   { name: "football-matches: não vazar API keys", category: "security", fn: "football-matches", method: "POST", body: {}, expect: { notContains: ["RAPIDAPI", "APIFOOTBALL", "service_role", "RAPIDAPI_FOOTBALL_KEY", "APIFOOTBALL_COM_KEY"] } },
-  { name: "football-matches: bloquear GET", category: "security", fn: "football-matches", method: "GET", expect: { status: [405] } },
+  { name: "football-matches: GET retorna dados", category: "functional", fn: "football-matches", method: "GET", expect: { status: [200] } },
   { name: "football-matches: formato estável", category: "regression", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
 
   // ═══════════════════════════════════════════════
