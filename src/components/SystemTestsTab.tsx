@@ -94,6 +94,7 @@ export default function SystemTestsTab() {
       await supabase.functions.invoke('system-health-check', {
         method: 'POST',
         body: { trigger: 'manual' },
+        headers: { 'x-admin-auth': adminAuth },
       });
 
       clearInterval(pollInterval);
@@ -109,6 +110,7 @@ export default function SystemTestsTab() {
       const { error } = await supabase.functions.invoke('system-health-check', {
         method: 'DELETE',
         body: { id },
+        headers: { 'x-admin-auth': adminAuth },
       });
 
       if (error) throw error;
@@ -129,6 +131,7 @@ export default function SystemTestsTab() {
       const { error } = await supabase.functions.invoke('system-health-check', {
         method: 'DELETE',
         body: { all: true },
+        headers: { 'x-admin-auth': adminAuth },
       });
 
       if (error) throw error;
