@@ -7,7 +7,32 @@ import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
-interface TestResult {
+function AnimatedCounter({ value, className }: { value: number; className?: string }) {
+  const [display, setDisplay] = useState(0);
+  const prevRef = useRef(0);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    const to = value;
+    if (from === to) { setDisplay(to); return; }
+    const duration = 600;
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(from + (to - from) * eased));
+      if (progress < 1) requestAnimationFrame(tick);
+      else prevRef.current = to;
+    };
+    requestAnimationFrame(tick);
+    prevRef.current = to;
+  }, [value]);
+
+  return <span className={className}>{display}</span>;
+}
+
+
   name: string;
   category: string;
   passed: boolean;
