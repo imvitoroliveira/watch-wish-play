@@ -273,86 +273,106 @@ function runCustomValidation(test: TestCase, data: any): string | null {
   return null; // passed
 }
 
-async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
+async function runTest(baseUrl: string, anonKey: string, test: TestCase, retries = 3): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
   const start = Date.now();
   const TIMEOUT_MS = 30000; // 30s timeout per test
-  try {
-    let url = `${baseUrl}/functions/v1/${test.fn}`;
-    if (test.method === "GET" && test.fn === "trailer-challenge") {
-      url += "?username=health_check_test";
-    }
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${anonKey}`,
-      "apikey": anonKey,
-      ...(test.headers || {}),
-    };
-
-    const opts: RequestInit = { method: test.method, headers };
-    if (test.body && test.method !== "GET") {
-      opts.body = JSON.stringify(test.body);
-    }
-
-    // Fetch with timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    opts.signal = controller.signal;
-
-    let res: Response;
+  for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      res = await fetch(url, opts);
-    } catch (fetchErr: any) {
+      let url = `${baseUrl}/functions/v1/${test.fn}`;
+      if (test.method === "GET" && test.fn === "trailer-challenge") {
+        url += "?username=health_check_test";
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${anonKey}`,
+        "apikey": anonKey,
+        ...(test.headers || {}),
+      };
+
+      const opts: RequestInit = { method: test.method, headers };
+      if (test.body && test.method !== "GET") {
+        opts.body = JSON.stringify(test.body);
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      opts.signal = controller.signal;
+
+      let res: Response;
+      try {
+        res = await fetch(url, opts);
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId);
+        if (fetchErr.name === "AbortError") {
+          return { name: test.name, category: test.category, passed: false, error: `Timeout (${TIMEOUT_MS / 1000}s) — função pode estar travada`, duration_ms: Date.now() - start };
+        }
+        throw fetchErr;
+      }
       clearTimeout(timeoutId);
-      if (fetchErr.name === "AbortError") {
-        return { name: test.name, category: test.category, passed: false, error: `Timeout (${TIMEOUT_MS / 1000}s) — função pode estar travada`, duration_ms: Date.now() - start };
+
+      // Rate limit detection — retry with exponential backoff
+      if (res.status === 429) {
+        const body = await res.text(); // consume body
+        if (attempt < retries) {
+          const delay = 2000 * attempt + Math.random() * 1000;
+          console.log(`[Rate limit] ${test.name} — attempt ${attempt}/${retries}, waiting ${Math.round(delay)}ms`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        return { name: test.name, category: test.category, passed: false, error: "Rate limit exceeded for function", duration_ms: Date.now() - start };
       }
-      throw fetchErr;
-    }
-    clearTimeout(timeoutId);
 
-    const text = await res.text();
-    let data: any;
-    try { data = JSON.parse(text); } catch { data = text; }
-    const duration_ms = Date.now() - start;
+      const text = await res.text();
+      let data: any;
+      try { data = JSON.parse(text); } catch { data = text; }
+      const duration_ms = Date.now() - start;
 
-    // Check status
-    if (test.expect.status && !test.expect.status.includes(res.status)) {
-      return { name: test.name, category: test.category, passed: false, error: `Status ${res.status}, esperado ${test.expect.status.join("|")}`, duration_ms };
-    }
-
-    // Check hasKey
-    if (test.expect.hasKey && typeof data === "object" && data !== null) {
-      if (!(test.expect.hasKey in data)) {
-        return { name: test.name, category: test.category, passed: false, error: `Chave "${test.expect.hasKey}" ausente na resposta`, duration_ms };
+      // Check status
+      if (test.expect.status && !test.expect.status.includes(res.status)) {
+        return { name: test.name, category: test.category, passed: false, error: `Status ${res.status}, esperado ${test.expect.status.join("|")}`, duration_ms };
       }
-    }
 
-    // Check notContains
-    if (test.expect.notContains) {
-      const lower = text.toLowerCase();
-      for (const forbidden of test.expect.notContains) {
-        if (lower.includes(forbidden.toLowerCase())) {
-          return { name: test.name, category: test.category, passed: false, error: `⚠️ VAZAMENTO: resposta contém "${forbidden}"`, duration_ms };
+      // Check hasKey
+      if (test.expect.hasKey && typeof data === "object" && data !== null) {
+        if (!(test.expect.hasKey in data)) {
+          return { name: test.name, category: test.category, passed: false, error: `Chave "${test.expect.hasKey}" ausente na resposta`, duration_ms };
         }
       }
-    }
 
-    // Custom deep validations
-    const customError = runCustomValidation(test, data);
-    if (customError) {
-      return { name: test.name, category: test.category, passed: false, error: customError, duration_ms };
-    }
+      // Check notContains
+      if (test.expect.notContains) {
+        const lower = text.toLowerCase();
+        for (const forbidden of test.expect.notContains) {
+          if (lower.includes(forbidden.toLowerCase())) {
+            return { name: test.name, category: test.category, passed: false, error: `⚠️ VAZAMENTO: resposta contém "${forbidden}"`, duration_ms };
+          }
+        }
+      }
 
-    // Warn on slow responses (>10s)
-    if (duration_ms > 10000) {
-      return { name: test.name, category: test.category, passed: true, error: `⚠️ Lento: ${Math.round(duration_ms / 1000)}s`, duration_ms };
-    }
+      // Custom deep validations
+      const customError = runCustomValidation(test, data);
+      if (customError) {
+        return { name: test.name, category: test.category, passed: false, error: customError, duration_ms };
+      }
 
-    return { name: test.name, category: test.category, passed: true, duration_ms };
-  } catch (e) {
-    return { name: test.name, category: test.category, passed: false, error: (e as Error).message, duration_ms: Date.now() - start };
+      // Warn on slow responses (>10s)
+      if (duration_ms > 10000) {
+        return { name: test.name, category: test.category, passed: true, error: `⚠️ Lento: ${Math.round(duration_ms / 1000)}s`, duration_ms };
+      }
+
+      return { name: test.name, category: test.category, passed: true, duration_ms };
+    } catch (e) {
+      if (attempt < retries) {
+        const delay = 1500 * attempt;
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      return { name: test.name, category: test.category, passed: false, error: (e as Error).message, duration_ms: Date.now() - start };
+    }
   }
+  return { name: test.name, category: test.category, passed: false, error: "Max retries exceeded", duration_ms: Date.now() - start };
 }
 
 function validateAdmin(req: Request): boolean {
@@ -467,9 +487,14 @@ Deno.serve(async (req) => {
 
       const rowId = inserted?.id;
 
-      // Run tests one by one, updating DB after each test
+      // Run tests one by one with small delay between calls to avoid rate limiting
       const results: any[] = [];
       for (let i = 0; i < TEST_SUITE.length; i++) {
+        // Small delay between tests to avoid Supabase rate limiting
+        if (i > 0 && i % 10 === 0) {
+          await new Promise(r => setTimeout(r, 500));
+        }
+
         const result = await runTest(baseUrl, anonKey, TEST_SUITE[i]);
         results.push(result);
 

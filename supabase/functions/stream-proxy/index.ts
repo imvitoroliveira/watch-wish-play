@@ -133,7 +133,16 @@ Deno.serve(async (req) => {
       headers["Range"] = rangeHeader;
     }
 
-    const streamRes = await fetch(playableUrl, { headers, redirect: "follow" });
+    let streamRes: Response;
+    try {
+      streamRes = await fetch(playableUrl, { headers, redirect: "follow" });
+    } catch (fetchErr: any) {
+      console.error(`[stream-proxy] Fetch error for ${playableUrl.substring(0, 80)}: ${fetchErr.message}`);
+      return new Response(
+        JSON.stringify({ error: `Upstream unreachable: ${fetchErr.message}` }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!streamRes.ok || !streamRes.body) {
       console.error(`[stream-proxy] Upstream HTTP ${streamRes.status} for ${playableUrl.substring(0, 80)}`);
@@ -141,7 +150,15 @@ Deno.serve(async (req) => {
       // If mp4 fails, try the original URL
       if (playableUrl !== streamUrl) {
         console.log(`[stream-proxy] Retrying with original URL...`);
-        const retryRes = await fetch(streamUrl, { headers, redirect: "follow" });
+        let retryRes: Response;
+        try {
+          retryRes = await fetch(streamUrl, { headers, redirect: "follow" });
+        } catch {
+          return new Response(
+            JSON.stringify({ error: `Upstream unreachable` }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
         if (retryRes.ok && retryRes.body) {
           const contentType = retryRes.headers.get("content-type") || "video/mp4";
           const contentLength = retryRes.headers.get("content-length");
