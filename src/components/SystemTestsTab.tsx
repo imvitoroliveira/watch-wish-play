@@ -168,17 +168,7 @@ export default function SystemTestsTab() {
               Micro-testes automatizados a cada 8h · Funcional, Segurança, Regressão e Integração
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={testPushAlert}
-              variant="outline"
-              size="sm"
-              className="text-xs"
-            >
-              <Bell className="w-3.5 h-3.5 mr-1" />
-              Testar PushAlert
-            </Button>
-            <Button
+          <Button
               onClick={runTests}
               disabled={running}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -186,7 +176,6 @@ export default function SystemTestsTab() {
               {running ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
               {running ? 'Executando...' : 'Rodar Agora'}
             </Button>
-          </div>
         </div>
 
         {/* Latest run summary */}
