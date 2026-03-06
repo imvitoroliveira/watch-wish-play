@@ -128,9 +128,19 @@ export default function SystemTestsTab() {
               MONITORAMENTO DO SISTEMA
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Micro-testes automatizados a cada 8h · Funcional, Segurança e Regressão
+              Micro-testes automatizados a cada 8h · Funcional, Segurança, Regressão e Integração
             </p>
           </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={testPushAlert}
+              variant="outline"
+              size="sm"
+              className="text-xs"
+            >
+              <Bell className="w-3.5 h-3.5 mr-1" />
+              Testar PushAlert
+            </Button>
           <Button
             onClick={runTests}
             disabled={running}
