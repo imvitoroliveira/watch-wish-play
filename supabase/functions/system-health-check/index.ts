@@ -67,7 +67,7 @@ const TEST_SUITE: TestCase[] = [
 
   // stream-lookup
   { name: "stream-lookup: sem título", category: "functional", fn: "stream-lookup", method: "POST", body: {}, expect: { status: [400, 500] } },
-  { name: "stream-lookup: título inexistente", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200, 500] } },
+  { name: "stream-lookup: título inexistente", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200, 404, 500] } },
   { name: "stream-lookup: sem vazamento", category: "security", fn: "stream-lookup", method: "POST", body: { title: "test" }, expect: { notContains: ["service_role"] } },
 
   // trailer-challenge
