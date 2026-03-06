@@ -86,11 +86,13 @@ const TEST_SUITE: TestCase[] = [
   { name: "tmdb-proxy: não vazar TMDB token", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/trending/movie/week" }, expect: { notContains: ["TMDB_API_TOKEN", "service_role", "eyJ"] } },
 
   // ═══════════════════════════════════════════════
-  // stream-proxy (4 tests)
+  // stream-proxy (6 tests) — now with SSRF prevention + rate limiting
   // ═══════════════════════════════════════════════
   { name: "stream-proxy: sem URL = 400", category: "functional", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
-  { name: "stream-proxy: URL inválida retorna erro", category: "functional", fn: "stream-proxy", method: "POST", body: { url: "http://invalid.example.test/x.mp4" }, expect: { status: [500, 502] } },
-  { name: "stream-proxy: não vazar segredos", category: "security", fn: "stream-proxy", method: "POST", body: {}, expect: { notContains: ["service_role", "source_url"] } },
+  { name: "stream-proxy: URL interna (localhost) = 403", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://localhost:8080/admin.mp4" }, expect: { status: [403] } },
+  { name: "stream-proxy: URL sem extensão mídia = 403", category: "security", fn: "stream-proxy", method: "POST", body: { url: "https://example.com/api/secrets" }, expect: { status: [403] } },
+  { name: "stream-proxy: URL mídia inexistente = 502", category: "functional", fn: "stream-proxy", method: "POST", body: { url: "http://invalid.example.test/x.mp4" }, expect: { status: [502] } },
+  { name: "stream-proxy: não vazar segredos", category: "security", fn: "stream-proxy", method: "POST", body: {}, expect: { notContains: ["service_role", "source_url", "SUPABASE_SERVICE_ROLE_KEY"] } },
   { name: "stream-proxy: formato erro estável", category: "regression", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
 
   // ═══════════════════════════════════════════════
@@ -128,10 +130,11 @@ const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   // n8n-proxy (6 tests) — now requires x-admin-auth
   // ═══════════════════════════════════════════════
-  { name: "n8n-proxy: sem auth = 401", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com", payload: { t: 1 } }, expect: { status: [401] } },
-  { name: "n8n-proxy: auth inválida = 401", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com", payload: { t: 1 } }, headers: { "x-admin-auth": "fake" }, expect: { status: [401] } },
+  { name: "n8n-proxy: sem auth = 401", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://hooks.n8n.cloud/test", payload: { t: 1 } }, expect: { status: [401] } },
+  { name: "n8n-proxy: auth inválida = 401", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://hooks.n8n.cloud/test", payload: { t: 1 } }, headers: { "x-admin-auth": "fake" }, expect: { status: [401] } },
+  { name: "n8n-proxy: domínio bloqueado = 403", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://evil.com/steal", payload: { t: 1 } }, headers: ADMIN_HDR, expect: { status: [403] } },
   { name: "n8n-proxy: sem webhook_url = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { payload: { test: true } }, headers: ADMIN_HDR, expect: { status: [400], hasKey: "error" } },
-  { name: "n8n-proxy: sem payload = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com" }, headers: ADMIN_HDR, expect: { status: [400], hasKey: "error" } },
+  { name: "n8n-proxy: sem payload = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://hooks.n8n.cloud/test" }, headers: ADMIN_HDR, expect: { status: [400], hasKey: "error" } },
   { name: "n8n-proxy: bloquear GET = 405", category: "security", fn: "n8n-proxy", method: "GET", expect: { status: [405] } },
   { name: "n8n-proxy: formato erro estável", category: "regression", fn: "n8n-proxy", method: "POST", body: {}, expect: { status: [401], hasKey: "error" } },
 
