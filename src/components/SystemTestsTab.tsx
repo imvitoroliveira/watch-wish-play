@@ -233,10 +233,7 @@ export default function SystemTestsTab() {
               className="text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={async () => {
                 if (!confirm('Limpar todo o histórico de execuções?')) return;
-                const ids = runs.map(r => r.id);
-                await supabase.from('test_results').delete().in('id', ids);
-                setRuns([]);
-                toast.success('Histórico limpo');
+                await clearRuns();
               }}
             >
               <Trash2 className="w-4 h-4 mr-1" />
@@ -291,9 +288,7 @@ export default function SystemTestsTab() {
                       className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        await supabase.from('test_results').delete().eq('id', run.id);
-                        setRuns(prev => prev.filter(r => r.id !== run.id));
-                        toast.success('Log removido');
+                        await deleteRun(run.id);
                       }}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
