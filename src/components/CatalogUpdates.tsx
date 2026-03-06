@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Sparkles, Package, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { searchMovies, TMDBMovie, tmdbImg } from '@/lib/tmdb';
-import { Skeleton } from '@/components/ui/skeleton';
 
 interface M3UUpdate {
   id: string;
@@ -16,110 +15,6 @@ interface M3UUpdate {
   current_count: number;
   updated_at: string;
 }
-
-const POSTER_CACHE = new Map<string, TMDBMovie[]>();
-
-const TitlePosterGrid = ({ titles }: { titles: string[] }) => {
-  const [movies, setMovies] = useState<TMDBMovie[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const cacheKey = titles.slice(0, 20).join('|');
-    if (POSTER_CACHE.has(cacheKey)) {
-      setMovies(POSTER_CACHE.get(cacheKey)!);
-      setLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    const fetchPosters = async () => {
-      const sampled = titles.slice(0, 20);
-      const results: TMDBMovie[] = [];
-      const seen = new Set<number>();
-
-      // Search in small batches to avoid hammering the API
-      for (let i = 0; i < sampled.length; i += 5) {
-        const batch = sampled.slice(i, i + 5);
-        const promises = batch.map(t => searchMovies(t).then(r => r[0]).catch(() => null));
-        const found = await Promise.all(promises);
-        for (const m of found) {
-          if (m && !seen.has(m.id) && m.poster_path) {
-            seen.add(m.id);
-            results.push(m);
-          }
-        }
-        if (cancelled) return;
-      }
-
-      if (!cancelled) {
-        POSTER_CACHE.set(cacheKey, results);
-        setMovies(results);
-        setLoading(false);
-      }
-    };
-
-    fetchPosters();
-    return () => { cancelled = true; };
-  }, [titles]);
-
-  if (loading) {
-    return (
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="aspect-[2/3] rounded-lg" />
-        ))}
-      </div>
-    );
-  }
-
-  if (movies.length === 0) {
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-72 overflow-y-auto">
-        {titles.map((title, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-secondary/50 text-sm text-foreground"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
-            <span className="truncate">{title}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 max-h-[400px] overflow-y-auto">
-      {movies.map((movie) => (
-        <motion.div
-          key={movie.id}
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="relative rounded-lg overflow-hidden bg-secondary/30 group"
-        >
-          <img
-            src={tmdbImg(movie.poster_path, 'w200')}
-            alt={movie.title || movie.name || ''}
-            className="w-full aspect-[2/3] object-cover"
-            loading="lazy"
-          />
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 pt-6">
-            <p className="text-[10px] sm:text-xs text-white font-medium leading-tight truncate">
-              {movie.title || movie.name}
-            </p>
-          </div>
-        </motion.div>
-      ))}
-      {titles.length > movies.length && (
-        <div className="aspect-[2/3] rounded-lg bg-secondary/50 flex items-center justify-center">
-          <p className="text-xs text-muted-foreground text-center px-2">
-            +{titles.length - movies.length} títulos
-          </p>
-        </div>
-      )}
-    </div>
-  );
-};
 
 const CatalogUpdates = () => {
   const [updates, setUpdates] = useState<M3UUpdate[]>([]);
@@ -197,6 +92,9 @@ const CatalogUpdates = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {update.current_count.toLocaleString('pt-BR')} títulos
+                    </Badge>
                     {isExpanded ? (
                       <ChevronUp className="w-4 h-4 text-muted-foreground" />
                     ) : (
@@ -215,8 +113,23 @@ const CatalogUpdates = () => {
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden"
                   >
-                    <CardContent className="pt-2 px-4 pb-4" onClick={(e) => e.stopPropagation()}>
-                      <TitlePosterGrid titles={titles} />
+                    <CardContent className="pt-2 px-4 pb-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-72 overflow-y-auto">
+                        {titles.map((title, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-secondary/50 text-sm text-foreground"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
+                            <span className="truncate">{title}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {update.total_new > titles.length && (
+                        <p className="text-xs text-muted-foreground mt-2 text-center">
+                          ...e mais {update.total_new - titles.length} títulos
+                        </p>
+                      )}
                     </CardContent>
                   </motion.div>
                 )}
