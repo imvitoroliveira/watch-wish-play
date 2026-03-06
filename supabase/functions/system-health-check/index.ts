@@ -201,10 +201,24 @@ Deno.serve(async (req) => {
 
       const baseUrl = Deno.env.get("SUPABASE_URL")!;
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
+      const runId = crypto.randomUUID().slice(0, 8) + "-" + Date.now().toString(36);
 
       const startTime = Date.now();
 
-      // Run tests in batches of 5 to avoid overwhelming
+      // Create initial row so polling can see progress
+      const { data: inserted } = await supabase.from("test_results").insert({
+        run_id: runId,
+        total_tests: TEST_SUITE.length,
+        passed: 0,
+        failed: 0,
+        duration_ms: 0,
+        trigger_type: triggerType,
+        results: [],
+      }).select("id").single();
+
+      const rowId = inserted?.id;
+
+      // Run tests in batches of 5, updating DB after each batch
       const results: any[] = [];
       for (let i = 0; i < TEST_SUITE.length; i += 5) {
         const batch = TEST_SUITE.slice(i, i + 5);
@@ -212,23 +226,23 @@ Deno.serve(async (req) => {
           batch.map(t => runTest(baseUrl, anonKey, t))
         );
         results.push(...batchResults);
+
+        // Update partial results in DB for real-time polling
+        if (rowId) {
+          const passed = results.filter(r => r.passed).length;
+          const failed = results.filter(r => !r.passed).length;
+          await supabase.from("test_results").update({
+            passed,
+            failed,
+            duration_ms: Date.now() - startTime,
+            results,
+          }).eq("id", rowId);
+        }
       }
 
       const totalDuration = Date.now() - startTime;
       const passed = results.filter(r => r.passed).length;
       const failed = results.filter(r => !r.passed).length;
-      const runId = crypto.randomUUID().slice(0, 8) + "-" + Date.now().toString(36);
-
-      // Store results
-      await supabase.from("test_results").insert({
-        run_id: runId,
-        total_tests: results.length,
-        passed,
-        failed,
-        duration_ms: totalDuration,
-        trigger_type: triggerType,
-        results: results,
-      });
 
       // Keep only last 50 runs
       const { data: old } = await supabase
