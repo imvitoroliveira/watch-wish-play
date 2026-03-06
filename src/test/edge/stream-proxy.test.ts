@@ -11,12 +11,12 @@ describe('Edge: stream-proxy', () => {
     expect(data.error).toContain('required');
   });
 
-  // 2. Funcional — URL inválida retorna erro upstream
-  it('deve retornar erro para URL inexistente', async () => {
+  // 2. Funcional — URL inválida retorna 502 (upstream error)
+  it('deve retornar 502 para URL inexistente', async () => {
     const { status } = await invokeEdge('stream-proxy', {
       body: { url: 'http://invalid.example.test/stream.mp4' },
     });
-    expect([500, 502]).toContain(status);
+    expect(status).toBe(502);
   });
 
   // 3. Segurança — não expõe headers internos
@@ -24,6 +24,7 @@ describe('Edge: stream-proxy', () => {
     const { data } = await invokeEdge('stream-proxy', { body: {} });
     const text = JSON.stringify(data);
     expect(text).not.toContain('service_role');
+    expect(text).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
   // 4. Regressão

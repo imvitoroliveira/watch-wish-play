@@ -12,12 +12,12 @@ describe('Edge: trailer-challenge', () => {
     expect(data.month).toBeDefined();
   });
 
-  // 2. Funcional — ação inválida
-  it('POST com ação desconhecida deve retornar 400/405', async () => {
+  // 2. Funcional — ação inválida retorna 400
+  it('POST com ação desconhecida deve retornar 400', async () => {
     const { status } = await invokeEdge('trailer-challenge', {
       body: { username: 'test', action: 'invalid_action' },
     });
-    expect([400, 405]).toContain(status);
+    expect(status).toBe(400);
   });
 
   // 3. Segurança — sem vazamento
@@ -27,6 +27,7 @@ describe('Edge: trailer-challenge', () => {
     const text = await res.text();
     expect(text).not.toContain('PUSHALERT');
     expect(text).not.toContain('service_role');
+    expect(text).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
   // 4. Regressão
