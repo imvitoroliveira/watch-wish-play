@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
         if (found) {
           try {
             if (pushAlertKey) {
-              await fetch('https://api.pushalert.co/rest/v1/send', {
+              await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
                 method: 'POST',
                 headers: {
                   'Authorization': `api_key=${pushAlertKey}`,
@@ -114,6 +114,9 @@ Deno.serve(async (req) => {
                   title: '🎬 Conteúdo Disponível!',
                   message: `"${alert.movie_title}" já está disponível no catálogo!`,
                   url: '/',
+                  attributes: {
+                    username: alert.client_username,
+                  },
                 }),
               });
             }
