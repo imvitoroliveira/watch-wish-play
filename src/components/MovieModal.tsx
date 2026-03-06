@@ -94,13 +94,16 @@ const MovieModal = ({ movie, onClose, isFavorite, isWatched, onToggleFavorite, o
           {/* Media area */}
           <div className="relative aspect-video bg-secondary overflow-hidden">
             {showTrailer && trailerKey ? (
-              <iframe
-                src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
-                className="w-full h-full"
-                allow="autoplay; encrypted-media"
-                allowFullScreen
-                title={`Trailer - ${title}`}
-              />
+              <div className="relative w-full h-full overflow-hidden">
+                <iframe
+                  src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0&modestbranding=1&showinfo=0&controls=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1`}
+                  className="w-full h-full scale-[1.04]"
+                  style={{ border: 'none' }}
+                  allow="autoplay; encrypted-media"
+                  allowFullScreen={false}
+                  title={`Trailer - ${title}`}
+                />
+              </div>
             ) : (
               <>
                 <img
