@@ -15,6 +15,7 @@ import CineTrailerChallenge from '@/components/CineTrailerChallenge';
 import CatalogUpdates from '@/components/CatalogUpdates';
 import RenewalModal from '@/components/RenewalModal';
 import { useBillingEnabled } from '@/hooks/useBillingEnabled';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 import { supabase } from '@/integrations/supabase/client';
 
@@ -25,6 +26,7 @@ const Dashboard = () => {
   const [selectedMovie, setSelectedMovie] = useState<TMDBMovie | null>(null);
   const [showRenewalPopup, setShowRenewalPopup] = useState(false);
   const { billingEnabled } = useBillingEnabled();
+  usePushNotifications();
 
   // Show renewal popup on first access when expiring soon
   useEffect(() => {
