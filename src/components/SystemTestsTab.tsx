@@ -120,7 +120,7 @@ export default function SystemTestsTab() {
 
   const latestRun = runs[0];
   const progressValue = latestRun
-    ? (latestRun.passed / Math.max(latestRun.total_tests, 1)) * 100
+    ? ((latestRun.passed + latestRun.failed) / Math.max(latestRun.total_tests, 1)) * 100
     : 0;
 
   return (
