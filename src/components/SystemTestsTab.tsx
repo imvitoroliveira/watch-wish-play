@@ -98,6 +98,46 @@ export default function SystemTestsTab() {
     } catch {} finally { setRunning(false); }
   };
 
+  const deleteRun = async (id: string) => {
+    const previousRuns = runs;
+    setRuns((prev) => prev.filter((run) => run.id !== id));
+
+    try {
+      const { error } = await supabase.functions.invoke('system-health-check', {
+        method: 'DELETE',
+        body: { id },
+      });
+
+      if (error) throw error;
+      toast.success('Log removido');
+    } catch {
+      setRuns(previousRuns);
+      toast.error('Falha ao excluir log');
+    } finally {
+      await loadRuns();
+    }
+  };
+
+  const clearRuns = async () => {
+    const previousRuns = runs;
+    setRuns([]);
+
+    try {
+      const { error } = await supabase.functions.invoke('system-health-check', {
+        method: 'DELETE',
+        body: { all: true },
+      });
+
+      if (error) throw error;
+      toast.success('Histórico limpo');
+    } catch {
+      setRuns(previousRuns);
+      toast.error('Falha ao limpar histórico');
+    } finally {
+      await loadRuns();
+    }
+  };
+
   const getCategoryIcon = (cat: string) => {
     switch (cat) {
       case 'functional': return <Bug className="w-3.5 h-3.5" />;
