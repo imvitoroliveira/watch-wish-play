@@ -111,7 +111,7 @@ Deno.serve(async (req) => {
                             req.headers.get("x-gateway-signature") ||
                             req.headers.get("x-webhook-signature");
 
-          if (!verifySignature(rawBody, signature, caktoSecret)) {
+          if (!(await verifySignature(rawBody, signature, caktoSecret))) {
             console.error("[Cakto Webhook] Invalid signature — possible spoofing attempt");
             return new Response(JSON.stringify({ error: "Invalid signature" }), {
               status: 401,
