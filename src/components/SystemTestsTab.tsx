@@ -193,15 +193,21 @@ export default function SystemTestsTab() {
         {latestRun && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div className="bg-secondary/50 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-foreground">{latestRun.total_tests}</p>
+              <p className="text-2xl font-bold text-foreground">
+                <AnimatedCounter value={latestRun.total_tests} />
+              </p>
               <p className="text-xs text-muted-foreground">Total</p>
             </div>
             <div className="bg-green-500/10 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-green-400">{latestRun.passed}</p>
+              <p className="text-2xl font-bold text-green-400">
+                <AnimatedCounter value={latestRun.passed} />
+              </p>
               <p className="text-xs text-muted-foreground">Passou</p>
             </div>
             <div className={`rounded-lg p-3 text-center ${latestRun.failed > 0 ? 'bg-red-500/10' : 'bg-secondary/50'}`}>
-              <p className={`text-2xl font-bold ${latestRun.failed > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>{latestRun.failed}</p>
+              <p className={`text-2xl font-bold ${latestRun.failed > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                <AnimatedCounter value={latestRun.failed} />
+              </p>
               <p className="text-xs text-muted-foreground">Falhou</p>
             </div>
             <div className="bg-secondary/50 rounded-lg p-3 text-center">
