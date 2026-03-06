@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader2, Bell, Zap } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader2, Bell, Zap, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -224,7 +224,26 @@ export default function SystemTestsTab() {
 
       {/* Run history */}
       <div className="bg-card rounded-xl border border-border p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-4">Histórico de Execuções</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-foreground">Histórico de Execuções</h3>
+          {runs.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={async () => {
+                if (!confirm('Limpar todo o histórico de execuções?')) return;
+                const ids = runs.map(r => r.id);
+                await supabase.from('test_results').delete().in('id', ids);
+                setRuns([]);
+                toast.success('Histórico limpo');
+              }}
+            >
+              <Trash2 className="w-4 h-4 mr-1" />
+              Limpar tudo
+            </Button>
+          )}
+        </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
@@ -265,7 +284,22 @@ export default function SystemTestsTab() {
                       </p>
                     </div>
                   </div>
-                  <span className="text-muted-foreground text-xs">{expandedRun === run.id ? '▲' : '▼'}</span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await supabase.from('test_results').delete().eq('id', run.id);
+                        setRuns(prev => prev.filter(r => r.id !== run.id));
+                        toast.success('Log removido');
+                      }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                    <span className="text-muted-foreground text-xs">{expandedRun === run.id ? '▲' : '▼'}</span>
+                  </div>
                 </button>
 
                 <AnimatePresence>
