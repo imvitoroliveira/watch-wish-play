@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Search, Heart, Dices, HelpCircle, LogOut, Trophy, Menu, Film, Sparkles } from 'lucide-react';
@@ -6,6 +6,8 @@ import eagleLogo from '@/assets/eagle-logo.png';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { supabase } from '@/integrations/supabase/client';
+import { getLastSeenDate } from '@/components/CatalogUpdates';
 
 export type Tab = 'home' | 'watchlist' | 'roleta' | 'jogos' | 'updates' | 'support';
 
@@ -30,6 +32,46 @@ const DashboardHeader = ({ tab, setTab, searchQuery, setSearchQuery }: Dashboard
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [hasNewUpdates, setHasNewUpdates] = useState(false);
+
+  // Check for unseen updates
+  useEffect(() => {
+    const checkUpdates = async () => {
+      const lastSeen = getLastSeenDate();
+      const { data } = await supabase
+        .from('m3u_updates')
+        .select('updated_at')
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        const latestUpdate = data[0].updated_at;
+        if (!lastSeen || new Date(latestUpdate) > new Date(lastSeen)) {
+          setHasNewUpdates(true);
+        }
+      }
+    };
+    checkUpdates();
+  }, []);
+
+  // Clear badge when navigating to updates tab
+  useEffect(() => {
+    if (tab === 'updates') {
+      setHasNewUpdates(false);
+    }
+  }, [tab]);
+
+  const renderBadge = (tabId: Tab) => {
+    if (tabId === 'updates' && hasNewUpdates) {
+      return (
+        <span className="relative flex h-2 w-2 ml-1">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+        </span>
+      );
+    }
+    return null;
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-md border-b border-border">
@@ -63,7 +105,7 @@ const DashboardHeader = ({ tab, setTab, searchQuery, setSearchQuery }: Dashboard
                           : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
                       }`}
                     >
-                      {t.icon} {t.label}
+                      {t.icon} {t.label} {renderBadge(t.id)}
                     </button>
                   ))}
                 </nav>
@@ -127,7 +169,7 @@ const DashboardHeader = ({ tab, setTab, searchQuery, setSearchQuery }: Dashboard
                     : 'text-muted-foreground hover:text-foreground hover:bg-card'
                 }`}
               >
-                {t.icon} {t.label}
+                {t.icon} {t.label} {renderBadge(t.id)}
               </button>
             ))}
           </div>
