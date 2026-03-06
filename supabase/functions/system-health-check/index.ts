@@ -325,6 +325,39 @@ Deno.serve(async (req) => {
       });
     }
 
+    // DELETE = remove one run or clear all
+    if (req.method === "DELETE") {
+      let body: { id?: string; all?: boolean } = {};
+      try {
+        body = await req.json();
+      } catch {
+        body = {};
+      }
+
+      if (body.all) {
+        const { error } = await supabase.from("test_results").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        if (error) throw error;
+
+        return new Response(JSON.stringify({ success: true, deleted: "all" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!body.id) {
+        return new Response(JSON.stringify({ error: "Missing id" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error } = await supabase.from("test_results").delete().eq("id", body.id);
+      if (error) throw error;
+
+      return new Response(JSON.stringify({ success: true, id: body.id }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // POST = run tests
     if (req.method === "POST") {
       let triggerType = "manual";
