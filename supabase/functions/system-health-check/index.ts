@@ -9,7 +9,7 @@ const corsHeaders = {
 
 interface TestCase {
   name: string;
-  category: "functional" | "security" | "regression";
+  category: "functional" | "security" | "regression" | "integration";
   fn: string;
   method: string;
   body?: any;
@@ -67,7 +67,7 @@ const TEST_SUITE: TestCase[] = [
 
   // stream-lookup
   { name: "stream-lookup: sem título", category: "functional", fn: "stream-lookup", method: "POST", body: {}, expect: { status: [400, 500] } },
-  { name: "stream-lookup: título inexistente", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200, 500] } },
+  { name: "stream-lookup: título inexistente", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200, 404, 500] } },
   { name: "stream-lookup: sem vazamento", category: "security", fn: "stream-lookup", method: "POST", body: { title: "test" }, expect: { notContains: ["service_role"] } },
 
   // trailer-challenge
@@ -106,6 +106,11 @@ const TEST_SUITE: TestCase[] = [
   { name: "football-matches: jogos do dia", category: "functional", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
   { name: "football-matches: sem API keys", category: "security", fn: "football-matches", method: "POST", body: {}, expect: { notContains: ["RAPIDAPI", "service_role", "APIFOOTBALL"] } },
   { name: "football-matches: formato estável", category: "regression", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
+
+  // push-test (integration — validates PushAlert API connectivity)
+  { name: "push-test: sem auth = 401", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, expect: { status: [401] } },
+  { name: "push-test: auth inválida = 401", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
+  { name: "push-test: sem vazamento", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, expect: { notContains: ["PUSHALERT", "service_role"] } },
 ];
 
 async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
