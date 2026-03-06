@@ -4,6 +4,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 // In-memory rate limiting (per edge function instance)
@@ -38,7 +39,17 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const { action, username, password } = await req.json();
+    let payload: { action?: string; username?: string; password?: string };
+    try {
+      payload = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ success: false, reason: 'invalid_json' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { action, username, password } = payload;
 
     // Rate limiting by IP
     const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';

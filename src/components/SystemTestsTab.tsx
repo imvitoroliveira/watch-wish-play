@@ -98,6 +98,46 @@ export default function SystemTestsTab() {
     } catch {} finally { setRunning(false); }
   };
 
+  const deleteRun = async (id: string) => {
+    const previousRuns = runs;
+    setRuns((prev) => prev.filter((run) => run.id !== id));
+
+    try {
+      const { error } = await supabase.functions.invoke('system-health-check', {
+        method: 'DELETE',
+        body: { id },
+      });
+
+      if (error) throw error;
+      toast.success('Log removido');
+    } catch {
+      setRuns(previousRuns);
+      toast.error('Falha ao excluir log');
+    } finally {
+      await loadRuns();
+    }
+  };
+
+  const clearRuns = async () => {
+    const previousRuns = runs;
+    setRuns([]);
+
+    try {
+      const { error } = await supabase.functions.invoke('system-health-check', {
+        method: 'DELETE',
+        body: { all: true },
+      });
+
+      if (error) throw error;
+      toast.success('Histórico limpo');
+    } catch {
+      setRuns(previousRuns);
+      toast.error('Falha ao limpar histórico');
+    } finally {
+      await loadRuns();
+    }
+  };
+
   const getCategoryIcon = (cat: string) => {
     switch (cat) {
       case 'functional': return <Bug className="w-3.5 h-3.5" />;
@@ -120,7 +160,7 @@ export default function SystemTestsTab() {
 
   const latestRun = runs[0];
   const progressValue = latestRun
-    ? (latestRun.passed / Math.max(latestRun.total_tests, 1)) * 100
+    ? ((latestRun.passed + latestRun.failed) / Math.max(latestRun.total_tests, 1)) * 100
     : 0;
 
   return (
@@ -178,7 +218,7 @@ export default function SystemTestsTab() {
         )}
 
         {(latestRun || running) && (
-          <Progress value={running ? undefined : progressValue} className={`h-2 ${running ? 'animate-pulse' : ''}`} />
+          <Progress value={progressValue} className="h-2" />
         )}
       </div>
 
@@ -193,10 +233,7 @@ export default function SystemTestsTab() {
               className="text-destructive hover:text-destructive hover:bg-destructive/10"
               onClick={async () => {
                 if (!confirm('Limpar todo o histórico de execuções?')) return;
-                const ids = runs.map(r => r.id);
-                await supabase.from('test_results').delete().in('id', ids);
-                setRuns([]);
-                toast.success('Histórico limpo');
+                await clearRuns();
               }}
             >
               <Trash2 className="w-4 h-4 mr-1" />
@@ -251,9 +288,7 @@ export default function SystemTestsTab() {
                       className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                       onClick={async (e) => {
                         e.stopPropagation();
-                        await supabase.from('test_results').delete().eq('id', run.id);
-                        setRuns(prev => prev.filter(r => r.id !== run.id));
-                        toast.success('Log removido');
+                        await deleteRun(run.id);
                       }}
                     >
                       <Trash2 className="w-3.5 h-3.5" />

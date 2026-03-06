@@ -4,7 +4,7 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-admin-auth, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
 };
 
 interface TestCase {
@@ -321,6 +321,45 @@ Deno.serve(async (req) => {
         .limit(20);
 
       return new Response(JSON.stringify({ results: results || [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // DELETE = remove one run or clear all
+    if (req.method === "DELETE") {
+      const reqUrl = new URL(req.url);
+      let body: { id?: string; all?: boolean } = {};
+      try {
+        body = await req.json();
+      } catch {
+        body = {};
+      }
+
+      const allFromQuery = reqUrl.searchParams.get("all") === "true";
+      const idFromQuery = reqUrl.searchParams.get("id") || undefined;
+      const shouldDeleteAll = body.all || allFromQuery;
+      const id = body.id || idFromQuery;
+
+      if (shouldDeleteAll) {
+        const { error } = await supabase.from("test_results").delete().gte("run_at", "1970-01-01T00:00:00Z");
+        if (error) throw error;
+
+        return new Response(JSON.stringify({ success: true, deleted: "all" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!id) {
+        return new Response(JSON.stringify({ error: "Missing id" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { error } = await supabase.from("test_results").delete().eq("id", id);
+      if (error) throw error;
+
+      return new Response(JSON.stringify({ success: true, id }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
