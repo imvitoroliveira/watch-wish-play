@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Package, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sparkles, Package, Clock, ChevronDown, ChevronUp, Film } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { searchMovies, tmdbImg, TMDBMovie } from '@/lib/tmdb';
 
 interface M3UUpdate {
   id: string;
@@ -16,10 +17,41 @@ interface M3UUpdate {
   updated_at: string;
 }
 
+// Mark updates as seen
+export function markUpdatesSeen() {
+  localStorage.setItem('catalog_updates_last_seen', new Date().toISOString());
+}
+
+// Check if there are unseen updates
+export function getLastSeenDate(): string | null {
+  return localStorage.getItem('catalog_updates_last_seen');
+}
+
+const POSTER_CACHE_KEY = 'catalog_poster_cache';
+const POSTER_CACHE_TTL = 24 * 60 * 60 * 1000; // 24h
+
+function getPosterCache(): Record<string, { poster: string | null; ts: number }> {
+  try {
+    return JSON.parse(localStorage.getItem(POSTER_CACHE_KEY) || '{}');
+  } catch { return {}; }
+}
+
+function setPosterCache(cache: Record<string, { poster: string | null; ts: number }>) {
+  // Keep max 200 entries
+  const entries = Object.entries(cache);
+  if (entries.length > 200) {
+    entries.sort((a, b) => b[1].ts - a[1].ts);
+    cache = Object.fromEntries(entries.slice(0, 200));
+  }
+  localStorage.setItem(POSTER_CACHE_KEY, JSON.stringify(cache));
+}
+
 const CatalogUpdates = () => {
   const [updates, setUpdates] = useState<M3UUpdate[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [posterMap, setPosterMap] = useState<Record<string, string | null>>({});
+  const [loadingPosters, setLoadingPosters] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -32,7 +64,65 @@ const CatalogUpdates = () => {
       setLoading(false);
     };
     load();
+    // Mark as seen
+    markUpdatesSeen();
   }, []);
+
+  // Fetch posters for expanded update
+  const fetchPosters = useCallback(async (titles: string[], updateId: string) => {
+    if (loadingPosters === updateId) return;
+    setLoadingPosters(updateId);
+
+    const cache = getPosterCache();
+    const now = Date.now();
+    const newMap: Record<string, string | null> = { ...posterMap };
+    const toFetch: string[] = [];
+
+    // Check cache first
+    for (const title of titles.slice(0, 30)) {
+      const cached = cache[title];
+      if (cached && (now - cached.ts) < POSTER_CACHE_TTL) {
+        newMap[title] = cached.poster;
+      } else {
+        toFetch.push(title);
+      }
+    }
+
+    setPosterMap(newMap);
+
+    // Fetch uncached in batches of 5
+    for (let i = 0; i < toFetch.length; i += 5) {
+      const batch = toFetch.slice(i, i + 5);
+      const results = await Promise.allSettled(
+        batch.map(async (title) => {
+          const movies = await searchMovies(title);
+          const match = movies.find((m: TMDBMovie) => m.poster_path);
+          return { title, poster: match?.poster_path || null };
+        })
+      );
+
+      const updatedCache = getPosterCache();
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          const { title, poster } = result.value;
+          newMap[title] = poster;
+          updatedCache[title] = { poster, ts: now };
+        }
+      }
+      setPosterCache(updatedCache);
+      setPosterMap({ ...newMap });
+    }
+
+    setLoadingPosters(null);
+  }, [posterMap, loadingPosters]);
+
+  const handleExpand = (update: M3UUpdate) => {
+    const isExpanded = expandedId === update.id;
+    setExpandedId(isExpanded ? null : update.id);
+    if (!isExpanded && update.new_titles?.length > 0) {
+      fetchPosters(update.new_titles, update.id);
+    }
+  };
 
   if (loading) {
     return (
@@ -73,7 +163,7 @@ const CatalogUpdates = () => {
           >
             <Card
               className="cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => setExpandedId(isExpanded ? null : update.id)}
+              onClick={() => handleExpand(update)}
             >
               <CardHeader className="pb-2 pt-4 px-4">
                 <div className="flex items-center justify-between">
@@ -93,7 +183,7 @@ const CatalogUpdates = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="secondary" className="text-xs">
-                      {update.current_count.toLocaleString('pt-BR')} títulos
+                      +{update.total_new}
                     </Badge>
                     {isExpanded ? (
                       <ChevronUp className="w-4 h-4 text-muted-foreground" />
@@ -114,20 +204,52 @@ const CatalogUpdates = () => {
                     className="overflow-hidden"
                   >
                     <CardContent className="pt-2 px-4 pb-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-72 overflow-y-auto">
-                        {titles.map((title, i) => (
-                          <div
-                            key={i}
-                            className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-secondary/50 text-sm text-foreground"
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
-                            <span className="truncate">{title}</span>
-                          </div>
-                        ))}
+                      {/* Poster grid */}
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 max-h-[500px] overflow-y-auto pr-1">
+                        {titles.slice(0, 30).map((title, i) => {
+                          const poster = posterMap[title];
+                          return (
+                            <motion.div
+                              key={i}
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ delay: i * 0.02 }}
+                              className="flex flex-col items-center gap-1.5"
+                            >
+                              <div className="w-full aspect-[2/3] rounded-lg overflow-hidden bg-secondary/50 relative">
+                                {poster ? (
+                                  <img
+                                    src={tmdbImg(poster, 'w200')}
+                                    alt={title}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                  />
+                                ) : loadingPosters === update.id ? (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+                                  </div>
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <Film className="w-8 h-8 text-muted-foreground/40" />
+                                  </div>
+                                )}
+                                {/* NEW badge */}
+                                <div className="absolute top-1 left-1">
+                                  <span className="text-[9px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
+                                    NOVO
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="text-[11px] text-foreground text-center leading-tight line-clamp-2 w-full">
+                                {title}
+                              </p>
+                            </motion.div>
+                          );
+                        })}
                       </div>
-                      {update.total_new > titles.length && (
-                        <p className="text-xs text-muted-foreground mt-2 text-center">
-                          ...e mais {update.total_new - titles.length} títulos
+                      {update.total_new > 30 && (
+                        <p className="text-xs text-muted-foreground mt-3 text-center">
+                          ...e mais {update.total_new - 30} títulos adicionados
                         </p>
                       )}
                     </CardContent>
