@@ -166,8 +166,62 @@ const TEST_SUITE: TestCase[] = [
   { name: "push-test: bloquear GET = 405", category: "security", fn: "push-test", method: "GET", expect: { status: [405] } },
 ];
 
+// Custom deep validations beyond simple status/key checks
+function runCustomValidation(test: TestCase, data: any): string | null {
+  // parse-m3u: catalog must have >100 titles
+  if (test.name === "parse-m3u: catálogo tem >100 títulos") {
+    const total = data?.total || (Array.isArray(data?.titles) ? data.titles.length : 0);
+    if (total < 100) return `Catálogo tem apenas ${total} títulos (mínimo: 100). O auto-refresh pode estar falhando.`;
+  }
+
+  // parse-m3u: must have recent updated_at (not older than 48h)
+  if (test.name === "parse-m3u: catálogo tem updated_at") {
+    const updatedAt = data?.updated_at;
+    if (!updatedAt) return "Campo updated_at ausente — catálogo pode nunca ter sido processado.";
+    const age = Date.now() - new Date(updatedAt).getTime();
+    const maxAge = 48 * 60 * 60 * 1000; // 48 hours
+    if (age > maxAge) {
+      const hours = Math.round(age / (60 * 60 * 1000));
+      return `Catálogo desatualizado há ${hours}h (máx: 48h). Verificar cron m3u-auto-refresh.`;
+    }
+  }
+
+  // m3u-auto-refresh: must return count or skipped
+  if (test.name === "m3u-auto-refresh: retorna count ou skipped") {
+    if (!data?.skipped && data?.count === undefined && data?.success === undefined) {
+      return "Resposta sem 'count', 'success' ou 'skipped' — pipeline de sync pode estar quebrado.";
+    }
+  }
+
+  // manage-clients: clients array should not be empty
+  if (test.name === "manage-clients: GET clients é array não-vazio") {
+    const clients = data?.clients;
+    if (!Array.isArray(clients) || clients.length === 0) {
+      return "Lista de clientes vazia — upload pode ter falhado ou tabela está sem dados.";
+    }
+  }
+
+  // football-matches: should have some structure
+  if (test.name === "football-matches: resposta tem matches ou fonte") {
+    if (!data?.matches && !data?.fonte && !data?.cached && !data?.source && data?.length === undefined) {
+      return "Resposta sem 'matches', 'fonte', 'cached' ou array — formato inesperado.";
+    }
+  }
+
+  // cakto-webhook: checkout without plan should be 400
+  if (test.name === "cakto-webhook: checkout sem plan = 400") {
+    // Already handled by status check, but verify error message exists
+    if (data && typeof data === "object" && !data.error) {
+      return "Esperava campo 'error' na resposta de validação.";
+    }
+  }
+
+  return null; // passed
+}
+
 async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
   const start = Date.now();
+  const TIMEOUT_MS = 30000; // 30s timeout per test
   try {
     let url = `${baseUrl}/functions/v1/${test.fn}`;
     if (test.method === "GET" && test.fn === "trailer-challenge") {
@@ -186,7 +240,23 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promis
       opts.body = JSON.stringify(test.body);
     }
 
-    const res = await fetch(url, opts);
+    // Fetch with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    opts.signal = controller.signal;
+
+    let res: Response;
+    try {
+      res = await fetch(url, opts);
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === "AbortError") {
+        return { name: test.name, category: test.category, passed: false, error: `Timeout (${TIMEOUT_MS / 1000}s) — função pode estar travada`, duration_ms: Date.now() - start };
+      }
+      throw fetchErr;
+    }
+    clearTimeout(timeoutId);
+
     const text = await res.text();
     let data: any;
     try { data = JSON.parse(text); } catch { data = text; }
@@ -200,7 +270,7 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promis
     // Check hasKey
     if (test.expect.hasKey && typeof data === "object" && data !== null) {
       if (!(test.expect.hasKey in data)) {
-        return { name: test.name, category: test.category, passed: false, error: `Chave "${test.expect.hasKey}" ausente`, duration_ms };
+        return { name: test.name, category: test.category, passed: false, error: `Chave "${test.expect.hasKey}" ausente na resposta`, duration_ms };
       }
     }
 
@@ -209,9 +279,20 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promis
       const lower = text.toLowerCase();
       for (const forbidden of test.expect.notContains) {
         if (lower.includes(forbidden.toLowerCase())) {
-          return { name: test.name, category: test.category, passed: false, error: `Resposta contém "${forbidden}" (vazamento)`, duration_ms };
+          return { name: test.name, category: test.category, passed: false, error: `⚠️ VAZAMENTO: resposta contém "${forbidden}"`, duration_ms };
         }
       }
+    }
+
+    // Custom deep validations
+    const customError = runCustomValidation(test, data);
+    if (customError) {
+      return { name: test.name, category: test.category, passed: false, error: customError, duration_ms };
+    }
+
+    // Warn on slow responses (>10s)
+    if (duration_ms > 10000) {
+      return { name: test.name, category: test.category, passed: true, error: `⚠️ Lento: ${Math.round(duration_ms / 1000)}s`, duration_ms };
     }
 
     return { name: test.name, category: test.category, passed: true, duration_ms };
