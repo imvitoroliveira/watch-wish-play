@@ -218,14 +218,11 @@ Deno.serve(async (req) => {
 
       const rowId = inserted?.id;
 
-      // Run tests in batches of 5, updating DB after each batch
+      // Run tests one by one, updating DB after each test
       const results: any[] = [];
-      for (let i = 0; i < TEST_SUITE.length; i += 5) {
-        const batch = TEST_SUITE.slice(i, i + 5);
-        const batchResults = await Promise.all(
-          batch.map(t => runTest(baseUrl, anonKey, t))
-        );
-        results.push(...batchResults);
+      for (let i = 0; i < TEST_SUITE.length; i++) {
+        const result = await runTest(baseUrl, anonKey, TEST_SUITE[i]);
+        results.push(result);
 
         // Update partial results in DB for real-time polling
         if (rowId) {
