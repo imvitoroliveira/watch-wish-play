@@ -54,6 +54,8 @@ interface TestRun {
 }
 
 export default function SystemTestsTab() {
+  const { getAdminAuth } = useAuth();
+  const adminAuth = getAdminAuth();
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
