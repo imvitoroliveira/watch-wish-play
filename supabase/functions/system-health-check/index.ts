@@ -352,9 +352,31 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promis
   }
 }
 
+function validateAdmin(req: Request): boolean {
+  const authHeader = req.headers.get("x-admin-auth") || "";
+  const ADMIN_USER = Deno.env.get("ADMIN_USER");
+  const ADMIN_PASS = Deno.env.get("ADMIN_PASS");
+  if (!ADMIN_USER || !ADMIN_PASS) return false;
+  try {
+    const decoded = atob(authHeader);
+    const [user, pass] = decoded.split(":");
+    return user === ADMIN_USER && pass === ADMIN_PASS;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // POST (run tests) and DELETE (remove results) require admin auth
+  if ((req.method === "POST" || req.method === "DELETE") && !validateAdmin(req)) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   const supabase = createClient(
@@ -363,7 +385,7 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // GET = list results
+    // GET = list results (public — read-only)
     if (req.method === "GET") {
       const { data: results } = await supabase
         .from("test_results")
