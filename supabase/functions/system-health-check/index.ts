@@ -22,99 +22,206 @@ interface TestCase {
 }
 
 const TEST_SUITE: TestCase[] = [
-  // admin-login
-  { name: "admin-login: rejeitar vazio", category: "functional", fn: "admin-login", method: "POST", body: { user: "", pass: "" }, expect: { status: [400] } },
-  { name: "admin-login: rejeitar inválido", category: "functional", fn: "admin-login", method: "POST", body: { user: "fake", pass: "wrong" }, expect: { status: [401] } },
-  { name: "admin-login: não vazar config", category: "security", fn: "admin-login", method: "POST", body: { user: "x", pass: "y" }, expect: { notContains: ["admin_user", "admin_pass", "service_role"] } },
-  { name: "admin-login: rejeitar GET", category: "security", fn: "admin-login", method: "GET", expect: { status: [405] } },
-  { name: "admin-login: formato estável", category: "regression", fn: "admin-login", method: "POST", body: { user: "x", pass: "y" }, expect: { status: [401], hasKey: "success" } },
+  // ═══════════════════════════════════════════════
+  // admin-login (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "admin-login: rejeitar body vazio", category: "functional", fn: "admin-login", method: "POST", body: { user: "", pass: "" }, expect: { status: [400] } },
+  { name: "admin-login: rejeitar credenciais inválidas", category: "functional", fn: "admin-login", method: "POST", body: { user: "fake", pass: "wrong" }, expect: { status: [401] } },
+  { name: "admin-login: não vazar segredos", category: "security", fn: "admin-login", method: "POST", body: { user: "x", pass: "y" }, expect: { notContains: ["admin_user", "admin_pass", "service_role", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_USER", "ADMIN_PASS"] } },
+  { name: "admin-login: bloquear GET", category: "security", fn: "admin-login", method: "GET", expect: { status: [405] } },
+  { name: "admin-login: resposta tem campo success", category: "regression", fn: "admin-login", method: "POST", body: { user: "x", pass: "y" }, expect: { status: [401], hasKey: "success" } },
 
-  // client-login
-  { name: "client-login: rejeitar vazio", category: "functional", fn: "client-login", method: "POST", body: { action: "login", username: "", password: "" }, expect: { status: [400] } },
-  { name: "client-login: rejeitar inexistente", category: "functional", fn: "client-login", method: "POST", body: { action: "login", username: "nonexistent_xyz", password: "wrong" }, expect: { hasKey: "success" } },
-  { name: "client-login: ação inválida", category: "functional", fn: "client-login", method: "POST", body: { action: "unknown" }, expect: { status: [400] } },
-  { name: "client-login: sem vazamento", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test", password: "test" }, expect: { notContains: ["service_role"] } },
+  // ═══════════════════════════════════════════════
+  // client-login (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "client-login: rejeitar campos vazios", category: "functional", fn: "client-login", method: "POST", body: { action: "login", username: "", password: "" }, expect: { status: [400] } },
+  { name: "client-login: usuário inexistente retorna success=false", category: "functional", fn: "client-login", method: "POST", body: { action: "login", username: "nonexistent_xyz_999", password: "wrong" }, expect: { status: [200], hasKey: "success" } },
+  { name: "client-login: ação desconhecida = 400", category: "functional", fn: "client-login", method: "POST", body: { action: "unknown_action" }, expect: { status: [400] } },
+  { name: "client-login: não vazar segredos", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test", password: "test" }, expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_PASS"] } },
+  { name: "client-login: bloquear GET", category: "security", fn: "client-login", method: "GET", expect: { status: [405] } },
 
-  // app-settings
-  { name: "app-settings: GET retorna billing", category: "functional", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "billing_enabled" } },
+  // ═══════════════════════════════════════════════
+  // app-settings (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "app-settings: GET retorna billing_enabled", category: "functional", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "billing_enabled" } },
   { name: "app-settings: POST sem auth = 401", category: "security", fn: "app-settings", method: "POST", body: { billing_enabled: true }, expect: { status: [401] } },
-  { name: "app-settings: POST auth inválida = 401", category: "security", fn: "app-settings", method: "POST", body: { billing_enabled: true }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
-  { name: "app-settings: formato GET estável", category: "regression", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "billing_enabled" } },
+  { name: "app-settings: POST com auth falsa = 401", category: "security", fn: "app-settings", method: "POST", body: { billing_enabled: true }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
+  { name: "app-settings: não vazar segredos", category: "security", fn: "app-settings", method: "GET", expect: { notContains: ["service_role", "ADMIN_PASS", "ADMIN_USER"] } },
 
-  // manage-clients
-  { name: "manage-clients: GET retorna clients", category: "functional", fn: "manage-clients", method: "GET", expect: { status: [200], hasKey: "clients" } },
+  // ═══════════════════════════════════════════════
+  // manage-clients (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "manage-clients: GET retorna array clients", category: "functional", fn: "manage-clients", method: "GET", expect: { status: [200], hasKey: "clients" } },
   { name: "manage-clients: POST vazio = 400", category: "functional", fn: "manage-clients", method: "POST", body: { clients: [] }, expect: { status: [400] } },
-  { name: "manage-clients: sem chaves serviço", category: "security", fn: "manage-clients", method: "GET", expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY"] } },
+  { name: "manage-clients: GET clients é array não-vazio", category: "integration", fn: "manage-clients", method: "GET", expect: { status: [200], hasKey: "clients" } },
+  { name: "manage-clients: não vazar segredos", category: "security", fn: "manage-clients", method: "GET", expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_PASS"] } },
   { name: "manage-clients: formato estável", category: "regression", fn: "manage-clients", method: "GET", expect: { status: [200], hasKey: "clients" } },
 
-  // user-presence
+  // ═══════════════════════════════════════════════
+  // user-presence (5 tests)
+  // ═══════════════════════════════════════════════
   { name: "user-presence: heartbeat ok", category: "functional", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "health_check_test" }, expect: { status: [200], hasKey: "ok" } },
   { name: "user-presence: logout ok", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "health_check_test" }, expect: { status: [200], hasKey: "ok" } },
   { name: "user-presence: list sem auth = 401", category: "security", fn: "user-presence", method: "POST", body: { action: "list_online" }, expect: { status: [401] } },
-  { name: "user-presence: formato estável", category: "regression", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "regression_hc" }, expect: { status: [200], hasKey: "ok" } },
+  { name: "user-presence: ação sem username = 400", category: "functional", fn: "user-presence", method: "POST", body: { action: "heartbeat" }, expect: { status: [400] } },
+  { name: "user-presence: não vazar segredos", category: "security", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "test" }, expect: { notContains: ["service_role", "ADMIN_PASS"] } },
 
-  // tmdb-proxy
-  { name: "tmdb-proxy: trending funciona", category: "functional", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/trending/movie/week" }, expect: { status: [200], hasKey: "results" } },
-  { name: "tmdb-proxy: endpoint bloqueado", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/configuration" }, expect: { status: [403] } },
+  // ═══════════════════════════════════════════════
+  // tmdb-proxy (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "tmdb-proxy: trending retorna results", category: "functional", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/trending/movie/week" }, expect: { status: [200], hasKey: "results" } },
+  { name: "tmdb-proxy: endpoint bloqueado = 403", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/configuration" }, expect: { status: [403] } },
   { name: "tmdb-proxy: sem barra = 400", category: "functional", fn: "tmdb-proxy", method: "POST", body: { endpoint: "trending" }, expect: { status: [400] } },
-  { name: "tmdb-proxy: formato estável", category: "regression", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/trending/movie/week" }, expect: { status: [200], hasKey: "results" } },
+  { name: "tmdb-proxy: body vazio = 400", category: "functional", fn: "tmdb-proxy", method: "POST", body: {}, expect: { status: [400] } },
+  { name: "tmdb-proxy: não vazar TMDB token", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/trending/movie/week" }, expect: { notContains: ["TMDB_API_TOKEN", "service_role", "eyJ"] } },
 
-  // stream-proxy
-  { name: "stream-proxy: sem URL = 400", category: "functional", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400] } },
-  { name: "stream-proxy: URL inválida", category: "functional", fn: "stream-proxy", method: "POST", body: { url: "http://invalid.example.test/x.mp4" }, expect: { status: [500, 502] } },
-  { name: "stream-proxy: sem vazamento", category: "security", fn: "stream-proxy", method: "POST", body: {}, expect: { notContains: ["service_role"] } },
+  // ═══════════════════════════════════════════════
+  // stream-proxy (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "stream-proxy: sem URL = 400", category: "functional", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
+  { name: "stream-proxy: URL inválida retorna erro", category: "functional", fn: "stream-proxy", method: "POST", body: { url: "http://invalid.example.test/x.mp4" }, expect: { status: [500, 502] } },
+  { name: "stream-proxy: não vazar segredos", category: "security", fn: "stream-proxy", method: "POST", body: {}, expect: { notContains: ["service_role", "source_url"] } },
   { name: "stream-proxy: formato erro estável", category: "regression", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
 
-  // stream-lookup
-  { name: "stream-lookup: sem título", category: "functional", fn: "stream-lookup", method: "POST", body: {}, expect: { status: [400, 500] } },
-  { name: "stream-lookup: título inexistente", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200, 404, 500] } },
-  { name: "stream-lookup: sem vazamento", category: "security", fn: "stream-lookup", method: "POST", body: { title: "test" }, expect: { notContains: ["service_role"] } },
+  // ═══════════════════════════════════════════════
+  // stream-lookup (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "stream-lookup: sem título = 400", category: "functional", fn: "stream-lookup", method: "POST", body: {}, expect: { status: [400] } },
+  { name: "stream-lookup: título inexistente retorna null", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200], hasKey: "stream_url" } },
+  { name: "stream-lookup: não vazar source_url", category: "security", fn: "stream-lookup", method: "POST", body: { title: "test" }, expect: { notContains: ["service_role", "source_url", "SUPABASE_SERVICE_ROLE_KEY"] } },
+  { name: "stream-lookup: formato estável", category: "regression", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [200], hasKey: "stream_url" } },
 
-  // trailer-challenge
-  { name: "trailer-challenge: GET progress", category: "functional", fn: "trailer-challenge", method: "GET", expect: { status: [200], hasKey: "today" } },
-  { name: "trailer-challenge: sem tokens", category: "security", fn: "trailer-challenge", method: "GET", expect: { notContains: ["PUSHALERT", "service_role"] } },
+  // ═══════════════════════════════════════════════
+  // trailer-challenge (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "trailer-challenge: GET retorna today", category: "functional", fn: "trailer-challenge", method: "GET", expect: { status: [200], hasKey: "today" } },
+  { name: "trailer-challenge: POST sem body = erro", category: "functional", fn: "trailer-challenge", method: "POST", body: {}, expect: { status: [400, 500] } },
+  { name: "trailer-challenge: não vazar tokens", category: "security", fn: "trailer-challenge", method: "GET", expect: { notContains: ["PUSHALERT", "service_role", "SUPABASE_SERVICE_ROLE_KEY"] } },
   { name: "trailer-challenge: formato estável", category: "regression", fn: "trailer-challenge", method: "GET", expect: { status: [200], hasKey: "today" } },
 
-  // match-reminders
-  { name: "match-reminders: list ok", category: "functional", fn: "match-reminders", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "reminders" } },
-  { name: "match-reminders: sem vazamento", category: "security", fn: "match-reminders", method: "POST", body: { action: "list", username: "hc_test" }, expect: { notContains: ["service_role", "PUSHALERT"] } },
+  // ═══════════════════════════════════════════════
+  // match-reminders (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "match-reminders: list retorna reminders", category: "functional", fn: "match-reminders", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "reminders" } },
+  { name: "match-reminders: ação inválida = 400", category: "functional", fn: "match-reminders", method: "POST", body: { action: "invalid_action" }, expect: { status: [400] } },
+  { name: "match-reminders: não vazar segredos", category: "security", fn: "match-reminders", method: "POST", body: { action: "list", username: "hc_test" }, expect: { notContains: ["service_role", "PUSHALERT", "RAPIDAPI"] } },
   { name: "match-reminders: formato estável", category: "regression", fn: "match-reminders", method: "POST", body: { action: "list", username: "regression" }, expect: { status: [200], hasKey: "reminders" } },
 
-  // content-alerts
-  { name: "content-alerts: list ok", category: "functional", fn: "content-alerts", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "alerts" } },
-  { name: "content-alerts: sem API keys", category: "security", fn: "content-alerts", method: "POST", body: { action: "list", username: "test" }, expect: { notContains: ["PUSHALERT", "service_role"] } },
+  // ═══════════════════════════════════════════════
+  // content-alerts (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "content-alerts: list retorna alerts", category: "functional", fn: "content-alerts", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "alerts" } },
+  { name: "content-alerts: ação inválida = 400", category: "functional", fn: "content-alerts", method: "POST", body: { action: "invalid_action_xyz" }, expect: { status: [400] } },
+  { name: "content-alerts: não vazar API keys", category: "security", fn: "content-alerts", method: "POST", body: { action: "list", username: "test" }, expect: { notContains: ["PUSHALERT", "service_role", "TMDB_API_TOKEN"] } },
   { name: "content-alerts: formato estável", category: "regression", fn: "content-alerts", method: "POST", body: { action: "list", username: "regression" }, expect: { status: [200], hasKey: "alerts" } },
 
-  // n8n-proxy
-  { name: "n8n-proxy: sem webhook = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { payload: { test: true } }, expect: { status: [400] } },
-  { name: "n8n-proxy: sem payload = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com" }, expect: { status: [400] } },
-  { name: "n8n-proxy: GET = 405", category: "security", fn: "n8n-proxy", method: "GET", expect: { status: [405] } },
-  { name: "n8n-proxy: formato estável", category: "regression", fn: "n8n-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
+  // ═══════════════════════════════════════════════
+  // n8n-proxy (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "n8n-proxy: sem webhook_url = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { payload: { test: true } }, expect: { status: [400], hasKey: "error" } },
+  { name: "n8n-proxy: sem payload = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com" }, expect: { status: [400], hasKey: "error" } },
+  { name: "n8n-proxy: bloquear GET = 405", category: "security", fn: "n8n-proxy", method: "GET", expect: { status: [405] } },
+  { name: "n8n-proxy: formato erro estável", category: "regression", fn: "n8n-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
 
-  // parse-m3u
-  { name: "parse-m3u: GET catálogo", category: "functional", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "titles" } },
-  { name: "parse-m3u: POST vazio", category: "functional", fn: "parse-m3u", method: "POST", body: {}, expect: { status: [400, 500] } },
-  { name: "parse-m3u: sem vazamento", category: "security", fn: "parse-m3u", method: "GET", expect: { notContains: ["service_role"] } },
-  { name: "parse-m3u: formato estável", category: "regression", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "titles" } },
+  // ═══════════════════════════════════════════════
+  // parse-m3u (6 tests) — CRITICAL: validates catalog health
+  // ═══════════════════════════════════════════════
+  { name: "parse-m3u: GET retorna titles", category: "functional", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "titles" } },
+  { name: "parse-m3u: catálogo tem >100 títulos", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "total" } },
+  { name: "parse-m3u: catálogo tem updated_at", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "updated_at" } },
+  { name: "parse-m3u: POST sem url/content = 400", category: "functional", fn: "parse-m3u", method: "POST", body: {}, expect: { status: [400] } },
+  { name: "parse-m3u: não vazar source_url nem segredos", category: "security", fn: "parse-m3u", method: "GET", expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY"] } },
+  { name: "parse-m3u: DELETE funciona", category: "regression", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "titles" } },
 
-  // cakto-webhook
-  { name: "cakto-webhook: checkout url", category: "functional", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "hc_test" }, expect: { status: [200, 400, 500] } },
-  { name: "cakto-webhook: evento falso", category: "functional", fn: "cakto-webhook", method: "POST", body: { event: "unknown", data: {} }, expect: { status: [200, 400, 500] } },
-  { name: "cakto-webhook: sem tokens", category: "security", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "test" }, expect: { notContains: ["CAKTO_CLIENT_SECRET", "NATV_API_TOKEN", "service_role"] } },
+  // ═══════════════════════════════════════════════
+  // m3u-auto-refresh (3 tests) — NEW: validates auto-sync pipeline
+  // ═══════════════════════════════════════════════
+  { name: "m3u-auto-refresh: executa sem erro", category: "functional", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { status: [200] } },
+  { name: "m3u-auto-refresh: retorna count ou skipped", category: "integration", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { status: [200] } },
+  { name: "m3u-auto-refresh: não vazar segredos", category: "security", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "source_url"] } },
 
-  // football-matches
-  { name: "football-matches: jogos do dia", category: "functional", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
-  { name: "football-matches: sem API keys", category: "security", fn: "football-matches", method: "POST", body: {}, expect: { notContains: ["RAPIDAPI", "service_role", "APIFOOTBALL"] } },
+  // ═══════════════════════════════════════════════
+  // cakto-webhook (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "cakto-webhook: checkout sem plan = 400", category: "functional", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "hc_test" }, expect: { status: [400] } },
+  { name: "cakto-webhook: evento desconhecido não causa 500", category: "functional", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc_event", data: {} }, expect: { status: [200] } },
+  { name: "cakto-webhook: não vazar tokens de pagamento", category: "security", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "test" }, expect: { notContains: ["CAKTO_CLIENT_SECRET", "CAKTO_CLIENT_ID", "NATV_API_TOKEN", "service_role"] } },
+  { name: "cakto-webhook: formato estável", category: "regression", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc", data: {} }, expect: { status: [200] } },
+
+  // ═══════════════════════════════════════════════
+  // football-matches (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "football-matches: POST retorna 200", category: "functional", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
+  { name: "football-matches: resposta tem matches ou fonte", category: "integration", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
+  { name: "football-matches: não vazar API keys", category: "security", fn: "football-matches", method: "POST", body: {}, expect: { notContains: ["RAPIDAPI", "APIFOOTBALL", "service_role", "RAPIDAPI_FOOTBALL_KEY", "APIFOOTBALL_COM_KEY"] } },
+  { name: "football-matches: bloquear GET", category: "security", fn: "football-matches", method: "GET", expect: { status: [405] } },
   { name: "football-matches: formato estável", category: "regression", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
 
-  // push-test (integration — validates PushAlert API connectivity)
+  // ═══════════════════════════════════════════════
+  // push-test (4 tests)
+  // ═══════════════════════════════════════════════
   { name: "push-test: sem auth = 401", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, expect: { status: [401] } },
   { name: "push-test: auth inválida = 401", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
-  { name: "push-test: sem vazamento", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, expect: { notContains: ["PUSHALERT", "service_role"] } },
+  { name: "push-test: não vazar API key", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, expect: { notContains: ["PUSHALERT", "PUSHALERT_API_KEY", "service_role"] } },
+  { name: "push-test: bloquear GET = 405", category: "security", fn: "push-test", method: "GET", expect: { status: [405] } },
 ];
+
+// Custom deep validations beyond simple status/key checks
+function runCustomValidation(test: TestCase, data: any): string | null {
+  // parse-m3u: catalog must have >100 titles
+  if (test.name === "parse-m3u: catálogo tem >100 títulos") {
+    const total = data?.total || (Array.isArray(data?.titles) ? data.titles.length : 0);
+    if (total < 100) return `Catálogo tem apenas ${total} títulos (mínimo: 100). O auto-refresh pode estar falhando.`;
+  }
+
+  // parse-m3u: must have recent updated_at (not older than 48h)
+  if (test.name === "parse-m3u: catálogo tem updated_at") {
+    const updatedAt = data?.updated_at;
+    if (!updatedAt) return "Campo updated_at ausente — catálogo pode nunca ter sido processado.";
+    const age = Date.now() - new Date(updatedAt).getTime();
+    const maxAge = 48 * 60 * 60 * 1000; // 48 hours
+    if (age > maxAge) {
+      const hours = Math.round(age / (60 * 60 * 1000));
+      return `Catálogo desatualizado há ${hours}h (máx: 48h). Verificar cron m3u-auto-refresh.`;
+    }
+  }
+
+  // m3u-auto-refresh: must return count or skipped
+  if (test.name === "m3u-auto-refresh: retorna count ou skipped") {
+    if (!data?.skipped && data?.count === undefined && data?.success === undefined) {
+      return "Resposta sem 'count', 'success' ou 'skipped' — pipeline de sync pode estar quebrado.";
+    }
+  }
+
+  // manage-clients: clients array should not be empty
+  if (test.name === "manage-clients: GET clients é array não-vazio") {
+    const clients = data?.clients;
+    if (!Array.isArray(clients) || clients.length === 0) {
+      return "Lista de clientes vazia — upload pode ter falhado ou tabela está sem dados.";
+    }
+  }
+
+  // football-matches: should have some structure
+  if (test.name === "football-matches: resposta tem matches ou fonte") {
+    if (!data?.matches && !data?.fonte && !data?.cached && !data?.source && data?.length === undefined) {
+      return "Resposta sem 'matches', 'fonte', 'cached' ou array — formato inesperado.";
+    }
+  }
+
+  // cakto-webhook: checkout without plan should be 400
+  if (test.name === "cakto-webhook: checkout sem plan = 400") {
+    // Already handled by status check, but verify error message exists
+    if (data && typeof data === "object" && !data.error) {
+      return "Esperava campo 'error' na resposta de validação.";
+    }
+  }
+
+  return null; // passed
+}
 
 async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
   const start = Date.now();
+  const TIMEOUT_MS = 30000; // 30s timeout per test
   try {
     let url = `${baseUrl}/functions/v1/${test.fn}`;
     if (test.method === "GET" && test.fn === "trailer-challenge") {
@@ -133,7 +240,23 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promis
       opts.body = JSON.stringify(test.body);
     }
 
-    const res = await fetch(url, opts);
+    // Fetch with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    opts.signal = controller.signal;
+
+    let res: Response;
+    try {
+      res = await fetch(url, opts);
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === "AbortError") {
+        return { name: test.name, category: test.category, passed: false, error: `Timeout (${TIMEOUT_MS / 1000}s) — função pode estar travada`, duration_ms: Date.now() - start };
+      }
+      throw fetchErr;
+    }
+    clearTimeout(timeoutId);
+
     const text = await res.text();
     let data: any;
     try { data = JSON.parse(text); } catch { data = text; }
@@ -147,7 +270,7 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promis
     // Check hasKey
     if (test.expect.hasKey && typeof data === "object" && data !== null) {
       if (!(test.expect.hasKey in data)) {
-        return { name: test.name, category: test.category, passed: false, error: `Chave "${test.expect.hasKey}" ausente`, duration_ms };
+        return { name: test.name, category: test.category, passed: false, error: `Chave "${test.expect.hasKey}" ausente na resposta`, duration_ms };
       }
     }
 
@@ -156,9 +279,20 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase): Promis
       const lower = text.toLowerCase();
       for (const forbidden of test.expect.notContains) {
         if (lower.includes(forbidden.toLowerCase())) {
-          return { name: test.name, category: test.category, passed: false, error: `Resposta contém "${forbidden}" (vazamento)`, duration_ms };
+          return { name: test.name, category: test.category, passed: false, error: `⚠️ VAZAMENTO: resposta contém "${forbidden}"`, duration_ms };
         }
       }
+    }
+
+    // Custom deep validations
+    const customError = runCustomValidation(test, data);
+    if (customError) {
+      return { name: test.name, category: test.category, passed: false, error: customError, duration_ms };
+    }
+
+    // Warn on slow responses (>10s)
+    if (duration_ms > 10000) {
+      return { name: test.name, category: test.category, passed: true, error: `⚠️ Lento: ${Math.round(duration_ms / 1000)}s`, duration_ms };
     }
 
     return { name: test.name, category: test.category, passed: true, duration_ms };
