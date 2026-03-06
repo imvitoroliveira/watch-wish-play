@@ -5,9 +5,62 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+// In-memory rate limiter: IP -> { count, resetAt }
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 30; // max 30 requests per minute per IP
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return false;
+  return true;
+}
+
+// Cleanup old entries periodically to prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip);
+  }
+}, 5 * 60_000);
+
+// Domain whitelist for stream URLs
+const ALLOWED_STREAM_PATTERNS = [
+  /\.(mp4|mkv|avi|m3u8|ts|flv|mov|wmv)(\?|$)/i,
+];
+
+function isStreamUrl(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    // Must be http or https
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    // Must look like a media file or HLS stream
+    return ALLOWED_STREAM_PATTERNS.some((p) => p.test(url.pathname + url.search));
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Rate limiting
+  const clientIP = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+                   req.headers.get("cf-connecting-ip") ||
+                   "unknown";
+  if (!checkRateLimit(clientIP)) {
+    return new Response(
+      JSON.stringify({ error: "Rate limit exceeded. Max 30 requests/minute." }),
+      { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   try {
@@ -24,6 +77,40 @@ Deno.serve(async (req) => {
     if (!streamUrl) {
       return new Response(
         JSON.stringify({ error: "Stream URL is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate URL looks like a media stream
+    if (!isStreamUrl(streamUrl)) {
+      return new Response(
+        JSON.stringify({ error: "URL must point to a media file (.mp4, .m3u8, .ts, etc.)" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Block local/internal network requests (SSRF prevention)
+    try {
+      const parsedUrl = new URL(streamUrl);
+      const hostname = parsedUrl.hostname.toLowerCase();
+      if (
+        hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname === "0.0.0.0" ||
+        hostname.startsWith("10.") ||
+        hostname.startsWith("172.") ||
+        hostname.startsWith("192.168.") ||
+        hostname === "metadata.google.internal" ||
+        hostname.endsWith(".internal")
+      ) {
+        return new Response(
+          JSON.stringify({ error: "Internal URLs are not allowed" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } catch {
+      return new Response(
+        JSON.stringify({ error: "Invalid URL" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
