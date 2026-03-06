@@ -32,7 +32,7 @@ function AnimatedCounter({ value, className }: { value: number; className?: stri
   return <span className={className}>{display}</span>;
 }
 
-
+interface TestResult {
   name: string;
   category: string;
   passed: boolean;
