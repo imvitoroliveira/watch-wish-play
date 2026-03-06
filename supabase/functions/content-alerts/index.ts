@@ -104,21 +104,21 @@ Deno.serve(async (req) => {
         if (found) {
           try {
             if (pushAlertKey) {
-              await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
+              const params = new URLSearchParams();
+              params.append('title', '🎬 Conteúdo Disponível!');
+              params.append('message', `"${alert.movie_title}" já está disponível no catálogo!`);
+              params.append('url', 'https://clientestoptv.lovable.app/dashboard');
+              params.append('attributes', JSON.stringify({ username: alert.client_username }));
+
+              const pushRes = await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
                 method: 'POST',
                 headers: {
                   'Authorization': `api_key=${pushAlertKey}`,
-                  'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                  title: '🎬 Conteúdo Disponível!',
-                  message: `"${alert.movie_title}" já está disponível no catálogo!`,
-                  url: '/',
-                  attributes: {
-                    username: alert.client_username,
-                  },
-                }),
+                body: params,
               });
+              const pushResult = await pushRes.text();
+              console.log(`[Push] content-alert for ${alert.client_username}:`, pushResult);
             }
 
             await supabase

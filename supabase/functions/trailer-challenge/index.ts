@@ -117,21 +117,21 @@ Deno.serve(async (req) => {
             try {
               const pushAlertKey = Deno.env.get('PUSHALERT_API_KEY');
               if (pushAlertKey) {
-                await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
+                const params = new URLSearchParams();
+                params.append('title', '🎬 Parabéns! Desafio Completo!');
+                params.append('message', 'Você completou o Desafio Cine-Trailer e está concorrendo à mensalidade grátis!');
+                params.append('url', 'https://clientestoptv.lovable.app/dashboard');
+                params.append('attributes', JSON.stringify({ username }));
+
+                const pushRes = await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
                   method: 'POST',
                   headers: {
                     'Authorization': `api_key=${pushAlertKey}`,
-                    'Content-Type': 'application/json',
                   },
-                  body: JSON.stringify({
-                    title: '🎬 Parabéns! Desafio Completo!',
-                    message: 'Você completou o Desafio Cine-Trailer e está concorrendo à mensalidade grátis!',
-                    url: '/',
-                    attributes: {
-                      username,
-                    },
-                  }),
+                  body: params,
                 });
+                const pushResult = await pushRes.text();
+                console.log(`[Push] challenge-complete for ${username}:`, pushResult);
               }
             } catch (e) {
               console.error('Push notification failed:', e);
