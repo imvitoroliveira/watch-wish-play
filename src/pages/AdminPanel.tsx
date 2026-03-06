@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi } from 'lucide-react';
+import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi, CreditCard } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { processM3UViaBackend, clearM3UCatalog, fetchM3UCatalog } from '@/lib/m3u-parser';
 import { supabase } from '@/integrations/supabase/client';
 import OnlineStatusTab from '@/components/OnlineStatusTab';
+import { Switch } from '@/components/ui/switch';
 
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList } = useAuth();
@@ -33,6 +34,43 @@ const AdminPanel = () => {
   // Online users state
   const [onlineUsers, setOnlineUsers] = useState<{ client_username: string; last_seen: string }[]>([]);
   const [onlineLoading, setOnlineLoading] = useState(false);
+
+  // Billing toggle
+  const [billingEnabled, setBillingEnabled] = useState(false);
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingToggling, setBillingToggling] = useState(false);
+
+  useEffect(() => {
+    const loadBilling = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('app-settings', { method: 'GET' });
+        if (!error && data) setBillingEnabled(!!data.billing_enabled);
+      } catch {} finally { setBillingLoading(false); }
+    };
+    loadBilling();
+  }, []);
+
+  const toggleBilling = async (value: boolean) => {
+    setBillingToggling(true);
+    try {
+      const adminAuth = localStorage.getItem('msc_admin_creds') || '';
+      const { data, error } = await supabase.functions.invoke('app-settings', {
+        method: 'POST',
+        body: { billing_enabled: value },
+        headers: { 'x-admin-auth': adminAuth },
+      });
+      if (!error && data?.success) {
+        setBillingEnabled(value);
+        toast({ title: value ? 'Cobrança habilitada' : 'Cobrança desabilitada', description: value ? 'Os clientes verão as opções de renovação.' : 'As opções de renovação foram ocultadas.' });
+      } else {
+        toast({ title: 'Erro', description: 'Não foi possível alterar a configuração.', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Erro', description: 'Falha na comunicação.', variant: 'destructive' });
+    } finally {
+      setBillingToggling(false);
+    }
+  };
 
   const loadOnlineUsers = async () => {
     const adminAuth = localStorage.getItem('msc_admin_creds') || '';
