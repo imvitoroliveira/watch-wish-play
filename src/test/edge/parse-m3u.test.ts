@@ -9,22 +9,24 @@ describe('Edge: parse-m3u', () => {
     const data = await res.json();
     expect(res.status).toBe(200);
     expect(data.titles).toBeDefined();
+    expect(Array.isArray(data.titles)).toBe(true);
   });
 
-  // 2. Funcional — POST sem conteúdo
-  it('POST sem url nem content deve retornar erro', async () => {
+  // 2. Funcional — POST sem conteúdo retorna 400
+  it('POST sem url nem content deve retornar 400', async () => {
     const { status } = await invokeEdge('parse-m3u', {
       body: {},
     });
-    expect([400, 500]).toContain(status);
+    expect(status).toBe(400);
   });
 
   // 3. Segurança
-  it('resposta não expõe source_url completa em erro', async () => {
+  it('resposta não expõe source_url completa nem segredos', async () => {
     const url = edgeUrl('parse-m3u');
     const res = await fetch(url, { method: 'GET', headers: defaultHeaders() });
     const text = await res.text();
     expect(text).not.toContain('service_role');
+    expect(text).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
   // 4. Regressão

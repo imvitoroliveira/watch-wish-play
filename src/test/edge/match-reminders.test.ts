@@ -12,12 +12,12 @@ describe('Edge: match-reminders', () => {
     expect(Array.isArray(data.reminders)).toBe(true);
   });
 
-  // 2. Funcional — ação inválida
-  it('POST com ação desconhecida deve retornar erro', async () => {
+  // 2. Funcional — ação inválida retorna 400
+  it('POST com ação desconhecida deve retornar 400', async () => {
     const { status } = await invokeEdge('match-reminders', {
       body: { action: 'unknown' },
     });
-    expect([400, 405, 500]).toContain(status);
+    expect(status).toBe(400);
   });
 
   // 3. Segurança
@@ -28,6 +28,8 @@ describe('Edge: match-reminders', () => {
     const text = JSON.stringify(data);
     expect(text).not.toContain('service_role');
     expect(text).not.toContain('PUSHALERT');
+    expect(text).not.toContain('PUSHALERT_API_KEY');
+    expect(text).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
   // 4. Regressão
@@ -35,6 +37,7 @@ describe('Edge: match-reminders', () => {
     const { status, data } = await invokeEdge('match-reminders', {
       body: { action: 'list', username: 'regression' },
     });
+    expect(status).toBe(200);
     const current = createSnapshot(status, 'reminders' in data);
     const baseline = createSnapshot(200, true);
     expect(compareSnapshots(current, baseline).statusMatch).toBe(true);

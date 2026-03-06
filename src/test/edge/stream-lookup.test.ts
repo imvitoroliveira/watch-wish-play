@@ -3,24 +3,20 @@ import { invokeEdge, createSnapshot, compareSnapshots } from '../helpers/edge-fu
 
 describe('Edge: stream-lookup', () => {
   // 1. Funcional — título obrigatório
-  it('deve rejeitar requisição sem título', async () => {
-    const { status, data } = await invokeEdge('stream-lookup', {
+  it('deve rejeitar requisição sem título com 400', async () => {
+    const { status } = await invokeEdge('stream-lookup', {
       body: {},
     });
-    expect([400, 500]).toContain(status);
+    expect(status).toBe(400);
   });
 
-  // 2. Funcional — título inexistente (pode retornar 200 com null ou 500 se sem catálogo)
-  it('título inexistente deve retornar resposta controlada', async () => {
+  // 2. Funcional — título inexistente retorna 404 com stream_url null
+  it('título inexistente deve retornar 404', async () => {
     const { status, data } = await invokeEdge('stream-lookup', {
       body: { title: 'zzzz_nonexistent_movie_title_xyz_9999' },
     });
-    expect([200, 500]).toContain(status);
-    if (status === 200) {
-      expect(data.stream_url).toBeNull();
-    } else {
-      expect(data.error).toBeDefined();
-    }
+    expect(status).toBe(404);
+    expect(data.stream_url).toBeNull();
   });
 
   // 3. Segurança
@@ -30,15 +26,19 @@ describe('Edge: stream-lookup', () => {
     });
     const text = JSON.stringify(data);
     expect(text).not.toContain('service_role');
+    expect(text).not.toContain('source_url');
+    expect(text).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
   });
 
   // 4. Regressão — resposta é JSON válido
-  it('resposta é JSON válido com campo esperado (regressão)', async () => {
+  it('resposta mantém formato stream_url (regressão)', async () => {
     const { status, data } = await invokeEdge('stream-lookup', {
       body: { title: 'regression_test' },
     });
-    expect([200, 500]).toContain(status);
-    const hasExpectedKey = 'stream_url' in data || 'error' in data;
-    expect(hasExpectedKey).toBe(true);
+    expect(status).toBe(404);
+    const current = createSnapshot(status, 'stream_url' in data);
+    const baseline = createSnapshot(404, true);
+    expect(compareSnapshots(current, baseline).statusMatch).toBe(true);
+    expect(compareSnapshots(current, baseline).structureMatch).toBe(true);
   });
 });
