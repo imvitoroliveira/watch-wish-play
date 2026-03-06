@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
             try {
               const pushAlertKey = Deno.env.get('PUSHALERT_API_KEY');
               if (pushAlertKey) {
-                await fetch('https://api.pushalert.co/rest/v1/send', {
+                await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
                   method: 'POST',
                   headers: {
                     'Authorization': `api_key=${pushAlertKey}`,
@@ -127,6 +127,9 @@ Deno.serve(async (req) => {
                     title: '🎬 Parabéns! Desafio Completo!',
                     message: 'Você completou o Desafio Cine-Trailer e está concorrendo à mensalidade grátis!',
                     url: '/',
+                    attributes: {
+                      username,
+                    },
                   }),
                 });
               }
