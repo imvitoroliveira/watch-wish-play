@@ -1,6 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { Buffer } from "node:buffer";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,16 +20,26 @@ function getPlanFromCheckout(checkoutId: string): { plan: string; days: number }
   return null;
 }
 
-function verifySignature(rawBody: string, signature: string | null, secret: string): boolean {
+async function verifySignature(rawBody: string, signature: string | null, secret: string): Promise<boolean> {
   if (!signature) return false;
   try {
-    const expectedSignature = createHmac("sha256", secret)
-      .update(rawBody)
-      .digest("hex");
-    const expectedBuffer = Buffer.from(expectedSignature, "hex");
-    const signatureBuffer = Buffer.from(signature, "hex");
-    if (expectedBuffer.length !== signatureBuffer.length) return false;
-    return timingSafeEqual(expectedBuffer, signatureBuffer);
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+    const expectedHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+    // Constant-time comparison
+    if (expectedHex.length !== signature.length) return false;
+    let mismatch = 0;
+    for (let i = 0; i < expectedHex.length; i++) {
+      mismatch |= expectedHex.charCodeAt(i) ^ signature.charCodeAt(i);
+    }
+    return mismatch === 0;
   } catch {
     return false;
   }
@@ -103,7 +111,7 @@ Deno.serve(async (req) => {
                             req.headers.get("x-gateway-signature") ||
                             req.headers.get("x-webhook-signature");
 
-          if (!verifySignature(rawBody, signature, caktoSecret)) {
+          if (!(await verifySignature(rawBody, signature, caktoSecret))) {
             console.error("[Cakto Webhook] Invalid signature — possible spoofing attempt");
             return new Response(JSON.stringify({ error: "Invalid signature" }), {
               status: 401,
