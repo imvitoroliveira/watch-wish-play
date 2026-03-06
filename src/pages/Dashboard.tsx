@@ -162,7 +162,7 @@ const Dashboard = () => {
         {tab === 'updates' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <h2 className="text-2xl font-display text-foreground mb-4">ATUALIZAÇÕES DO CATÁLOGO</h2>
-            <CatalogUpdates />
+            <CatalogUpdates onMovieClick={setSelectedMovie} />
           </motion.div>
         )}
 
