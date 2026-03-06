@@ -14,7 +14,7 @@ import SystemTestsTab from '@/components/SystemTestsTab';
 import { Switch } from '@/components/ui/switch';
 
 const AdminPanel = () => {
-  const { isAdmin, loginAdmin, logout, uploadClientList, clientList } = useAuth();
+  const { isAdmin, loginAdmin, logout, uploadClientList, clientList, getAdminAuth } = useAuth();
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
   const [error, setError] = useState('');
@@ -55,7 +55,7 @@ const AdminPanel = () => {
   const toggleBilling = async (value: boolean) => {
     setBillingToggling(true);
     try {
-      const adminAuth = localStorage.getItem('msc_admin_creds') || '';
+      const adminAuth = getAdminAuth();
       const { data, error } = await supabase.functions.invoke('app-settings', {
         method: 'POST',
         body: { billing_enabled: value },
@@ -75,7 +75,7 @@ const AdminPanel = () => {
   };
 
   const loadOnlineUsers = async () => {
-    const adminAuth = localStorage.getItem('msc_admin_creds') || '';
+    const adminAuth = getAdminAuth();
     if (!adminAuth) {
       console.log('[presence] skipping — no admin creds in session');
       return;
@@ -188,7 +188,7 @@ const AdminPanel = () => {
         data_expiracao: formatDate(c.e),
       }));
 
-      const adminAuth = localStorage.getItem('msc_admin_creds') || '';
+      const adminAuth = getAdminAuth();
       const { data, error } = await supabase.functions.invoke('google-sheets-sync', {
         body: {
           spreadsheet_id: spreadsheetId.trim(),
@@ -227,7 +227,6 @@ const AdminPanel = () => {
     setLoginLoading(false);
     if (success) {
       setError('');
-      localStorage.setItem('msc_admin_creds', btoa(`${user.trim()}:${pass.trim()}`));
     } else {
       setError('Credenciais inválidas');
     }
