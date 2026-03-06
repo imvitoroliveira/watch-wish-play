@@ -28,11 +28,21 @@ Deno.serve(async (req) => {
     });
   }
 
-  const [user, pass] = atob(adminAuth).split(":");
+  let user = "", pass = "";
+  try {
+    const decoded = atob(adminAuth);
+    [user, pass] = decoded.split(":");
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid auth format" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const adminUser = Deno.env.get("ADMIN_USER");
   const adminPass = Deno.env.get("ADMIN_PASS");
 
-  if (user !== adminUser || pass !== adminPass) {
+  if (!user || !pass || user !== adminUser || pass !== adminPass) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
