@@ -218,7 +218,7 @@ export default function SystemTestsTab() {
         )}
 
         {(latestRun || running) && (
-          <Progress value={running ? undefined : progressValue} className={`h-2 ${running ? 'animate-pulse' : ''}`} />
+          <Progress value={progressValue} className="h-2" />
         )}
       </div>
 
