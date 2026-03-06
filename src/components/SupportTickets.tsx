@@ -197,9 +197,10 @@ const SupportTickets = () => {
             <div className="px-5 pt-3">
               <div className="relative w-full rounded-lg overflow-hidden bg-black" style={{ paddingBottom: '56.25%' }}>
                 <iframe
-                  className="absolute inset-0 w-full h-full"
-                  src={`https://www.youtube.com/embed/${selectedIssue.videoId}?rel=0&modestbranding=1&theme=dark`}
+                  className="absolute inset-0 w-full h-full scale-[1.04]"
+                  src={`https://www.youtube.com/embed/${selectedIssue.videoId}?rel=0&modestbranding=1&showinfo=0&iv_load_policy=3&playsinline=1`}
                   title={selectedIssue.label}
+                  style={{ border: 'none' }}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 />

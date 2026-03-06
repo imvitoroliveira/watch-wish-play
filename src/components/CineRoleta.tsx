@@ -487,12 +487,13 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
             <>
               <div className="relative aspect-video bg-secondary">
                 {showTrailer && trailerKey ? (
-                  <div className="relative w-full h-full">
+                   <div className="relative w-full h-full overflow-hidden">
                     <iframe
-                      src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=${isMuted ? 1 : 0}&rel=0&modestbranding=1`}
-                      className="w-full h-full"
+                      src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=${isMuted ? 1 : 0}&rel=0&modestbranding=1&showinfo=0&controls=0&iv_load_policy=3&disablekb=1&fs=0&playsinline=1`}
+                      className="w-full h-full scale-[1.04] pointer-events-auto"
+                      style={{ border: 'none' }}
                       allow="autoplay; encrypted-media"
-                      allowFullScreen
+                      allowFullScreen={false}
                       title={`Trailer - ${title}`}
                     />
                     <button
