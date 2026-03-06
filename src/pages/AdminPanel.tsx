@@ -380,6 +380,26 @@ const AdminPanel = () => {
           </motion.div>
         </div>
 
+        {/* Billing Toggle */}
+        <div className="bg-card rounded-xl border border-border p-5 mb-8 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
+              <CreditCard className="w-5 h-5 text-accent" />
+            </div>
+            <div>
+              <p className="text-base font-semibold text-foreground">Sistema de Cobrança</p>
+              <p className="text-xs text-muted-foreground">
+                {billingEnabled ? 'Ativo — clientes veem opções de renovação' : 'Desativado — renovação oculta para clientes'}
+              </p>
+            </div>
+          </div>
+          <Switch
+            checked={billingEnabled}
+            onCheckedChange={toggleBilling}
+            disabled={billingLoading || billingToggling}
+          />
+        </div>
+
         <Tabs defaultValue="geral" className="space-y-6">
           <TabsList className="bg-secondary border border-border flex-wrap">
             <TabsTrigger value="geral">Geral</TabsTrigger>
