@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi, CreditCard } from 'lucide-react';
+import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi, CreditCard, FlaskConical } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { processM3UViaBackend, clearM3UCatalog, fetchM3UCatalog } from '@/lib/m3u-parser';
 import { supabase } from '@/integrations/supabase/client';
 import OnlineStatusTab from '@/components/OnlineStatusTab';
+import SystemTestsTab from '@/components/SystemTestsTab';
 import { Switch } from '@/components/ui/switch';
 
 const AdminPanel = () => {
@@ -406,7 +407,9 @@ const AdminPanel = () => {
             <TabsTrigger value="geral">Geral</TabsTrigger>
             <TabsTrigger value="online" onClick={() => loadOnlineUsers()}>Status em Tempo Real</TabsTrigger>
             <TabsTrigger value="vencimentos">Vencimentos</TabsTrigger>
-            
+            <TabsTrigger value="testes" className="flex items-center gap-1.5">
+              <FlaskConical className="w-3.5 h-3.5" /> Testes
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="geral" className="space-y-8">
@@ -587,6 +590,10 @@ const AdminPanel = () => {
                 Enviar para Google Sheets
               </Button>
             </div>
+          </TabsContent>
+
+          <TabsContent value="testes">
+            <SystemTestsTab />
           </TabsContent>
 
         </Tabs>

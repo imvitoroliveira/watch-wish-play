@@ -377,6 +377,42 @@ export type Database = {
         }
         Relationships: []
       }
+      test_results: {
+        Row: {
+          duration_ms: number
+          failed: number
+          id: string
+          passed: number
+          results: Json
+          run_at: string
+          run_id: string
+          total_tests: number
+          trigger_type: string
+        }
+        Insert: {
+          duration_ms?: number
+          failed?: number
+          id?: string
+          passed?: number
+          results?: Json
+          run_at?: string
+          run_id: string
+          total_tests?: number
+          trigger_type?: string
+        }
+        Update: {
+          duration_ms?: number
+          failed?: number
+          id?: string
+          passed?: number
+          results?: Json
+          run_at?: string
+          run_id?: string
+          total_tests?: number
+          trigger_type?: string
+        }
+        Relationships: []
+      }
       trailer_challenge: {
         Row: {
           challenge_date: string
