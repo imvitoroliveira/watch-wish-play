@@ -3,8 +3,23 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-admin-auth, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
+
+function validateAdmin(req: Request): boolean {
+  const authHeader = req.headers.get("x-admin-auth") || "";
+  const ADMIN_USER = Deno.env.get("ADMIN_USER");
+  const ADMIN_PASS = Deno.env.get("ADMIN_PASS");
+  if (!ADMIN_USER || !ADMIN_PASS) return false;
+
+  try {
+    const decoded = atob(authHeader);
+    const [user, pass] = decoded.split(":");
+    return user === ADMIN_USER && pass === ADMIN_PASS;
+  } catch {
+    return false;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -12,6 +27,14 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // All methods require admin auth
+    if (!validateAdmin(req)) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);

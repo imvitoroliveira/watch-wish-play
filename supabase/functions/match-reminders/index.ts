@@ -16,13 +16,12 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // POST: toggle reminder
+    // POST: toggle reminder or list
     if (req.method === 'POST') {
       const { username, action, match_id, match_date, home_team, away_team, league_name } = await req.json();
       if (!username) return new Response(JSON.stringify({ error: 'username required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
       if (action === 'toggle') {
-        // Check if exists
         const { data: existing } = await supabase
           .from('match_reminders')
           .select('id')
@@ -55,11 +54,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // GET: cron job - check reminders and send push for matches starting in 5 min
+    // GET: cron job - check reminders, send push, and cleanup old entries
     if (req.method === 'GET') {
       const now = new Date();
       const fiveMinLater = new Date(now.getTime() + 5 * 60 * 1000);
 
+      // --- Cleanup: delete reminders older than 7 days ---
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const { count: deletedCount } = await supabase
+        .from('match_reminders')
+        .delete({ count: 'exact' })
+        .lt('match_date', sevenDaysAgo.toISOString());
+
+      // --- Send notifications for upcoming matches ---
       const { data: pending } = await supabase
         .from('match_reminders')
         .select('*')
@@ -68,7 +75,7 @@ Deno.serve(async (req) => {
         .gte('match_date', now.toISOString());
 
       if (!pending || pending.length === 0) {
-        return new Response(JSON.stringify({ sent: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ sent: 0, cleaned: deletedCount || 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       const pushAlertKey = Deno.env.get('PUSHALERT_API_KEY');
@@ -104,7 +111,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      return new Response(JSON.stringify({ sent }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ sent, cleaned: deletedCount || 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

@@ -21,6 +21,7 @@ interface AuthContextType {
   uploadClientList: (data: ClientData[]) => void;
   isExpiringSoon: boolean;
   clientsLoading: boolean;
+  getAdminAuth: () => string;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -33,40 +34,29 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAdmin, setIsAdmin] = useState(() => {
-    const token = localStorage.getItem('msc_admin_token');
-    return !!token;
+    return !!sessionStorage.getItem('msc_admin_token');
+  });
+  const [adminAuth, setAdminAuth] = useState(() => {
+    return sessionStorage.getItem('msc_admin_auth') || '';
   });
   const [currentClient, setCurrentClient] = useState<ClientData | null>(() => {
     const saved = localStorage.getItem('msc_client');
     return saved ? JSON.parse(saved) : null;
   });
-  const [clientList, setClientList] = useState<ClientData[]>(() => {
-    const saved = localStorage.getItem('msc_clients');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [clientsLoading, setClientsLoading] = useState(true);
+  // clientList is only populated in the admin panel after upload — never loaded from backend on mount
+  const [clientList, setClientList] = useState<ClientData[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
 
   const isExpiringSoon = currentClient?.["7"] === "1";
 
-  // Load clients from DB on mount
+  // Migrate: clear old insecure localStorage keys on mount
   useEffect(() => {
-    const loadClients = async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('manage-clients', {
-          method: 'GET',
-        });
-        if (!error && data?.clients && Array.isArray(data.clients) && data.clients.length > 0) {
-          setClientList(data.clients);
-          localStorage.setItem('msc_clients', JSON.stringify(data.clients));
-        }
-      } catch {
-        // Use local cache silently
-      } finally {
-        setClientsLoading(false);
-      }
-    };
-    loadClients();
+    localStorage.removeItem('msc_admin_token');
+    localStorage.removeItem('msc_admin_creds');
+    localStorage.removeItem('msc_clients');
   }, []);
+
+  const getAdminAuth = () => adminAuth;
 
   const loginAdmin = async (user: string, pass: string): Promise<boolean> => {
     try {
@@ -75,8 +65,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         body: { user: user.trim(), pass: pass.trim() },
       });
       if (error || !data?.success) return false;
+      const authB64 = btoa(`${user.trim()}:${pass.trim()}`);
       setIsAdmin(true);
-      localStorage.setItem('msc_admin_token', data.token);
+      setAdminAuth(authB64);
+      sessionStorage.setItem('msc_admin_token', data.token);
+      sessionStorage.setItem('msc_admin_auth', authB64);
+
+      // Load client list from backend for admin session
+      try {
+        const { data: clientsData } = await supabase.functions.invoke('manage-clients', {
+          method: 'GET',
+          headers: { 'x-admin-auth': authB64 },
+        });
+        if (clientsData?.clients && Array.isArray(clientsData.clients)) {
+          setClientList(clientsData.clients);
+        }
+      } catch {
+        // Silent — admin can still upload
+      }
+
       return true;
     } catch {
       return false;
@@ -103,17 +110,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem('msc_client', JSON.stringify(client));
       return { success: true };
     } catch {
-      // Fallback to local validation if edge function fails
-      const client = clientList.find(c => c.u === user && c.p === pass);
-      if (!client) return { success: false, reason: 'invalid' };
-
-      const isExpired = client.t?.toLowerCase() === 'expirado' ||
-        (client.e && new Date(client.e) < new Date());
-      if (isExpired) return { success: false, reason: 'expired' };
-
-      setCurrentClient(client);
-      localStorage.setItem('msc_client', JSON.stringify(client));
-      return { success: true };
+      return { success: false, reason: 'error' };
     }
   };
 
@@ -129,23 +126,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     setIsAdmin(false);
+    setAdminAuth('');
     setCurrentClient(null);
-    localStorage.removeItem('msc_admin_token');
-    localStorage.removeItem('msc_admin_creds');
+    setClientList([]);
+    sessionStorage.removeItem('msc_admin_token');
+    sessionStorage.removeItem('msc_admin_auth');
     localStorage.removeItem('msc_client');
   };
 
   const uploadClientList = async (data: ClientData[]) => {
     setClientList(data);
-    localStorage.setItem('msc_clients', JSON.stringify(data));
 
     try {
       await supabase.functions.invoke('manage-clients', {
         method: 'POST',
         body: { clients: data },
+        headers: { 'x-admin-auth': adminAuth },
       });
     } catch {
-      // Silent fail, data saved locally
+      // Silent fail, data kept in memory for session
     }
   };
 
@@ -161,6 +160,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       uploadClientList,
       isExpiringSoon,
       clientsLoading,
+      getAdminAuth,
     }}>
       {children}
     </AuthContext.Provider>
