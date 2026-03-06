@@ -235,7 +235,7 @@ export default function SystemTestsTab() {
                     >
                       {/* Category filter */}
                       <div className="flex gap-2 p-3 border-b border-border flex-wrap">
-                        {['all', 'functional', 'security', 'regression'].map(cat => (
+                        {['all', 'functional', 'security', 'regression', 'integration'].map(cat => (
                           <button
                             key={cat}
                             onClick={() => setFilterCategory(cat)}
