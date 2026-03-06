@@ -216,11 +216,34 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // cakto-webhook: checkout without plan should be 400
+  // cakto-webhook: checkout without plan should have error
   if (test.name === "cakto-webhook: checkout sem plan = 400") {
-    // Already handled by status check, but verify error message exists
     if (data && typeof data === "object" && !data.error) {
       return "Esperava campo 'error' na resposta de validação.";
+    }
+  }
+
+  // tmdb-proxy search: results should be an array
+  if (test.name === "tmdb-proxy: search retorna results") {
+    if (!Array.isArray(data?.results)) {
+      return "TMDB search não retornou array de results — proxy pode estar falhando.";
+    }
+    if (data.results.length === 0) {
+      return "TMDB search por 'Matrix' retornou 0 results — API pode estar indisponível.";
+    }
+    // Verify poster_path exists in at least one result
+    const hasPosters = data.results.some((r: any) => r.poster_path);
+    if (!hasPosters) {
+      return "Nenhum resultado do TMDB tem poster_path — posters não carregarão na aba Atualizações.";
+    }
+  }
+
+  // m3u-auto-refresh: verify diff generation
+  if (test.name === "m3u-auto-refresh: gera diff em m3u_updates") {
+    if (data?.skipped) return null; // OK if no source URL
+    if (data?.success && data?.new_titles !== undefined) return null; // OK
+    if (!data?.success && !data?.skipped) {
+      return "Auto-refresh falhou sem skip — pipeline de diff pode estar quebrado.";
     }
   }
 
