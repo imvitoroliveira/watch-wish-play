@@ -3,7 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader2 } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader2, Bell, Zap } from 'lucide-react';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface TestResult {
@@ -54,11 +55,52 @@ export default function SystemTestsTab() {
     } catch {} finally { setRunning(false); }
   };
 
+  const testPushAlert = async () => {
+    try {
+      const adminAuth = localStorage.getItem('msc_admin_creds');
+      if (!adminAuth) { toast.error('Login de admin necessário'); return; }
+      
+      const { data } = await supabase.functions.invoke('push-test', {
+        body: { action: 'validate' },
+        headers: { 'x-admin-auth': adminAuth },
+      });
+      
+      if (data?.success) {
+        toast.success(`PushAlert OK! API status: ${data.api_status}`);
+      } else {
+        toast.error(`PushAlert falhou: ${data?.error || data?.api_response || 'Erro desconhecido'}`);
+      }
+    } catch (e) {
+      toast.error('Erro ao testar PushAlert');
+    }
+  };
+
+  const sendTestPush = async (username: string) => {
+    try {
+      const adminAuth = localStorage.getItem('msc_admin_creds');
+      if (!adminAuth) { toast.error('Login de admin necessário'); return; }
+      
+      const { data } = await supabase.functions.invoke('push-test', {
+        body: { action: 'send', username },
+        headers: { 'x-admin-auth': adminAuth },
+      });
+      
+      if (data?.success) {
+        toast.success(`Push enviado para ${username}!`);
+      } else {
+        toast.error(`Falha: ${JSON.stringify(data?.push_response || data?.error)}`);
+      }
+    } catch (e) {
+      toast.error('Erro ao enviar push de teste');
+    }
+  };
+
   const getCategoryIcon = (cat: string) => {
     switch (cat) {
       case 'functional': return <Bug className="w-3.5 h-3.5" />;
       case 'security': return <Shield className="w-3.5 h-3.5" />;
       case 'regression': return <GitCompare className="w-3.5 h-3.5" />;
+      case 'integration': return <Zap className="w-3.5 h-3.5" />;
       default: return null;
     }
   };
@@ -68,6 +110,7 @@ export default function SystemTestsTab() {
       case 'functional': return 'Funcional';
       case 'security': return 'Segurança';
       case 'regression': return 'Regressão';
+      case 'integration': return 'Integração';
       default: return cat;
     }
   };
