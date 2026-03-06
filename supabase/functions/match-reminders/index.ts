@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
       for (const reminder of pending) {
         try {
           if (pushAlertKey) {
-            await fetch('https://api.pushalert.co/rest/v1/send', {
+            await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
               method: 'POST',
               headers: {
                 'Authorization': `api_key=${pushAlertKey}`,
@@ -87,6 +87,9 @@ Deno.serve(async (req) => {
                 title: '⚽ Jogo começando em 5 minutos!',
                 message: `${reminder.home_team} vs ${reminder.away_team} - ${reminder.league_name}`,
                 url: '/',
+                attributes: {
+                  username: reminder.client_username,
+                },
               }),
             });
           }
