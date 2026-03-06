@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,31 @@ import { Progress } from '@/components/ui/progress';
 import { RefreshCw, CheckCircle, XCircle, Clock, Shield, Bug, GitCompare, Loader2, Bell, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+
+function AnimatedCounter({ value, className }: { value: number; className?: string }) {
+  const [display, setDisplay] = useState(0);
+  const prevRef = useRef(0);
+
+  useEffect(() => {
+    const from = prevRef.current;
+    const to = value;
+    if (from === to) { setDisplay(to); return; }
+    const duration = 600;
+    const startTime = performance.now();
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(from + (to - from) * eased));
+      if (progress < 1) requestAnimationFrame(tick);
+      else prevRef.current = to;
+    };
+    requestAnimationFrame(tick);
+    prevRef.current = to;
+  }, [value]);
+
+  return <span className={className}>{display}</span>;
+}
 
 interface TestResult {
   name: string;
@@ -168,15 +193,21 @@ export default function SystemTestsTab() {
         {latestRun && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
             <div className="bg-secondary/50 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-foreground">{latestRun.total_tests}</p>
+              <p className="text-2xl font-bold text-foreground">
+                <AnimatedCounter value={latestRun.total_tests} />
+              </p>
               <p className="text-xs text-muted-foreground">Total</p>
             </div>
             <div className="bg-green-500/10 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-green-400">{latestRun.passed}</p>
+              <p className="text-2xl font-bold text-green-400">
+                <AnimatedCounter value={latestRun.passed} />
+              </p>
               <p className="text-xs text-muted-foreground">Passou</p>
             </div>
             <div className={`rounded-lg p-3 text-center ${latestRun.failed > 0 ? 'bg-red-500/10' : 'bg-secondary/50'}`}>
-              <p className={`text-2xl font-bold ${latestRun.failed > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>{latestRun.failed}</p>
+              <p className={`text-2xl font-bold ${latestRun.failed > 0 ? 'text-red-400' : 'text-muted-foreground'}`}>
+                <AnimatedCounter value={latestRun.failed} />
+              </p>
               <p className="text-xs text-muted-foreground">Falhou</p>
             </div>
             <div className="bg-secondary/50 rounded-lg p-3 text-center">
