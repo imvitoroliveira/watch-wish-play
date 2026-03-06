@@ -50,6 +50,24 @@ export type Database = {
         }
         Relationships: []
       }
+      app_settings: {
+        Row: {
+          billing_enabled: boolean
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          billing_enabled?: boolean
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          billing_enabled?: boolean
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clients_list: {
         Row: {
           clients: Json
