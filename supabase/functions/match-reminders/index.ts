@@ -77,21 +77,21 @@ Deno.serve(async (req) => {
       for (const reminder of pending) {
         try {
           if (pushAlertKey) {
-            await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
+            const params = new URLSearchParams();
+            params.append('title', '⚽ Jogo começando em 5 minutos!');
+            params.append('message', `${reminder.home_team} vs ${reminder.away_team} - ${reminder.league_name}`);
+            params.append('url', 'https://clientestoptv.lovable.app/dashboard');
+            params.append('attributes', JSON.stringify({ username: reminder.client_username }));
+
+            const pushRes = await fetch('https://api.pushalert.co/rest/v2/web-push/send', {
               method: 'POST',
               headers: {
                 'Authorization': `api_key=${pushAlertKey}`,
-                'Content-Type': 'application/json',
               },
-              body: JSON.stringify({
-                title: '⚽ Jogo começando em 5 minutos!',
-                message: `${reminder.home_team} vs ${reminder.away_team} - ${reminder.league_name}`,
-                url: '/',
-                attributes: {
-                  username: reminder.client_username,
-                },
-              }),
+              body: params,
             });
+            const pushResult = await pushRes.text();
+            console.log(`[Push] match-reminder for ${reminder.client_username}:`, pushResult);
           }
 
           await supabase
