@@ -21,6 +21,14 @@ interface TestCase {
   };
 }
 
+// Build admin auth header from env
+function getAdminAuthHeader(): Record<string, string> {
+  const u = Deno.env.get("ADMIN_USER") || "";
+  const p = Deno.env.get("ADMIN_PASS") || "";
+  return { "x-admin-auth": btoa(`${u}:${p}`) };
+}
+const ADMIN_HDR = getAdminAuthHeader();
+
 const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   // admin-login (5 tests)
