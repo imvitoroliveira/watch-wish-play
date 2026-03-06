@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -53,6 +54,8 @@ interface TestRun {
 }
 
 export default function SystemTestsTab() {
+  const { getAdminAuth } = useAuth();
+  const adminAuth = getAdminAuth();
   const [runs, setRuns] = useState<TestRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -91,6 +94,7 @@ export default function SystemTestsTab() {
       await supabase.functions.invoke('system-health-check', {
         method: 'POST',
         body: { trigger: 'manual' },
+        headers: { 'x-admin-auth': adminAuth },
       });
 
       clearInterval(pollInterval);
@@ -106,6 +110,7 @@ export default function SystemTestsTab() {
       const { error } = await supabase.functions.invoke('system-health-check', {
         method: 'DELETE',
         body: { id },
+        headers: { 'x-admin-auth': adminAuth },
       });
 
       if (error) throw error;
@@ -126,6 +131,7 @@ export default function SystemTestsTab() {
       const { error } = await supabase.functions.invoke('system-health-check', {
         method: 'DELETE',
         body: { all: true },
+        headers: { 'x-admin-auth': adminAuth },
       });
 
       if (error) throw error;

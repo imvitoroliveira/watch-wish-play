@@ -1,9 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { Buffer } from "node:buffer";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-cakto-signature, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 // Map checkout URLs to plan details
@@ -20,6 +22,21 @@ function getPlanFromCheckout(checkoutId: string): { plan: string; days: number }
   return null;
 }
 
+function verifySignature(rawBody: string, signature: string | null, secret: string): boolean {
+  if (!signature) return false;
+  try {
+    const expectedSignature = createHmac("sha256", secret)
+      .update(rawBody)
+      .digest("hex");
+    const expectedBuffer = Buffer.from(expectedSignature, "hex");
+    const signatureBuffer = Buffer.from(signature, "hex");
+    if (expectedBuffer.length !== signatureBuffer.length) return false;
+    return timingSafeEqual(expectedBuffer, signatureBuffer);
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -29,13 +46,24 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const natvToken = Deno.env.get("NATV_API_TOKEN")!;
+    const caktoSecret = Deno.env.get("CAKTO_CLIENT_SECRET") || "";
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // POST from Cakto webhook or from our frontend (to generate checkout URL)
     if (req.method === "POST") {
-      const body = await req.json();
+      const rawBody = await req.text();
+      let body: any;
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       // Frontend request: get checkout URL with username embedded
+      // This does NOT come from Cakto, so no signature check needed
       if (body.action === "get_checkout_url") {
         const { username, plan } = body;
         if (!username || !plan) {
@@ -67,6 +95,27 @@ Deno.serve(async (req) => {
         });
       }
 
+      // ─── Webhook events from Cakto: validate HMAC signature ───
+      if (body.event) {
+        // Verify signature if secret is configured
+        if (caktoSecret) {
+          const signature = req.headers.get("x-cakto-signature") ||
+                            req.headers.get("x-gateway-signature") ||
+                            req.headers.get("x-webhook-signature");
+
+          if (!verifySignature(rawBody, signature, caktoSecret)) {
+            console.error("[Cakto Webhook] Invalid signature — possible spoofing attempt");
+            return new Response(JSON.stringify({ error: "Invalid signature" }), {
+              status: 401,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          console.log("[Cakto Webhook] Signature verified ✓");
+        } else {
+          console.warn("[Cakto Webhook] CAKTO_CLIENT_SECRET not set — skipping signature validation");
+        }
+      }
+
       // Cakto webhook event
       if (body.event === "purchase_approved" || body.event === "subscription_renewed") {
         console.log(`[Cakto Webhook] Event: ${body.event}`, JSON.stringify(body));
@@ -76,7 +125,6 @@ Deno.serve(async (req) => {
           body.data?.buyer?.custom_fields?.username ||
           body.data?.metadata?.username ||
           body.data?.checkout?.custom_params?.username ||
-          // Try to extract from the checkout URL query params
           extractUsernameFromTracker(body);
 
         if (!username) {
@@ -137,7 +185,6 @@ Deno.serve(async (req) => {
               const clients = clientsData.clients as any[];
               const clientIndex = clients.findIndex((c: any) => c.u === username);
               if (clientIndex >= 0) {
-                // Calculate new expiration date
                 const now = new Date();
                 const currentExp = clients[clientIndex].e ? new Date(clients[clientIndex].e) : now;
                 const baseDate = currentExp > now ? currentExp : now;
@@ -185,7 +232,6 @@ Deno.serve(async (req) => {
 });
 
 function extractUsernameFromTracker(body: any): string | null {
-  // Try various locations where Cakto might put query params
   const tracker = body.data?.tracker || body.data?.utm_content || "";
   if (tracker && typeof tracker === "string") {
     const match = tracker.match(/username[=:]([^&\s]+)/i);

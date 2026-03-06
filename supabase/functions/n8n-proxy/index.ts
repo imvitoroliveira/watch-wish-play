@@ -5,6 +5,33 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Whitelist of allowed webhook domains
+const ALLOWED_DOMAINS = [
+  "n8n.io",
+  "app.n8n.cloud",
+  "hooks.n8n.cloud",
+  "n8n.lovable.app",
+  "make.com",
+  "hook.us1.make.com",
+  "hook.eu1.make.com",
+  "hook.integromat.com",
+  "hooks.zapier.com",
+  "automation.lovable.app",
+];
+
+function isAllowedUrl(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    const hostname = url.hostname.toLowerCase();
+    // Check exact match or subdomain match
+    return ALLOWED_DOMAINS.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function validateAdmin(req: Request): boolean {
   const authHeader = req.headers.get("x-admin-auth") || "";
   const ADMIN_USER = Deno.env.get("ADMIN_USER");
@@ -44,6 +71,17 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "webhook_url and payload are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate webhook_url against whitelist
+    if (!isAllowedUrl(webhook_url)) {
+      return new Response(
+        JSON.stringify({
+          error: "Domain not allowed",
+          allowed_domains: ALLOWED_DOMAINS,
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
