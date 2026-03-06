@@ -327,6 +327,7 @@ Deno.serve(async (req) => {
 
     // DELETE = remove one run or clear all
     if (req.method === "DELETE") {
+      const reqUrl = new URL(req.url);
       let body: { id?: string; all?: boolean } = {};
       try {
         body = await req.json();
@@ -334,7 +335,12 @@ Deno.serve(async (req) => {
         body = {};
       }
 
-      if (body.all) {
+      const allFromQuery = reqUrl.searchParams.get("all") === "true";
+      const idFromQuery = reqUrl.searchParams.get("id") || undefined;
+      const shouldDeleteAll = body.all || allFromQuery;
+      const id = body.id || idFromQuery;
+
+      if (shouldDeleteAll) {
         const { error } = await supabase.from("test_results").delete().gte("run_at", "1970-01-01T00:00:00Z");
         if (error) throw error;
 
@@ -343,17 +349,17 @@ Deno.serve(async (req) => {
         });
       }
 
-      if (!body.id) {
+      if (!id) {
         return new Response(JSON.stringify({ error: "Missing id" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      const { error } = await supabase.from("test_results").delete().eq("id", body.id);
+      const { error } = await supabase.from("test_results").delete().eq("id", id);
       if (error) throw error;
 
-      return new Response(JSON.stringify({ success: true, id: body.id }), {
+      return new Response(JSON.stringify({ success: true, id }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
