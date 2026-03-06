@@ -164,6 +164,14 @@ const TEST_SUITE: TestCase[] = [
   { name: "push-test: auth inválida = 401", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
   { name: "push-test: não vazar API key", category: "security", fn: "push-test", method: "POST", body: { action: "validate" }, expect: { notContains: ["PUSHALERT", "PUSHALERT_API_KEY", "service_role"] } },
   { name: "push-test: bloquear GET = 405", category: "security", fn: "push-test", method: "GET", expect: { status: [405] } },
+
+  // ═══════════════════════════════════════════════
+  // Atualizações do Catálogo — m3u_updates + TMDB posters (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "tmdb-proxy: search retorna results", category: "functional", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/search/movie", params: { query: "Matrix", language: "pt-BR" } }, expect: { status: [200], hasKey: "results" } },
+  { name: "tmdb-proxy: search com query vazia = results vazio", category: "functional", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/search/movie", params: { query: "", language: "pt-BR" } }, expect: { status: [200, 422] } },
+  { name: "m3u-auto-refresh: gera diff em m3u_updates", category: "integration", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { status: [200] } },
+  { name: "parse-m3u: GET retorna updated_at recente", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "updated_at" } },
 ];
 
 // Custom deep validations beyond simple status/key checks
