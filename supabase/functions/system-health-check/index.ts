@@ -21,6 +21,14 @@ interface TestCase {
   };
 }
 
+// Build admin auth header from env
+function getAdminAuthHeader(): Record<string, string> {
+  const u = Deno.env.get("ADMIN_USER") || "";
+  const p = Deno.env.get("ADMIN_PASS") || "";
+  return { "x-admin-auth": btoa(`${u}:${p}`) };
+}
+const ADMIN_HDR = getAdminAuthHeader();
+
 const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   // admin-login (5 tests)
@@ -49,13 +57,15 @@ const TEST_SUITE: TestCase[] = [
   { name: "app-settings: não vazar segredos", category: "security", fn: "app-settings", method: "GET", expect: { notContains: ["service_role", "ADMIN_PASS", "ADMIN_USER"] } },
 
   // ═══════════════════════════════════════════════
-  // manage-clients (5 tests)
+  // manage-clients (7 tests) — now requires x-admin-auth
   // ═══════════════════════════════════════════════
-  { name: "manage-clients: GET retorna array clients", category: "functional", fn: "manage-clients", method: "GET", expect: { status: [200], hasKey: "clients" } },
-  { name: "manage-clients: POST vazio = 400", category: "functional", fn: "manage-clients", method: "POST", body: { clients: [] }, expect: { status: [400] } },
-  { name: "manage-clients: GET clients é array não-vazio", category: "integration", fn: "manage-clients", method: "GET", expect: { status: [200], hasKey: "clients" } },
-  { name: "manage-clients: não vazar segredos", category: "security", fn: "manage-clients", method: "GET", expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_PASS"] } },
-  { name: "manage-clients: formato estável", category: "regression", fn: "manage-clients", method: "GET", expect: { status: [200], hasKey: "clients" } },
+  { name: "manage-clients: sem auth = 401", category: "security", fn: "manage-clients", method: "GET", expect: { status: [401] } },
+  { name: "manage-clients: auth inválida = 401", category: "security", fn: "manage-clients", method: "POST", body: { clients: [] }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
+  { name: "manage-clients: GET retorna array clients", category: "functional", fn: "manage-clients", method: "GET", headers: ADMIN_HDR, expect: { status: [200], hasKey: "clients" } },
+  { name: "manage-clients: POST vazio = 400", category: "functional", fn: "manage-clients", method: "POST", body: { clients: [] }, headers: ADMIN_HDR, expect: { status: [400] } },
+  { name: "manage-clients: GET clients é array não-vazio", category: "integration", fn: "manage-clients", method: "GET", headers: ADMIN_HDR, expect: { status: [200], hasKey: "clients" } },
+  { name: "manage-clients: não vazar segredos", category: "security", fn: "manage-clients", method: "GET", headers: ADMIN_HDR, expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_PASS"] } },
+  { name: "manage-clients: formato estável", category: "regression", fn: "manage-clients", method: "GET", headers: ADMIN_HDR, expect: { status: [200], hasKey: "clients" } },
 
   // ═══════════════════════════════════════════════
   // user-presence (5 tests)
@@ -116,12 +126,22 @@ const TEST_SUITE: TestCase[] = [
   { name: "content-alerts: formato estável", category: "regression", fn: "content-alerts", method: "POST", body: { action: "list", username: "regression" }, expect: { status: [200], hasKey: "alerts" } },
 
   // ═══════════════════════════════════════════════
-  // n8n-proxy (4 tests)
+  // n8n-proxy (6 tests) — now requires x-admin-auth
   // ═══════════════════════════════════════════════
-  { name: "n8n-proxy: sem webhook_url = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { payload: { test: true } }, expect: { status: [400], hasKey: "error" } },
-  { name: "n8n-proxy: sem payload = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com" }, expect: { status: [400], hasKey: "error" } },
+  { name: "n8n-proxy: sem auth = 401", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com", payload: { t: 1 } }, expect: { status: [401] } },
+  { name: "n8n-proxy: auth inválida = 401", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com", payload: { t: 1 } }, headers: { "x-admin-auth": "fake" }, expect: { status: [401] } },
+  { name: "n8n-proxy: sem webhook_url = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { payload: { test: true } }, headers: ADMIN_HDR, expect: { status: [400], hasKey: "error" } },
+  { name: "n8n-proxy: sem payload = 400", category: "functional", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com" }, headers: ADMIN_HDR, expect: { status: [400], hasKey: "error" } },
   { name: "n8n-proxy: bloquear GET = 405", category: "security", fn: "n8n-proxy", method: "GET", expect: { status: [405] } },
-  { name: "n8n-proxy: formato erro estável", category: "regression", fn: "n8n-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
+  { name: "n8n-proxy: formato erro estável", category: "regression", fn: "n8n-proxy", method: "POST", body: {}, expect: { status: [401], hasKey: "error" } },
+
+  // ═══════════════════════════════════════════════
+  // google-sheets-sync (4 tests) — NEW
+  // ═══════════════════════════════════════════════
+  { name: "google-sheets-sync: sem auth = 401", category: "security", fn: "google-sheets-sync", method: "POST", body: { spreadsheet_id: "x", sheet_name: "y", clients: [] }, expect: { status: [401] } },
+  { name: "google-sheets-sync: auth inválida = 401", category: "security", fn: "google-sheets-sync", method: "POST", body: { spreadsheet_id: "x", sheet_name: "y", clients: [] }, headers: { "x-admin-auth": "fake" }, expect: { status: [401] } },
+  { name: "google-sheets-sync: bloquear GET = 405", category: "security", fn: "google-sheets-sync", method: "GET", expect: { status: [405] } },
+  { name: "google-sheets-sync: não vazar segredos", category: "security", fn: "google-sheets-sync", method: "POST", body: {}, expect: { notContains: ["service_role", "GOOGLE_SERVICE_ACCOUNT_JSON", "private_key", "ADMIN_PASS"] } },
 
   // ═══════════════════════════════════════════════
   // parse-m3u (6 tests) — CRITICAL: validates catalog health
