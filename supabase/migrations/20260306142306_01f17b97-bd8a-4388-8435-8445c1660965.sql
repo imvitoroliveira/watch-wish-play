@@ -1,0 +1,1 @@
+CREATE POLICY "Allow public read m3u_updates" ON public.m3u_updates FOR SELECT USING (true);
