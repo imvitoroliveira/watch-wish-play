@@ -161,12 +161,29 @@ Deno.serve(async (req) => {
       }
 
       const planInfo = VALID_PLANS[plan];
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-
-      try {
       const returnUrl = "https://clientestoptv.lovable.app";
 
-      const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
+      try {
+        const customersRes = await fetch("https://api.abacatepay.com/v1/customer/list", {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${abacateApiKey}`,
+            "Accept": "application/json",
+          },
+        });
+
+        const customersData = await customersRes.json();
+        const customerId = customersData?.data?.[0]?.id;
+
+        if (!customersRes.ok || !customerId) {
+          console.error("[create_billing] Could not resolve customerId:", JSON.stringify(customersData));
+          return new Response(JSON.stringify({ error: "payment customer not configured" }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${abacateApiKey}`,
@@ -177,10 +194,7 @@ Deno.serve(async (req) => {
             methods: ["PIX"],
             returnUrl: returnUrl,
             completionUrl: returnUrl,
-            customer: {
-              name: username,
-              email: `${username.toLowerCase()}@example.com`,
-            },
+            customerId,
             products: [
               {
                 externalId: `${plan}_${username}`,
