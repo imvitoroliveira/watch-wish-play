@@ -237,10 +237,6 @@ function runCustomValidation(test: TestCase, data: any): string | null {
       return "Resposta sem 'count', 'success' ou 'skipped' — pipeline de sync pode estar quebrado.";
     }
   }
-    if (!data?.skipped && data?.count === undefined && data?.success === undefined) {
-      return "Resposta sem 'count', 'success' ou 'skipped' — pipeline de sync pode estar quebrado.";
-    }
-  }
 
   // manage-clients: clients array should not be empty
   if (test.name === "manage-clients: GET clients é array não-vazio") {
