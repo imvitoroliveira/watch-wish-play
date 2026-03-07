@@ -437,35 +437,46 @@ Deno.serve(async (req) => {
       console.log(`[AbacatePay Webhook] Authenticated event: ${body.event}`);
 
       const billingData = body.data || body;
-      
-      // AbacatePay can send metadata in various locations depending on payload version
-      let metadata = billingData.metadata || body.metadata || {};
-      
-      // Fallback: extract username/plan from product externalId (format: "plan_username")
-      if ((!metadata.username || !metadata.plan) && billingData.products && Array.isArray(billingData.products) && billingData.products.length > 0) {
-        const externalId = billingData.products[0].externalId || billingData.products[0].external_id || "";
-        console.log(`[AbacatePay Webhook] Trying externalId fallback: "${externalId}"`);
-        const match = externalId.match(/^(mensal|trimestral|semestral)_(.+)$/);
-        if (match) {
-          metadata = { ...metadata, plan: metadata.plan || match[1], username: metadata.username || match[2] };
-          console.log(`[AbacatePay Webhook] Extracted from externalId: username=${metadata.username}, plan=${metadata.plan}`);
+      const transactionId = resolveTransactionId(body, billingData);
+      const abacateTransactionId = transactionId !== "unknown" ? `abacate_${transactionId}` : null;
+
+      let existingTx: {
+        id: string;
+        status: string;
+        natv_activated: boolean;
+        client_username: string;
+        plan: string;
+        days: number;
+      } | null = null;
+
+      if (abacateTransactionId) {
+        const { data } = await supabase
+          .from("payment_transactions")
+          .select("id, status, natv_activated, client_username, plan, days")
+          .eq("cakto_transaction_id", abacateTransactionId)
+          .maybeSingle();
+
+        existingTx = data;
+
+        if (existingTx && existingTx.status === "approved") {
+          console.warn(`[Security] Duplicate transaction detected: ${abacateTransactionId} — skipping`);
+          return new Response(JSON.stringify({ success: true, message: "already processed" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
       }
-      
-      // Fallback: extract from product description (format: "Renovação ... - username")
-      if ((!metadata.username) && billingData.products && Array.isArray(billingData.products) && billingData.products.length > 0) {
-        const desc = billingData.products[0].description || "";
-        const descMatch = desc.match(/- ([a-zA-Z0-9._-]+)$/);
-        if (descMatch) {
-          metadata = { ...metadata, username: descMatch[1] };
-          console.log(`[AbacatePay Webhook] Extracted username from description: ${metadata.username}`);
-        }
+
+      const metadata = buildWebhookMetadata(body, billingData);
+
+      if (existingTx) {
+        metadata.username = metadata.username || existingTx.client_username;
+        metadata.plan = metadata.plan || existingTx.plan;
       }
-      
-      console.log(`[AbacatePay Webhook] Final metadata: ${JSON.stringify(metadata)}`);
+
+      console.log(`[AbacatePay Webhook] Transaction=${abacateTransactionId || "unknown"}, metadata=${JSON.stringify(metadata)}`);
 
       // STEP 2: Validate payment data integrity
-      const paymentValidation = validatePaymentData(billingData, metadata);
+      const paymentValidation = validatePaymentData(billingData, metadata, existingTx || undefined);
       if (!paymentValidation.valid) {
         console.error(`[Security] Payment validation FAILED: ${paymentValidation.reason}`);
         return new Response(JSON.stringify({ error: paymentValidation.reason }), {
@@ -474,39 +485,45 @@ Deno.serve(async (req) => {
         });
       }
 
-      const username = metadata.username.trim();
+      const username = paymentValidation.username!;
       const planKey = paymentValidation.plan!;
       const days = paymentValidation.days!;
 
-      // STEP 3: Check for duplicate transactions
-      const transactionId = billingData.id || billingData.billing_id || "unknown";
-      const abacateTransactionId = `abacate_${transactionId}`;
+      console.log(`[AbacatePay Webhook] Validated: user=${username}, plan=${planKey}, days=${days}, tx=${abacateTransactionId || "unknown"}`);
 
-      if (transactionId !== "unknown") {
-        const { data: existingTx } = await supabase
+      // STEP 3: Persist approved transaction BEFORE activation
+      let txData: { id: string } | null = null;
+
+      if (existingTx?.id) {
+        const { data } = await supabase
           .from("payment_transactions")
+          .update({
+            client_username: username,
+            plan: planKey,
+            days,
+            status: "approved",
+          })
+          .eq("id", existingTx.id)
           .select("id")
-          .eq("cakto_transaction_id", abacateTransactionId)
-          .maybeSingle();
+          .single();
 
-        if (existingTx) {
-          console.warn(`[Security] Duplicate transaction detected: ${abacateTransactionId} — skipping`);
-          return new Response(JSON.stringify({ success: true, message: "already processed" }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+        txData = data;
+      } else {
+        const { data } = await supabase
+          .from("payment_transactions")
+          .insert({
+            client_username: username,
+            plan: planKey,
+            days,
+            cakto_transaction_id: abacateTransactionId,
+            status: "approved",
+          })
+          .select("id")
+          .single();
+
+        txData = data;
       }
 
-      console.log(`[AbacatePay Webhook] Validated: user=${username}, plan=${planKey}, days=${days}, tx=${abacateTransactionId}`);
-
-      // STEP 4: Log transaction BEFORE activation
-      const { data: txData } = await supabase.from("payment_transactions").insert({
-        client_username: username,
-        plan: planKey,
-        days: days,
-        cakto_transaction_id: abacateTransactionId,
-        status: "approved",
-      }).select("id").single();
 
       // STEP 5: Activate via NATV API
       const natvToken = Deno.env.get("NATV_API_TOKEN")!;
