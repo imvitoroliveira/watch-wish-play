@@ -20,6 +20,41 @@ const PLAN_BY_AMOUNT: Record<number, string> = {
   17000: "semestral",
 };
 
+function generateDeterministicCpf(username: string): string {
+  // FNV-1a hash for stable seed
+  let seed = 2166136261;
+  for (let i = 0; i < username.length; i++) {
+    seed ^= username.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+
+  // Build 9 base digits from pseudo-random deterministic sequence
+  const base: number[] = [];
+  let n = Math.abs(seed) || 1;
+  for (let i = 0; i < 9; i++) {
+    n = (Math.imul(n, 1103515245) + 12345) & 0x7fffffff;
+    base.push(n % 10);
+  }
+
+  // Avoid invalid repeated pattern (e.g. 111111111)
+  if (base.every((d) => d === base[0])) {
+    base[8] = (base[8] + 7) % 10;
+  }
+
+  const calcDigit = (digits: number[], factorStart: number): number => {
+    const sum = digits.reduce((acc, digit, idx) => acc + digit * (factorStart - idx), 0);
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+
+  const d1 = calcDigit(base, 10);
+  const d2 = calcDigit([...base, d1], 11);
+  const cpfDigits = [...base, d1, d2].join("");
+
+  // AbacatePay accepts CPF in masked format
+  return cpfDigits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+}
+
 // ── Security: Validate webhook authenticity ──
 function validateWebhookSecret(req: Request, body: any): { valid: boolean; reason?: string } {
   const webhookSecret = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET");
