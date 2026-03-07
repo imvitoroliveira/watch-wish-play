@@ -43,9 +43,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const saved = localStorage.getItem('msc_client');
     return saved ? JSON.parse(saved) : null;
   });
-  // clientList is only populated in the admin panel after upload — never loaded from backend on mount
   const [clientList, setClientList] = useState<ClientData[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
+
+  // Auto-load client list from backend when admin session is restored on mount
+  useEffect(() => {
+    if (!isAdmin || !adminAuth) return;
+    const loadClients = async () => {
+      setClientsLoading(true);
+      try {
+        const { data } = await supabase.functions.invoke('manage-clients', {
+          method: 'GET',
+          headers: { 'x-admin-auth': adminAuth },
+        });
+        if (data?.clients && Array.isArray(data.clients)) {
+          setClientList(data.clients);
+        }
+      } catch {
+        // Silent — admin can still upload manually
+      } finally {
+        setClientsLoading(false);
+      }
+    };
+    loadClients();
+  }, [isAdmin, adminAuth]);
 
   const isExpiringSoon = currentClient?.["7"] === "1";
 
