@@ -92,9 +92,17 @@ function validateWebhookSecret(req: Request, body: any): { valid: boolean; reaso
 }
 
 // ── Security: Validate payment data integrity ──
-function validatePaymentData(billingData: any, metadata: any): { valid: boolean; reason?: string; plan?: string; days?: number } {
-  const username = metadata?.username;
-  if (!username || typeof username !== "string" || username.trim().length === 0) {
+function validatePaymentData(
+  billingData: any,
+  metadata: any,
+  txFallback?: { client_username?: string; plan?: string; days?: number }
+): { valid: boolean; reason?: string; plan?: string; days?: number; username?: string } {
+  const fallbackUsername = txFallback?.client_username;
+  const fallbackPlan = txFallback?.plan;
+  const fallbackDays = txFallback?.days;
+
+  const username = (metadata?.username || fallbackUsername || "").trim();
+  if (!username || typeof username !== "string" || username.length === 0) {
     return { valid: false, reason: "missing or invalid username in metadata" };
   }
 
@@ -104,18 +112,29 @@ function validatePaymentData(billingData: any, metadata: any): { valid: boolean;
     return { valid: false, reason: "invalid username format" };
   }
 
-  // Determine plan from metadata or amount
+  // Determine plan from metadata, transaction fallback or amount
   let planKey: string | undefined;
 
-  if (metadata?.plan && typeof metadata.plan === "string") {
-    planKey = metadata.plan.toLowerCase();
+  const metadataPlan = typeof metadata?.plan === "string" ? metadata.plan.toLowerCase() : undefined;
+  if (metadataPlan) {
+    planKey = metadataPlan;
     if (!VALID_PLANS[planKey]) {
       console.error(`[Security] Invalid plan in metadata: ${metadata.plan}`);
       return { valid: false, reason: "invalid plan in metadata" };
     }
+  } else if (fallbackPlan && VALID_PLANS[fallbackPlan]) {
+    planKey = fallbackPlan;
   } else {
     // Fallback: determine from amount
-    const amount = billingData?.amount || billingData?.products?.[0]?.price;
+    const amount =
+      billingData?.amount ??
+      billingData?.paidAmount ??
+      billingData?.products?.[0]?.price ??
+      billingData?.checkout?.amount ??
+      billingData?.checkout?.paidAmount ??
+      billingData?.payment?.amount ??
+      billingData?.payment?.paidAmount;
+
     if (typeof amount === "number" && PLAN_BY_AMOUNT[amount]) {
       planKey = PLAN_BY_AMOUNT[amount];
     } else {
@@ -125,16 +144,109 @@ function validatePaymentData(billingData: any, metadata: any): { valid: boolean;
   }
 
   // Cross-validate: if both plan and amount are present, they must match
-  if (metadata?.plan && billingData?.amount) {
+  const amountForValidation =
+    billingData?.amount ??
+    billingData?.paidAmount ??
+    billingData?.checkout?.amount ??
+    billingData?.checkout?.paidAmount ??
+    billingData?.payment?.amount ??
+    billingData?.payment?.paidAmount;
+
+  if (typeof amountForValidation === "number") {
     const expectedPrice = VALID_PLANS[planKey]?.priceCents;
-    if (expectedPrice && billingData.amount !== expectedPrice) {
-      console.error(`[Security] Price mismatch: plan=${planKey} expects ${expectedPrice}, got ${billingData.amount}`);
+    if (expectedPrice && amountForValidation !== expectedPrice) {
+      console.error(`[Security] Price mismatch: plan=${planKey} expects ${expectedPrice}, got ${amountForValidation}`);
       return { valid: false, reason: "plan/amount mismatch — possible tampering" };
     }
   }
 
   const plan = VALID_PLANS[planKey];
-  return { valid: true, plan: planKey, days: plan.days };
+  const days = fallbackDays && fallbackDays > 0 ? fallbackDays : plan.days;
+  return { valid: true, plan: planKey, days, username };
+}
+
+function parsePlanAndUsernameFromExternalId(rawExternalId: unknown): { plan?: string; username?: string } {
+  if (typeof rawExternalId !== "string") return {};
+  const match = rawExternalId.match(/^(mensal|trimestral|semestral)_(.+)$/i);
+  if (!match) return {};
+  return { plan: match[1].toLowerCase(), username: match[2] };
+}
+
+function buildWebhookMetadata(body: any, billingData: any): Record<string, any> {
+  const metadataSources = [
+    body?.metadata,
+    body?.data?.metadata,
+    billingData?.metadata,
+    billingData?.checkout?.metadata,
+    billingData?.payment?.metadata,
+  ];
+
+  const metadata = metadataSources.reduce((acc, source) => {
+    if (source && typeof source === "object" && !Array.isArray(source)) {
+      return { ...acc, ...source };
+    }
+    return acc;
+  }, {} as Record<string, any>);
+
+  const externalIdCandidates = [
+    billingData?.externalId,
+    billingData?.external_id,
+    billingData?.checkout?.externalId,
+    billingData?.checkout?.external_id,
+    billingData?.payment?.externalId,
+    billingData?.payment?.external_id,
+    billingData?.products?.[0]?.externalId,
+    billingData?.products?.[0]?.external_id,
+    billingData?.items?.[0]?.externalId,
+    billingData?.items?.[0]?.external_id,
+  ];
+
+  for (const externalId of externalIdCandidates) {
+    const parsed = parsePlanAndUsernameFromExternalId(externalId);
+    if (parsed.plan && !metadata.plan) metadata.plan = parsed.plan;
+    if (parsed.username && !metadata.username) metadata.username = parsed.username;
+  }
+
+  if (!metadata.username) {
+    const descriptions = [
+      billingData?.products?.[0]?.description,
+      billingData?.items?.[0]?.description,
+      billingData?.checkout?.description,
+      billingData?.payment?.description,
+    ];
+    for (const desc of descriptions) {
+      if (typeof desc !== "string") continue;
+      const match = desc.match(/- ([a-zA-Z0-9._-]+)$/);
+      if (match?.[1]) {
+        metadata.username = match[1];
+        break;
+      }
+    }
+  }
+
+  return metadata;
+}
+
+function resolveTransactionId(body: any, billingData: any): string {
+  const candidates = [
+    billingData?.id,
+    billingData?.billing_id,
+    billingData?.checkout?.id,
+    billingData?.payment?.id,
+    body?.data?.id,
+    body?.data?.billing_id,
+    body?.data?.checkout?.id,
+    body?.data?.payment?.id,
+    body?.id,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return "unknown";
 }
 
 Deno.serve(async (req) => {
