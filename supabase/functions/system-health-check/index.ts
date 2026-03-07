@@ -176,6 +176,15 @@ const TEST_SUITE: TestCase[] = [
   { name: "cakto-webhook: formato estável", category: "regression", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc", data: {} }, expect: { status: [401] } },
 
   // ═══════════════════════════════════════════════
+  // abacatepay-webhook (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "abacatepay-webhook: create_billing sem username = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", plan: "mensal" }, expect: { status: [400] } },
+  { name: "abacatepay-webhook: create_billing sem plan = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test" }, expect: { status: [400] } },
+  { name: "abacatepay-webhook: create_billing com plan inválido = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test", plan: "invalid_plan" }, expect: { status: [400] } },
+  { name: "abacatepay-webhook: evento desconhecido retorna received", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { status: [200], hasKey: "received" } },
+  { name: "abacatepay-webhook: não vazar segredos", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { notContains: ["ABACATEPAY_API_KEY", "ABACATEPAY_WEBHOOK_SECRET", "NATV_API_TOKEN", "service_role", "SUPABASE_SERVICE_ROLE_KEY"] } },
+
+  // ═══════════════════════════════════════════════
   // football-matches (5 tests)
   // ═══════════════════════════════════════════════
   { name: "football-matches: POST retorna 200", category: "functional", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
