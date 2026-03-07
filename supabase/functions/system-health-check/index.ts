@@ -283,6 +283,26 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
+  // app-settings update via admin auth must work and keep boolean payload
+  if (
+    test.name === "app-settings: update com auth admin habilita cobrança" ||
+    test.name === "app-settings: update com auth admin desabilita cobrança"
+  ) {
+    if (data?.success !== true) {
+      return "Update de app-settings não retornou success=true — toggle do gestor pode estar quebrado.";
+    }
+    if (typeof data?.billing_enabled !== "boolean") {
+      return "app-settings update não retornou billing_enabled boolean.";
+    }
+  }
+
+  // app-settings GET should always keep singleton id
+  if (test.name === "app-settings: GET mantém id=main") {
+    if (data?.id !== "main") {
+      return "app_settings singleton inconsistente (id diferente de 'main').";
+    }
+  }
+
   return null; // passed
 }
 
