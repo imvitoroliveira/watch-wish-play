@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
           name: displayName,
           email: "preenchaseuemail@aqui.com",
           cellphone: clientPhone || "00000000000",
-          taxId: "48136470830",
+          taxId: generateDeterministicCpf(username),
         };
 
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
