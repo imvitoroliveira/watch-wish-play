@@ -1,17 +1,13 @@
-import { X, Shield, Zap, Crown, Star, CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
+import { X, Shield, Zap, Crown, Star, CheckCircle2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface RenewalModalProps {
   username: string;
   onClose: () => void;
 }
-
-const CHECKOUT_URLS: Record<string, string> = {
-  mensal: 'https://app.abacatepay.com/pay/bill_6Ydmu6uyUF4dURgc6b6k4zjq',
-  trimestral: 'https://app.abacatepay.com/pay/bill_YnBTryPUJeHsrke1Kh1BK3wt',
-  semestral: 'https://app.abacatepay.com/pay/bill_MKRwNqAB5MnAR6Zgk4G5WyeK',
-};
 
 const plans = [
   {

@@ -127,7 +127,7 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // ─── Action: create_billing (called from frontend — just returns checkout URLs now) ───
+    // ─── Action: create_billing (creates dynamic billing via AbacatePay API with metadata) ───
     if (body.action === "create_billing") {
       const { username, plan } = body;
       if (!username || !plan) {
@@ -142,11 +142,81 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      // Checkout links are now handled client-side; this endpoint remains for backward compatibility
-      return new Response(JSON.stringify({ error: "checkout links are now handled client-side" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+
+      // Sanitize username
+      if (!/^[a-zA-Z0-9._-]{1,100}$/.test(username)) {
+        return new Response(JSON.stringify({ error: "invalid username format" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const abacateApiKey = Deno.env.get("ABACATEPAY_API_KEY");
+      if (!abacateApiKey) {
+        console.error("[create_billing] ABACATEPAY_API_KEY not configured");
+        return new Response(JSON.stringify({ error: "payment service unavailable" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const planInfo = VALID_PLANS[plan];
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+
+      try {
+        const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${abacateApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            frequency: "ONE_TIME",
+            methods: ["PIX"],
+            products: [
+              {
+                externalId: `${plan}_${username}`,
+                name: planInfo.label,
+                description: `Renovação ${planInfo.label} - ${username}`,
+                quantity: 1,
+                price: planInfo.priceCents,
+              },
+            ],
+            metadata: {
+              username: username,
+              plan: plan,
+              returnUrl: `${supabaseUrl.replace('.supabase.co', '.lovable.app')}`,
+            },
+            completionUrl: `${supabaseUrl.replace('.supabase.co', '.lovable.app')}`,
+          }),
+        });
+
+        const abacateData = await abacateRes.json();
+
+        if (!abacateRes.ok || !abacateData?.data?.url) {
+          console.error("[create_billing] AbacatePay API error:", JSON.stringify(abacateData));
+          return new Response(JSON.stringify({ error: "failed to create billing" }), {
+            status: 502,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        console.log(`[create_billing] Created billing for ${username}, plan=${plan}, url=${abacateData.data.url}`);
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          url: abacateData.data.url,
+          billing_id: abacateData.data.id,
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (err) {
+        console.error("[create_billing] Error:", err);
+        return new Response(JSON.stringify({ error: "payment service error" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // ─── Webhook: billing.paid event from AbacatePay ───
