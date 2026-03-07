@@ -1,17 +1,13 @@
-import { X, Shield, Zap, Crown, Star, CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
+import { X, Shield, Zap, Crown, Star, CheckCircle2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 
 interface RenewalModalProps {
   username: string;
   onClose: () => void;
 }
-
-const CHECKOUT_URLS: Record<string, string> = {
-  mensal: 'https://app.abacatepay.com/pay/bill_6Ydmu6uyUF4dURgc6b6k4zjq',
-  trimestral: 'https://app.abacatepay.com/pay/bill_YnBTryPUJeHsrke1Kh1BK3wt',
-  semestral: 'https://app.abacatepay.com/pay/bill_MKRwNqAB5MnAR6Zgk4G5WyeK',
-};
 
 const plans = [
   {
@@ -50,13 +46,26 @@ const plans = [
 ];
 
 const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
-  const handleSelectPlan = (plan: typeof plans[0]) => {
-    const url = CHECKOUT_URLS[plan.id];
-    if (url) {
-      window.open(url, '_blank');
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+
+  const handleSelectPlan = async (plan: typeof plans[0]) => {
+    setLoadingPlan(plan.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('abacatepay-webhook', {
+        body: { action: 'create_billing', username, plan: plan.id },
+      });
+
+      if (error || !data?.success || !data?.url) {
+        toast.error('Erro ao gerar link de pagamento. Tente novamente.');
+        return;
+      }
+
+      window.open(data.url, '_blank');
       toast.success('Redirecionando para o pagamento...');
-    } else {
-      toast.error('Plano não disponível no momento.');
+    } catch {
+      toast.error('Erro ao processar. Tente novamente.');
+    } finally {
+      setLoadingPlan(null);
     }
   };
 
@@ -118,7 +127,8 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
                   onClick={() => handleSelectPlan(plan)}
-                  className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group`}
+                  disabled={loadingPlan !== null}
+                  className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {plan.badge && (
                     <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.color} text-white`}>
@@ -148,7 +158,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   </div>
 
                   <span className="text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
-                    Pagar →
+                    {loadingPlan === plan.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Pagar →'}
                   </span>
                 </motion.button>
               );
