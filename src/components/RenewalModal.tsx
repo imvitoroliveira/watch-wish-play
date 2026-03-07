@@ -46,13 +46,26 @@ const plans = [
 ];
 
 const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
-  const handleSelectPlan = (plan: typeof plans[0]) => {
-    const url = CHECKOUT_URLS[plan.id];
-    if (url) {
-      window.open(url, '_blank');
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+
+  const handleSelectPlan = async (plan: typeof plans[0]) => {
+    setLoadingPlan(plan.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('abacatepay-webhook', {
+        body: { action: 'create_billing', username, plan: plan.id },
+      });
+
+      if (error || !data?.success || !data?.url) {
+        toast.error('Erro ao gerar link de pagamento. Tente novamente.');
+        return;
+      }
+
+      window.open(data.url, '_blank');
       toast.success('Redirecionando para o pagamento...');
-    } else {
-      toast.error('Plano não disponível no momento.');
+    } catch {
+      toast.error('Erro ao processar. Tente novamente.');
+    } finally {
+      setLoadingPlan(null);
     }
   };
 
