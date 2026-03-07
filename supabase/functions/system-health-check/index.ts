@@ -208,6 +208,13 @@ const TEST_SUITE: TestCase[] = [
   { name: "tmdb-proxy: search com query vazia = results vazio", category: "functional", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/search/movie", params: { query: "", language: "pt-BR" } }, expect: { status: [200, 422] } },
   { name: "m3u-auto-refresh: gera diff em m3u_updates", category: "integration", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { status: [200, 500] } },
   { name: "parse-m3u: GET retorna updated_at recente", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "updated_at" } },
+
+  // ═══════════════════════════════════════════════
+  // Catálogo: apenas última atualização (3 tests) — NEW
+  // ═══════════════════════════════════════════════
+  { name: "catalog-latest: m3u_updates retorna dados", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "titles" } },
+  { name: "client-login: login inválido retorna reason", category: "regression", fn: "client-login", method: "POST", body: { action: "login", username: "hc_remember_test", password: "hc_pass_test" }, expect: { status: [200], hasKey: "reason" } },
+  { name: "client-login: resposta não contém senha", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "hc_remember_test", password: "hc_pass_test" }, expect: { notContains: ["hc_pass_test"] } },
 ];
 
 // Custom deep validations beyond simple status/key checks
