@@ -1,13 +1,17 @@
-import { X, Shield, Zap, Crown, Star, CheckCircle2, Loader2 } from 'lucide-react';
+import { X, Shield, Zap, Crown, Star, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 interface RenewalModalProps {
   username: string;
   onClose: () => void;
 }
+
+const CHECKOUT_URLS: Record<string, string> = {
+  mensal: 'https://app.abacatepay.com/pay/bill_6Ydmu6uyUF4dURgc6b6k4zjq',
+  trimestral: 'https://app.abacatepay.com/pay/bill_YnBTryPUJeHsrke1Kh1BK3wt',
+  semestral: 'https://app.abacatepay.com/pay/bill_MKRwNqAB5MnAR6Zgk4G5WyeK',
+};
 
 const plans = [
   {
@@ -46,25 +50,13 @@ const plans = [
 ];
 
 const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
-  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
-
-  const handleSelectPlan = async (plan: typeof plans[0]) => {
-    setLoadingPlan(plan.id);
-    try {
-      const { data, error } = await supabase.functions.invoke('abacatepay-webhook', {
-        body: { action: 'create_billing', username, plan: plan.id },
-      });
-
-      if (error || !data?.url) {
-        throw new Error(error?.message || 'Falha ao gerar link de pagamento');
-      }
-
-      window.open(data.url, '_blank');
-    } catch (err: any) {
-      console.error('Erro ao criar cobrança:', err);
-      toast.error('Erro ao gerar pagamento. Tente novamente.');
-    } finally {
-      setLoadingPlan(null);
+  const handleSelectPlan = (plan: typeof plans[0]) => {
+    const url = CHECKOUT_URLS[plan.id];
+    if (url) {
+      window.open(url, '_blank');
+      toast.success('Redirecionando para o pagamento...');
+    } else {
+      toast.error('Plano não disponível no momento.');
     }
   };
 
@@ -119,7 +111,6 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
           <div className="px-6 pb-6 space-y-3 mt-2">
             {plans.map((plan, index) => {
               const Icon = plan.icon;
-              const isLoading = loadingPlan === plan.id;
               return (
                 <motion.button
                   key={plan.id}
@@ -127,8 +118,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
                   onClick={() => handleSelectPlan(plan)}
-                  disabled={!!loadingPlan}
-                  className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group disabled:opacity-60 disabled:cursor-wait`}
+                  className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group`}
                 >
                   {plan.badge && (
                     <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.color} text-white`}>
@@ -137,11 +127,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   )}
 
                   <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${plan.color} flex items-center justify-center shrink-0 shadow-lg`}>
-                    {isLoading ? (
-                      <Loader2 className="w-5 h-5 text-white animate-spin" />
-                    ) : (
-                      <Icon className="w-5 h-5 text-white" />
-                    )}
+                    <Icon className="w-5 h-5 text-white" />
                   </div>
 
                   <div className="flex-1 min-w-0">
@@ -162,7 +148,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   </div>
 
                   <span className="text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
-                    {isLoading ? 'Gerando...' : 'Pagar →'}
+                    Pagar →
                   </span>
                 </motion.button>
               );
