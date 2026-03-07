@@ -350,6 +350,48 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
+  // match-reminders: list should return an array
+  if (test.name === "match-reminders: list retorna array") {
+    if (!Array.isArray(data?.reminders)) {
+      return "Campo 'reminders' não é array — endpoint pode estar retornando formato incorreto.";
+    }
+  }
+
+  // content-alerts: list should return an array
+  if (test.name === "content-alerts: list retorna array") {
+    if (!Array.isArray(data?.alerts)) {
+      return "Campo 'alerts' não é array — endpoint pode estar retornando formato incorreto.";
+    }
+  }
+
+  // user-presence: heartbeat should have ok=true
+  if (test.name === "user-presence: heartbeat retorna ok=true") {
+    if (data?.ok !== true) {
+      return "Heartbeat não retornou ok=true — presença pode estar falhando.";
+    }
+  }
+
+  // abacatepay: received must be true
+  if (test.name === "abacatepay-webhook: received = true") {
+    if (data?.received !== true) {
+      return "Evento desconhecido não retornou received=true — webhook handler pode estar instável.";
+    }
+  }
+
+  // SQL injection: must NOT return success=true
+  if (test.name === "client-login: SQL injection no username") {
+    if (data?.success === true) {
+      return "⚠️ CRÍTICO: SQL injection retornou success=true — possível vulnerabilidade!";
+    }
+  }
+
+  // user-presence list_online: users must be array
+  if (test.name === "user-presence: list_online com auth admin") {
+    if (!Array.isArray(data?.users)) {
+      return "Campo 'users' não é array — endpoint list_online pode estar quebrado.";
+    }
+  }
+
   return null; // passed
 }
 
