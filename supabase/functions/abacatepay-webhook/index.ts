@@ -423,7 +423,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── Webhook: billing.paid event from AbacatePay ───
-    if (body.event === "billing.paid" || body.event === "BILLING_PAID") {
+    if (["billing.paid", "BILLING_PAID", "payment.completed", "checkout.paid"].includes(body.event)) {
       // STEP 1: Validate webhook secret (MANDATORY)
       const secretValidation = validateWebhookSecret(req, body);
       if (!secretValidation.valid) {
