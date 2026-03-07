@@ -657,6 +657,13 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Restore billing state after tests so we don't leave it toggled
+      if (savedBillingEnabled !== null) {
+        try {
+          await supabase.from("app_settings").update({ billing_enabled: savedBillingEnabled }).eq("id", "main");
+        } catch {}
+      }
+
       const totalDuration = Date.now() - startTime;
       const passed = results.filter(r => r.passed).length;
       const failed = results.filter(r => !r.passed).length;
