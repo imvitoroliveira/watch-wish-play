@@ -45,7 +45,9 @@ const AdminPanel = () => {
   useEffect(() => {
     const loadBilling = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('app-settings', { method: 'GET' });
+        const { data, error } = await supabase.functions.invoke('app-settings', {
+          body: { action: 'get' },
+        });
         if (!error && data) setBillingEnabled(!!data.billing_enabled);
       } catch {} finally { setBillingLoading(false); }
     };
@@ -57,8 +59,7 @@ const AdminPanel = () => {
     try {
       const adminAuth = getAdminAuth();
       const { data, error } = await supabase.functions.invoke('app-settings', {
-        method: 'POST',
-        body: { billing_enabled: value },
+        body: { action: 'update', billing_enabled: value },
         headers: { 'x-admin-auth': adminAuth },
       });
       if (!error && data?.success) {

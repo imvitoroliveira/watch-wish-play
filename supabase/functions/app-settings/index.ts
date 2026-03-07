@@ -2,7 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-auth",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-admin-auth, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -17,7 +18,21 @@ Deno.serve(async (req) => {
   );
 
   try {
-    if (req.method === "GET") {
+    // Support both GET requests and POST with action:"get"
+    let action = "get";
+    let body: any = {};
+
+    if (req.method === "POST") {
+      try {
+        body = await req.json();
+        action = body.action || "update";
+      } catch {
+        action = "update";
+      }
+    }
+
+    // ─── READ settings ───
+    if (req.method === "GET" || action === "get") {
       const { data, error } = await supabase
         .from("app_settings")
         .select("*")
@@ -30,8 +45,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (req.method === "POST") {
-      // Verify admin
+    // ─── UPDATE settings ───
+    if (action === "update") {
       const adminAuth = req.headers.get("x-admin-auth") || "";
       const [u, p] = adminAuth.split(":");
       const adminUser = Deno.env.get("ADMIN_USER");
@@ -43,7 +58,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      const body = await req.json();
       const { billing_enabled } = body;
 
       const { error } = await supabase
