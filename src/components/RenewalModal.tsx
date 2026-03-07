@@ -50,19 +50,35 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
 
   const handleSelectPlan = async (plan: typeof plans[0]) => {
     setLoadingPlan(plan.id);
+
+    // Tenta abrir imediatamente para evitar bloqueio de popup em browsers/PWA
+    let paymentWindow: Window | null = null;
+    try {
+      paymentWindow = window.open('', '_blank', 'noopener,noreferrer');
+    } catch {
+      paymentWindow = null;
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke('abacatepay-webhook', {
         body: { action: 'create_billing', username, plan: plan.id },
       });
 
       if (error || !data?.success || !data?.url) {
+        if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
         toast.error('Erro ao gerar link de pagamento. Tente novamente.');
         return;
       }
 
-      window.open(data.url, '_blank');
+      if (paymentWindow && !paymentWindow.closed) {
+        paymentWindow.location.href = data.url;
+      } else {
+        window.location.href = data.url;
+      }
+
       toast.success('Redirecionando para o pagamento...');
     } catch {
+      if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
       toast.error('Erro ao processar. Tente novamente.');
     } finally {
       setLoadingPlan(null);
