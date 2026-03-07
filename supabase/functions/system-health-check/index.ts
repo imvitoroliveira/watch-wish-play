@@ -210,11 +210,49 @@ const TEST_SUITE: TestCase[] = [
   { name: "parse-m3u: GET retorna updated_at recente", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "updated_at" } },
 
   // ═══════════════════════════════════════════════
-  // Catálogo: apenas última atualização (3 tests) — NEW
+  // Catálogo: apenas última atualização (3 tests)
   // ═══════════════════════════════════════════════
   { name: "catalog-latest: m3u_updates retorna dados", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "titles" } },
   { name: "client-login: login inválido retorna reason", category: "regression", fn: "client-login", method: "POST", body: { action: "login", username: "hc_remember_test", password: "hc_pass_test" }, expect: { status: [200], hasKey: "reason" } },
   { name: "client-login: resposta não contém senha", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "hc_remember_test", password: "hc_pass_test" }, expect: { notContains: ["hc_pass_test"] } },
+
+  // ═══════════════════════════════════════════════
+  // CORS — preflight (2 tests)
+  // ═══════════════════════════════════════════════
+  { name: "CORS: admin-login OPTIONS = 200", category: "security", fn: "admin-login", method: "OPTIONS", expect: { status: [200, 204] } },
+  { name: "CORS: client-login OPTIONS = 200", category: "security", fn: "client-login", method: "OPTIONS", expect: { status: [200, 204] } },
+
+  // ═══════════════════════════════════════════════
+  // Segurança avançada (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "tmdb-proxy: path traversal bloqueado", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/../../../etc/passwd" }, expect: { status: [400, 403] } },
+  { name: "tmdb-proxy: double encoding bloqueado", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/%2e%2e/configuration" }, expect: { status: [400, 403] } },
+  { name: "client-login: SQL injection no username", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "' OR 1=1 --", password: "test" }, expect: { status: [200, 400], hasKey: "success" } },
+  { name: "stream-proxy: SSRF via redirect", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://169.254.169.254/latest/meta-data/iam.mp4" }, expect: { status: [403] } },
+  { name: "admin-login: payload oversized ignorado", category: "security", fn: "admin-login", method: "POST", body: { user: "x".repeat(10000), pass: "y".repeat(10000) }, expect: { status: [400, 401] } },
+
+  // ═══════════════════════════════════════════════
+  // Caminhos felizes (happy path) ausentes (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "user-presence: list_online com auth admin", category: "functional", fn: "user-presence", method: "POST", body: { action: "list_online" }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "users" } },
+  { name: "push-test: validate com auth admin", category: "functional", fn: "push-test", method: "POST", body: { action: "validate" }, headers: ADMIN_HDR, expect: { status: [200] } },
+  { name: "match-reminders: add sem dados = 400", category: "functional", fn: "match-reminders", method: "POST", body: { action: "add" }, expect: { status: [400] } },
+  { name: "content-alerts: add sem dados = 400", category: "functional", fn: "content-alerts", method: "POST", body: { action: "add" }, expect: { status: [400] } },
+  { name: "trailer-challenge: POST com dados válidos", category: "functional", fn: "trailer-challenge", method: "POST", body: { action: "watch", username: "hc_test", movie_id: 550 }, expect: { status: [200] } },
+
+  // ═══════════════════════════════════════════════
+  // Validação de estrutura de resposta (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "match-reminders: list retorna array", category: "regression", fn: "match-reminders", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "reminders" } },
+  { name: "content-alerts: list retorna array", category: "regression", fn: "content-alerts", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "alerts" } },
+  { name: "abacatepay-webhook: received = true", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "hc_structural_check", data: {} }, expect: { status: [200], hasKey: "received" } },
+  { name: "user-presence: heartbeat retorna ok=true", category: "regression", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "hc_structural_test" }, expect: { status: [200], hasKey: "ok" } },
+
+  // ═══════════════════════════════════════════════
+  // Cleanup de dados de teste (2 tests)
+  // ═══════════════════════════════════════════════
+  { name: "user-presence: cleanup hc_test", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "health_check_test" }, expect: { status: [200] } },
+  { name: "user-presence: cleanup hc_structural", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "hc_structural_test" }, expect: { status: [200] } },
 ];
 
 // Custom deep validations beyond simple status/key checks
