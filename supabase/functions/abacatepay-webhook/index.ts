@@ -308,7 +308,32 @@ Deno.serve(async (req) => {
       console.log(`[AbacatePay Webhook] Authenticated event: ${body.event}`);
 
       const billingData = body.data || body;
-      const metadata = billingData.metadata || {};
+      
+      // AbacatePay can send metadata in various locations depending on payload version
+      let metadata = billingData.metadata || body.metadata || {};
+      
+      // Fallback: extract username/plan from product externalId (format: "plan_username")
+      if ((!metadata.username || !metadata.plan) && billingData.products && Array.isArray(billingData.products) && billingData.products.length > 0) {
+        const externalId = billingData.products[0].externalId || billingData.products[0].external_id || "";
+        console.log(`[AbacatePay Webhook] Trying externalId fallback: "${externalId}"`);
+        const match = externalId.match(/^(mensal|trimestral|semestral)_(.+)$/);
+        if (match) {
+          metadata = { ...metadata, plan: metadata.plan || match[1], username: metadata.username || match[2] };
+          console.log(`[AbacatePay Webhook] Extracted from externalId: username=${metadata.username}, plan=${metadata.plan}`);
+        }
+      }
+      
+      // Fallback: extract from product description (format: "Renovação ... - username")
+      if ((!metadata.username) && billingData.products && Array.isArray(billingData.products) && billingData.products.length > 0) {
+        const desc = billingData.products[0].description || "";
+        const descMatch = desc.match(/- ([a-zA-Z0-9._-]+)$/);
+        if (descMatch) {
+          metadata = { ...metadata, username: descMatch[1] };
+          console.log(`[AbacatePay Webhook] Extracted username from description: ${metadata.username}`);
+        }
+      }
+      
+      console.log(`[AbacatePay Webhook] Final metadata: ${JSON.stringify(metadata)}`);
 
       // STEP 2: Validate payment data integrity
       const paymentValidation = validatePaymentData(billingData, metadata);
