@@ -263,7 +263,7 @@ const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   { name: "match-reminders: list retorna array", category: "regression", fn: "match-reminders", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "reminders" } },
   { name: "content-alerts: list retorna array", category: "regression", fn: "content-alerts", method: "POST", body: { action: "list", username: "hc_test" }, expect: { status: [200], hasKey: "alerts" } },
-  { name: "abacatepay-webhook: received = true", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "hc_structural_check", data: {} }, expect: { status: [200], hasKey: "received" } },
+  { name: "abacatepay: received = true (structural)", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "hc_structural_check", data: {} }, expect: { status: [200], hasKey: "received" } },
   { name: "user-presence: heartbeat retorna ok=true", category: "regression", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "hc_structural_test" }, expect: { status: [200], hasKey: "ok" } },
 
   // ═══════════════════════════════════════════════
