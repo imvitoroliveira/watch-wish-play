@@ -7,10 +7,21 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import eagleLogo from '@/assets/eagle-logo.png';
 
+const REMEMBER_KEY = 'msc_remember_me';
+
+function getSavedCredentials(): { username: string; password: string } | null {
+  try {
+    const saved = localStorage.getItem(REMEMBER_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch { return null; }
+}
+
 const ClientLogin = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const saved = getSavedCredentials();
+  const [username, setUsername] = useState(saved?.username || '');
+  const [password, setPassword] = useState(saved?.password || '');
   const [showPass, setShowPass] = useState(false);
+  const [rememberMe, setRememberMe] = useState(!!saved);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { loginClient, clientsLoading } = useAuth();
