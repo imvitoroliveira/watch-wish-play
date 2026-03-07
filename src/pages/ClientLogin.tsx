@@ -142,6 +142,7 @@ const ClientLogin = () => {
             <span className="text-sm text-muted-foreground">Lembre-se de mim</span>
           </label>
 
+          {error && (
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
