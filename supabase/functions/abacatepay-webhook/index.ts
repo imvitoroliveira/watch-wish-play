@@ -387,12 +387,29 @@ Deno.serve(async (req) => {
           });
         }
 
+        const billingId = abacateData.data.id as string;
+        const transactionRef = billingId ? `abacate_${billingId}` : null;
+
+        if (transactionRef) {
+          const { error: pendingTxError } = await supabase.from("payment_transactions").insert({
+            client_username: username,
+            plan,
+            days: planInfo.days,
+            cakto_transaction_id: transactionRef,
+            status: "pending",
+          });
+
+          if (pendingTxError) {
+            console.warn(`[create_billing] Could not store pending transaction ${transactionRef}:`, pendingTxError.message);
+          }
+        }
+
         console.log(`[create_billing] Created billing for ${username}, plan=${plan}, url=${abacateData.data.url}`);
 
         return new Response(JSON.stringify({ 
           success: true, 
           url: abacateData.data.url,
-          billing_id: abacateData.data.id,
+          billing_id: billingId,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
