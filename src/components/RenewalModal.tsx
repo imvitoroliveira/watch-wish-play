@@ -1,5 +1,8 @@
-import { X, Shield, Zap, Crown, Star, CheckCircle2 } from 'lucide-react';
+import { X, Shield, Zap, Crown, Star, CheckCircle2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface RenewalModalProps {
   username: string;
@@ -10,8 +13,8 @@ const plans = [
   {
     id: 'mensal',
     label: '1 Mês',
+    price: 'R$ 35,00',
     badge: null,
-    url: 'https://pay.cakto.com.br/33r6n8m_738327',
     icon: Zap,
     color: 'from-blue-500 to-blue-600',
     borderColor: 'border-blue-500/30',
@@ -21,8 +24,8 @@ const plans = [
   {
     id: 'trimestral',
     label: '3 Meses',
+    price: 'R$ 90,00',
     badge: 'POPULAR',
-    url: 'https://pay.cakto.com.br/3czpic5',
     icon: Crown,
     color: 'from-primary to-red-500',
     borderColor: 'border-primary/40',
@@ -32,8 +35,8 @@ const plans = [
   {
     id: 'semestral',
     label: '6 Meses',
+    price: 'R$ 170,00',
     badge: 'MELHOR VALOR',
-    url: 'https://pay.cakto.com.br/9mgrzzt',
     icon: Star,
     color: 'from-accent to-yellow-500',
     borderColor: 'border-accent/40',
@@ -43,9 +46,26 @@ const plans = [
 ];
 
 const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
-  const handleSelectPlan = (plan: typeof plans[0]) => {
-    const url = `${plan.url}?username=${encodeURIComponent(username)}`;
-    window.open(url, '_blank');
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+
+  const handleSelectPlan = async (plan: typeof plans[0]) => {
+    setLoadingPlan(plan.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('abacatepay-webhook', {
+        body: { action: 'create_billing', username, plan: plan.id },
+      });
+
+      if (error || !data?.url) {
+        throw new Error(error?.message || 'Falha ao gerar link de pagamento');
+      }
+
+      window.open(data.url, '_blank');
+    } catch (err: any) {
+      console.error('Erro ao criar cobrança:', err);
+      toast.error('Erro ao gerar pagamento. Tente novamente.');
+    } finally {
+      setLoadingPlan(null);
+    }
   };
 
   return (
@@ -65,7 +85,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
           className="bg-card rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-border"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header com gradiente */}
+          {/* Header */}
           <div className="relative px-6 pt-6 pb-4 bg-gradient-to-b from-primary/15 to-transparent">
             <button
               onClick={onClose}
@@ -90,7 +110,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
 
             <div className="bg-accent/10 border border-accent/20 rounded-lg px-3 py-2 mt-3">
               <p className="text-xs text-accent font-medium flex items-center gap-1.5">
-                ⚡ Ativação instantânea após o pagamento
+                ⚡ Pagamento via PIX · Ativação instantânea
               </p>
             </div>
           </div>
@@ -99,6 +119,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
           <div className="px-6 pb-6 space-y-3 mt-2">
             {plans.map((plan, index) => {
               const Icon = plan.icon;
+              const isLoading = loadingPlan === plan.id;
               return (
                 <motion.button
                   key={plan.id}
@@ -106,7 +127,8 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.1 }}
                   onClick={() => handleSelectPlan(plan)}
-                  className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group`}
+                  disabled={!!loadingPlan}
+                  className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group disabled:opacity-60 disabled:cursor-wait`}
                 >
                   {plan.badge && (
                     <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.color} text-white`}>
@@ -115,13 +137,20 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   )}
 
                   <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${plan.color} flex items-center justify-center shrink-0 shadow-lg`}>
-                    <Icon className="w-5 h-5 text-white" />
+                    {isLoading ? (
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    ) : (
+                      <Icon className="w-5 h-5 text-white" />
+                    )}
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-foreground text-base">
-                      {plan.label}
-                    </p>
+                    <div className="flex items-baseline gap-2">
+                      <p className="font-semibold text-foreground text-base">
+                        {plan.label}
+                      </p>
+                      <span className="text-sm font-bold text-primary">{plan.price}</span>
+                    </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                       {plan.perks.map((perk) => (
                         <span key={perk} className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -133,7 +162,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   </div>
 
                   <span className="text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
-                    Assinar →
+                    {isLoading ? 'Gerando...' : 'Pagar →'}
                   </span>
                 </motion.button>
               );
@@ -149,7 +178,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
               <span>•</span>
               <span>Ativação automática</span>
               <span>•</span>
-              <span>Sem burocracia</span>
+              <span>PIX instantâneo</span>
             </div>
           </div>
         </motion.div>
