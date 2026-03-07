@@ -163,43 +163,71 @@ Deno.serve(async (req) => {
       const planInfo = VALID_PLANS[plan];
       const returnUrl = "https://clientestoptv.lovable.app";
 
+      // Extract display name from username (part before first ".")
+      const displayName = username.includes(".")
+        ? username.split(".")[0].charAt(0).toUpperCase() + username.split(".")[0].slice(1)
+        : username;
+
+      // Try to get phone from clients_list "Notas" field
+      let clientPhone = "";
       try {
-        // Get existing customer ID (required by AbacatePay API)
-        const customersRes = await fetch("https://api.abacatepay.com/v1/customer/list", {
-          method: "GET",
+        const { data: clientsRow } = await supabase
+          .from("clients_list")
+          .select("clients")
+          .eq("id", "00000000-0000-0000-0000-000000000001")
+          .maybeSingle();
+
+        if (clientsRow?.clients && Array.isArray(clientsRow.clients)) {
+          const found = (clientsRow.clients as any[]).find((c: any) => c.u === username);
+          if (found?.Notas) {
+            // Extract digits from Notas field as phone
+            const digits = found.Notas.replace(/\D/g, "");
+            if (digits.length >= 10) {
+              clientPhone = digits;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[create_billing] Could not fetch client phone:", err);
+      }
+
+      try {
+        // Create a per-billing customer with the client's actual name and phone
+        const createRes = await fetch("https://api.abacatepay.com/v1/customer/create", {
+          method: "POST",
           headers: {
             "Authorization": `Bearer ${abacateApiKey}`,
-            "Accept": "application/json",
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({
+            name: displayName,
+            cellphone: clientPhone || "00000000000",
+            email: `${username}@cliente.local`,
+            taxId: "00000000000",
+          }),
         });
-
-        const customersData = await customersRes.json();
-        let customerId = customersData?.data?.[0]?.id;
+        const customerData = await createRes.json();
+        const customerId = customerData?.data?.id;
 
         if (!customerId) {
-          // Create a minimal customer if none exists
-          const createRes = await fetch("https://api.abacatepay.com/v1/customer/create", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${abacateApiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              name: "Cliente",
-              cellphone: "11999999999",
-              email: "cliente@email.com",
-              taxId: "52998224725",
-            }),
+          console.error("[create_billing] Customer create failed:", JSON.stringify(customerData));
+          // Fallback: try listing existing customers
+          const listRes = await fetch("https://api.abacatepay.com/v1/customer/list", {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${abacateApiKey}`, "Accept": "application/json" },
           });
-          const createData = await createRes.json();
-          customerId = createData?.data?.id;
-          if (!customerId) {
-            console.error("[create_billing] Failed to create customer:", JSON.stringify(createData));
+          const listData = await listRes.json();
+          const fallbackId = listData?.data?.[0]?.id;
+          if (!fallbackId) {
             return new Response(JSON.stringify({ error: "payment setup failed" }), {
               status: 500,
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
+          // Use fallback
+          var billingCustomerId = fallbackId;
+        } else {
+          var billingCustomerId = customerId;
         }
 
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
@@ -213,7 +241,7 @@ Deno.serve(async (req) => {
             methods: ["PIX"],
             returnUrl: returnUrl,
             completionUrl: returnUrl,
-            customerId,
+            customerId: billingCustomerId,
             products: [
               {
                 externalId: `${plan}_${username}`,
