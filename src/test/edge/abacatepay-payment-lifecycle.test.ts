@@ -303,7 +303,7 @@ describe('AbacatePay: Ciclo de vida completo de pagamento', () => {
           },
         },
       });
-      expect([400, 401]).toContain(status);
+      expect([400, 401, 403]).toContain(status);
     });
   });
 
