@@ -49,11 +49,15 @@ const TEST_SUITE: TestCase[] = [
   { name: "client-login: bloquear GET", category: "security", fn: "client-login", method: "GET", expect: { status: [405] } },
 
   // ═══════════════════════════════════════════════
-  // app-settings (4 tests)
+  // app-settings (8 tests)
   // ═══════════════════════════════════════════════
   { name: "app-settings: GET retorna billing_enabled", category: "functional", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "billing_enabled" } },
-  { name: "app-settings: POST sem auth = 401", category: "security", fn: "app-settings", method: "POST", body: { billing_enabled: true }, expect: { status: [401] } },
-  { name: "app-settings: POST com auth falsa = 401", category: "security", fn: "app-settings", method: "POST", body: { billing_enabled: true }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
+  { name: "app-settings: POST action=get retorna billing_enabled", category: "integration", fn: "app-settings", method: "POST", body: { action: "get" }, expect: { status: [200], hasKey: "billing_enabled" } },
+  { name: "app-settings: POST sem auth = 401", category: "security", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: true }, expect: { status: [401] } },
+  { name: "app-settings: POST com auth falsa = 401", category: "security", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: true }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
+  { name: "app-settings: update com auth admin habilita cobrança", category: "integration", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: true }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "success" } },
+  { name: "app-settings: update com auth admin desabilita cobrança", category: "integration", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: false }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "success" } },
+  { name: "app-settings: GET mantém id=main", category: "regression", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "id" } },
   { name: "app-settings: não vazar segredos", category: "security", fn: "app-settings", method: "GET", expect: { notContains: ["service_role", "ADMIN_PASS", "ADMIN_USER"] } },
 
   // ═══════════════════════════════════════════════
