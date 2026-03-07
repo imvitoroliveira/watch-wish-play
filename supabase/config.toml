@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.cakto-webhook]
 verify_jwt = false
+
+[functions.abacatepay-webhook]
+verify_jwt = false
