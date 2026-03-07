@@ -193,15 +193,13 @@ Deno.serve(async (req) => {
 
       try {
         // Build customer object inline — AbacatePay will show these in checkout
-        // Generate a unique valid CPF-format taxId per username to avoid AbacatePay reusing cached customer data
-        const hashCode = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0; return Math.abs(h); };
-        const uniqueDigits = String(hashCode(username)).padStart(11, "0").slice(0, 11);
-        
+        // Use a fixed valid CPF as placeholder — AbacatePay requires valid format
+        // Customer fills their real data in the checkout page
         const customerObj: Record<string, string> = {
           name: displayName,
           email: "preenchaseuemail@aqui.com",
           cellphone: clientPhone || "00000000000",
-          taxId: uniqueDigits,
+          taxId: "12345678909",
         };
 
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
