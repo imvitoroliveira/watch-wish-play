@@ -120,6 +120,16 @@ Deno.serve(async (req) => {
 
     // ─── Webhook: billing.paid event from AbacatePay ───
     if (body.event === "billing.paid" || body.event === "BILLING_PAID") {
+      // Validate webhook secret
+      const webhookSecret = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET");
+      const receivedSecret = req.headers.get("x-webhook-secret") || body.secret;
+      if (webhookSecret && receivedSecret !== webhookSecret) {
+        console.error("[AbacatePay Webhook] Invalid webhook secret");
+        return new Response(JSON.stringify({ error: "unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       console.log(`[AbacatePay Webhook] Event: ${body.event}`, JSON.stringify(body));
 
       const billingData = body.data || body;
