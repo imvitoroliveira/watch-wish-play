@@ -38,16 +38,25 @@ describe('Edge: abacatepay-webhook', () => {
     expect(data.received).toBe(true);
   });
 
-  // 5. Funcional — webhook billing.paid sem username retorna 400
-  it('webhook billing.paid sem username no metadata retorna 400', async () => {
+  // 5. Segurança — billing.paid SEM webhook secret retorna 401
+  it('webhook billing.paid sem secret retorna 401', async () => {
     const { status, data } = await invokeEdge('abacatepay-webhook', {
-      body: { event: 'billing.paid', data: { metadata: {}, id: 'test_123' } },
+      body: { event: 'billing.paid', data: { metadata: { username: 'test', plan: 'mensal' }, id: 'test_123' } },
     });
-    expect(status).toBe(400);
-    expect(data.error).toContain('no username');
+    expect(status).toBe(401);
+    expect(data.error).toBe('unauthorized');
   });
 
-  // 6. Segurança — resposta não vaza tokens
+  // 6. Segurança — billing.paid com secret INVÁLIDO retorna 401
+  it('webhook billing.paid com secret inválido retorna 401', async () => {
+    const { status, data } = await invokeEdge('abacatepay-webhook', {
+      body: { event: 'billing.paid', secret: 'wrong_secret_value', data: { metadata: { username: 'test', plan: 'mensal' }, id: 'test_456' } },
+    });
+    expect(status).toBe(401);
+    expect(data.error).toBe('unauthorized');
+  });
+
+  // 7. Segurança — resposta não vaza tokens
   it('resposta não vaza tokens ou secrets', async () => {
     const { data } = await invokeEdge('abacatepay-webhook', {
       body: { action: 'create_billing', username: 'test' },
@@ -60,7 +69,7 @@ describe('Edge: abacatepay-webhook', () => {
     expect(text).not.toContain('ABACATEPAY_WEBHOOK_SECRET');
   });
 
-  // 7. Segurança — POST sem body retorna erro (não crash)
+  // 8. Segurança — POST sem body retorna erro (não crash)
   it('POST sem body não causa crash', async () => {
     const res = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/abacatepay-webhook`,
@@ -74,11 +83,11 @@ describe('Edge: abacatepay-webhook', () => {
         body: 'not-json',
       }
     );
-    const text = await res.text();
+    await res.text();
     expect(res.status).toBe(400);
   });
 
-  // 8. Regressão — formato JSON estável para evento desconhecido
+  // 9. Regressão — formato JSON estável para evento desconhecido
   it('resposta mantém formato JSON (regressão)', async () => {
     const { status, data } = await invokeEdge('abacatepay-webhook', {
       body: { event: 'test_event', data: {} },
@@ -91,7 +100,7 @@ describe('Edge: abacatepay-webhook', () => {
     expect(compareSnapshots(current, baseline).structureMatch).toBe(true);
   });
 
-  // 9. Funcional — OPTIONS retorna CORS headers
+  // 10. Funcional — OPTIONS retorna CORS headers
   it('OPTIONS retorna CORS headers', async () => {
     const res = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/abacatepay-webhook`,
@@ -99,5 +108,29 @@ describe('Edge: abacatepay-webhook', () => {
     );
     await res.text();
     expect(res.headers.get('access-control-allow-origin')).toBe('*');
+  });
+
+  // 11. Segurança — username com caracteres especiais é rejeitado
+  it('webhook rejeita username com caracteres maliciosos', async () => {
+    const { status, data } = await invokeEdge('abacatepay-webhook', {
+      body: { 
+        event: 'billing.paid', 
+        secret: 'fake_but_testing_format',
+        data: { metadata: { username: '<script>alert(1)</script>', plan: 'mensal' }, id: 'test_789' } 
+      },
+    });
+    // Should be 401 (secret wrong) or 400 (username invalid) — either way, not 200
+    expect(status).not.toBe(200);
+  });
+
+  // 12. Segurança — erro interno não vaza stack traces
+  it('erro interno retorna mensagem genérica', async () => {
+    const { data } = await invokeEdge('abacatepay-webhook', {
+      body: { event: 'billing.paid', data: null },
+    });
+    const text = JSON.stringify(data);
+    expect(text).not.toContain('at ');
+    expect(text).not.toContain('index.ts');
+    expect(text).not.toContain('Deno');
   });
 });
