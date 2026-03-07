@@ -192,43 +192,13 @@ Deno.serve(async (req) => {
       }
 
       try {
-        // Create a per-billing customer with the client's actual name and phone
-        const createRes = await fetch("https://api.abacatepay.com/v1/customer/create", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${abacateApiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: displayName,
-            cellphone: clientPhone || "00000000000",
-            email: `${username}@cliente.local`,
-            taxId: "00000000000",
-          }),
-        });
-        const customerData = await createRes.json();
-        const customerId = customerData?.data?.id;
-
-        if (!customerId) {
-          console.error("[create_billing] Customer create failed:", JSON.stringify(customerData));
-          // Fallback: try listing existing customers
-          const listRes = await fetch("https://api.abacatepay.com/v1/customer/list", {
-            method: "GET",
-            headers: { "Authorization": `Bearer ${abacateApiKey}`, "Accept": "application/json" },
-          });
-          const listData = await listRes.json();
-          const fallbackId = listData?.data?.[0]?.id;
-          if (!fallbackId) {
-            return new Response(JSON.stringify({ error: "payment setup failed" }), {
-              status: 500,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-          // Use fallback
-          var billingCustomerId = fallbackId;
-        } else {
-          var billingCustomerId = customerId;
-        }
+        // Build customer object inline — AbacatePay will show these in checkout
+        const customerObj: Record<string, string> = {
+          name: displayName,
+          email: `${username}@cliente.local`,
+          cellphone: clientPhone || "11999999999",
+          taxId: "52998224725", // Valid CPF required by API
+        };
 
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
           method: "POST",
@@ -241,7 +211,7 @@ Deno.serve(async (req) => {
             methods: ["PIX"],
             returnUrl: returnUrl,
             completionUrl: returnUrl,
-            customerId: billingCustomerId,
+            customer: customerObj,
             products: [
               {
                 externalId: `${plan}_${username}`,
