@@ -606,6 +606,13 @@ Deno.serve(async (req) => {
 
       const startTime = Date.now();
 
+      // Save billing state before tests (tests toggle it on/off)
+      let savedBillingEnabled: boolean | null = null;
+      try {
+        const { data: settings } = await supabase.from("app_settings").select("billing_enabled").eq("id", "main").maybeSingle();
+        if (settings) savedBillingEnabled = settings.billing_enabled;
+      } catch {}
+
       // Create initial row so polling can see progress
       const { data: inserted } = await supabase.from("test_results").insert({
         run_id: runId,
