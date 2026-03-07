@@ -2,15 +2,26 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Lock, User, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, Loader2, Check } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import eagleLogo from '@/assets/eagle-logo.png';
 
+const REMEMBER_KEY = 'msc_remember_me';
+
+function getSavedCredentials(): { username: string; password: string } | null {
+  try {
+    const saved = localStorage.getItem(REMEMBER_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch { return null; }
+}
+
 const ClientLogin = () => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const saved = getSavedCredentials();
+  const [username, setUsername] = useState(saved?.username || '');
+  const [password, setPassword] = useState(saved?.password || '');
   const [showPass, setShowPass] = useState(false);
+  const [rememberMe, setRememberMe] = useState(!!saved);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { loginClient, clientsLoading } = useAuth();
@@ -30,6 +41,11 @@ const ClientLogin = () => {
     try {
       const result = await loginClient(trimmedUser, trimmedPass);
       if (result.success) {
+        if (rememberMe) {
+          localStorage.setItem(REMEMBER_KEY, JSON.stringify({ username: trimmedUser, password: trimmedPass }));
+        } else {
+          localStorage.removeItem(REMEMBER_KEY);
+        }
         navigate('/dashboard');
       } else if (result.reason === 'expired') {
         navigate('/expirado');
@@ -110,6 +126,21 @@ const ClientLogin = () => {
               {showPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <button
+              type="button"
+              onClick={() => setRememberMe(!rememberMe)}
+              className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                rememberMe
+                  ? 'bg-primary border-primary'
+                  : 'border-border bg-card hover:border-muted-foreground'
+              }`}
+            >
+              {rememberMe && <Check className="w-3 h-3 text-primary-foreground" />}
+            </button>
+            <span className="text-sm text-muted-foreground">Lembre-se de mim</span>
+          </label>
 
           {error && (
             <motion.p

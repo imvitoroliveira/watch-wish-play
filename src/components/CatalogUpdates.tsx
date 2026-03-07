@@ -85,7 +85,7 @@ const CatalogUpdates = ({ onMovieClick }: CatalogUpdatesProps) => {
         .from('m3u_updates')
         .select('*')
         .order('updated_at', { ascending: false })
-        .limit(15);
+        .limit(1);
       if (data) setUpdates(data as unknown as M3UUpdate[]);
       setLoading(false);
     };
