@@ -177,6 +177,10 @@ Deno.serve(async (req) => {
             methods: ["PIX"],
             returnUrl: returnUrl,
             completionUrl: returnUrl,
+            customer: {
+              name: username,
+              email: `${username.toLowerCase()}@example.com`,
+            },
             products: [
               {
                 externalId: `${plan}_${username}`,
