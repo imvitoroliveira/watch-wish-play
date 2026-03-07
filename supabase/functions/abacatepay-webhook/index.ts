@@ -164,6 +164,44 @@ Deno.serve(async (req) => {
       const returnUrl = "https://clientestoptv.lovable.app";
 
       try {
+        // Get existing customer ID (required by AbacatePay API)
+        const customersRes = await fetch("https://api.abacatepay.com/v1/customer/list", {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${abacateApiKey}`,
+            "Accept": "application/json",
+          },
+        });
+
+        const customersData = await customersRes.json();
+        let customerId = customersData?.data?.[0]?.id;
+
+        if (!customerId) {
+          // Create a minimal customer if none exists
+          const createRes = await fetch("https://api.abacatepay.com/v1/customer/create", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${abacateApiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: "Cliente",
+              cellphone: "11999999999",
+              email: "cliente@email.com",
+              taxId: "52998224725",
+            }),
+          });
+          const createData = await createRes.json();
+          customerId = createData?.data?.id;
+          if (!customerId) {
+            console.error("[create_billing] Failed to create customer:", JSON.stringify(createData));
+            return new Response(JSON.stringify({ error: "payment setup failed" }), {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
           method: "POST",
           headers: {
@@ -175,12 +213,7 @@ Deno.serve(async (req) => {
             methods: ["PIX"],
             returnUrl: returnUrl,
             completionUrl: returnUrl,
-            customer: {
-              name: username,
-              cellphone: "",
-              email: `${username}@cliente.local`,
-              taxId: "00000000000",
-            },
+            customerId,
             products: [
               {
                 externalId: `${plan}_${username}`,
