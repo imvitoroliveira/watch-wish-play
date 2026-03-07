@@ -164,7 +164,9 @@ Deno.serve(async (req) => {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 
       try {
-        const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
+      const returnUrl = "https://clientestoptv.lovable.app";
+
+      const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${abacateApiKey}`,
@@ -173,6 +175,8 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             frequency: "ONE_TIME",
             methods: ["PIX"],
+            returnUrl: returnUrl,
+            completionUrl: returnUrl,
             products: [
               {
                 externalId: `${plan}_${username}`,
@@ -185,9 +189,7 @@ Deno.serve(async (req) => {
             metadata: {
               username: username,
               plan: plan,
-              returnUrl: `${supabaseUrl.replace('.supabase.co', '.lovable.app')}`,
             },
-            completionUrl: `${supabaseUrl.replace('.supabase.co', '.lovable.app')}`,
           }),
         });
 
