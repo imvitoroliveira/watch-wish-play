@@ -48,7 +48,21 @@ Deno.serve(async (req) => {
     // ─── UPDATE settings ───
     if (action === "update") {
       const adminAuth = req.headers.get("x-admin-auth") || "";
-      const [u, p] = adminAuth.split(":");
+
+      // Accept both base64 (current frontend) and legacy plain "user:pass"
+      let u = "";
+      let p = "";
+      try {
+        const decoded = atob(adminAuth);
+        if (decoded.includes(":")) {
+          [u, p] = decoded.split(":");
+        } else {
+          [u, p] = adminAuth.split(":");
+        }
+      } catch {
+        [u, p] = adminAuth.split(":");
+      }
+
       const adminUser = Deno.env.get("ADMIN_USER");
       const adminPass = Deno.env.get("ADMIN_PASS");
       if (u !== adminUser || p !== adminPass) {

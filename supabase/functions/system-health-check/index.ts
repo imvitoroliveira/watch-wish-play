@@ -49,11 +49,15 @@ const TEST_SUITE: TestCase[] = [
   { name: "client-login: bloquear GET", category: "security", fn: "client-login", method: "GET", expect: { status: [405] } },
 
   // ═══════════════════════════════════════════════
-  // app-settings (4 tests)
+  // app-settings (8 tests)
   // ═══════════════════════════════════════════════
   { name: "app-settings: GET retorna billing_enabled", category: "functional", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "billing_enabled" } },
-  { name: "app-settings: POST sem auth = 401", category: "security", fn: "app-settings", method: "POST", body: { billing_enabled: true }, expect: { status: [401] } },
-  { name: "app-settings: POST com auth falsa = 401", category: "security", fn: "app-settings", method: "POST", body: { billing_enabled: true }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
+  { name: "app-settings: POST action=get retorna billing_enabled", category: "integration", fn: "app-settings", method: "POST", body: { action: "get" }, expect: { status: [200], hasKey: "billing_enabled" } },
+  { name: "app-settings: POST sem auth = 401", category: "security", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: true }, expect: { status: [401] } },
+  { name: "app-settings: POST com auth falsa = 401", category: "security", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: true }, headers: { "x-admin-auth": "fake:creds" }, expect: { status: [401] } },
+  { name: "app-settings: update com auth admin habilita cobrança", category: "integration", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: true }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "success" } },
+  { name: "app-settings: update com auth admin desabilita cobrança", category: "integration", fn: "app-settings", method: "POST", body: { action: "update", billing_enabled: false }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "success" } },
+  { name: "app-settings: GET mantém id=main", category: "regression", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "id" } },
   { name: "app-settings: não vazar segredos", category: "security", fn: "app-settings", method: "GET", expect: { notContains: ["service_role", "ADMIN_PASS", "ADMIN_USER"] } },
 
   // ═══════════════════════════════════════════════
@@ -172,6 +176,15 @@ const TEST_SUITE: TestCase[] = [
   { name: "cakto-webhook: formato estável", category: "regression", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc", data: {} }, expect: { status: [401] } },
 
   // ═══════════════════════════════════════════════
+  // abacatepay-webhook (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "abacatepay-webhook: create_billing sem username = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", plan: "mensal" }, expect: { status: [400] } },
+  { name: "abacatepay-webhook: create_billing sem plan = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test" }, expect: { status: [400] } },
+  { name: "abacatepay-webhook: create_billing com plan inválido = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test", plan: "invalid_plan" }, expect: { status: [400] } },
+  { name: "abacatepay-webhook: evento desconhecido retorna received", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { status: [200], hasKey: "received" } },
+  { name: "abacatepay-webhook: não vazar segredos", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { notContains: ["ABACATEPAY_API_KEY", "ABACATEPAY_WEBHOOK_SECRET", "NATV_API_TOKEN", "service_role", "SUPABASE_SERVICE_ROLE_KEY"] } },
+
+  // ═══════════════════════════════════════════════
   // football-matches (5 tests)
   // ═══════════════════════════════════════════════
   { name: "football-matches: POST retorna 200", category: "functional", fn: "football-matches", method: "POST", body: {}, expect: { status: [200] } },
@@ -267,6 +280,26 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     if (data?.success && data?.new_titles !== undefined) return null; // OK
     if (!data?.success && !data?.skipped) {
       return "Auto-refresh falhou sem skip — pipeline de diff pode estar quebrado.";
+    }
+  }
+
+  // app-settings update via admin auth must work and keep boolean payload
+  if (
+    test.name === "app-settings: update com auth admin habilita cobrança" ||
+    test.name === "app-settings: update com auth admin desabilita cobrança"
+  ) {
+    if (data?.success !== true) {
+      return "Update de app-settings não retornou success=true — toggle do gestor pode estar quebrado.";
+    }
+    if (typeof data?.billing_enabled !== "boolean") {
+      return "app-settings update não retornou billing_enabled boolean.";
+    }
+  }
+
+  // app-settings GET should always keep singleton id
+  if (test.name === "app-settings: GET mantém id=main") {
+    if (data?.id !== "main") {
+      return "app_settings singleton inconsistente (id diferente de 'main').";
     }
   }
 
