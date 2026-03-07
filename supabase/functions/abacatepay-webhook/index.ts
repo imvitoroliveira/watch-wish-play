@@ -3,20 +3,103 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, x-webhook-secret, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const ABACATE_API = "https://api.abacatepay.com/v1";
-
-// Plan config: price in cents → plan details
-const PLAN_BY_AMOUNT: Record<number, { plan: string; days: number }> = {
-  3500: { plan: "mensal", days: 30 },
-  9000: { plan: "trimestral", days: 90 },
-  17000: { plan: "semestral", days: 180 },
+// Valid plans with price in cents and duration
+const VALID_PLANS: Record<string, { priceCents: number; days: number; label: string }> = {
+  mensal: { priceCents: 3500, days: 30, label: "Renovação 1 Mês" },
+  trimestral: { priceCents: 9000, days: 90, label: "Renovação 3 Meses" },
+  semestral: { priceCents: 17000, days: 180, label: "Renovação 6 Meses" },
 };
 
-function getPlanByAmount(amountCents: number): { plan: string; days: number } {
-  return PLAN_BY_AMOUNT[amountCents] || { plan: "mensal", days: 30 };
+// Reverse lookup: price → plan
+const PLAN_BY_AMOUNT: Record<number, string> = {
+  3500: "mensal",
+  9000: "trimestral",
+  17000: "semestral",
+};
+
+// ── Security: Validate webhook authenticity ──
+function validateWebhookSecret(req: Request, body: any): { valid: boolean; reason?: string } {
+  const webhookSecret = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET");
+
+  if (!webhookSecret) {
+    console.error("[Security] ABACATEPAY_WEBHOOK_SECRET not configured — rejecting all webhooks");
+    return { valid: false, reason: "webhook secret not configured on server" };
+  }
+
+  // Check header first, then body field
+  const receivedSecret = req.headers.get("x-webhook-secret") || body?.secret;
+
+  if (!receivedSecret) {
+    console.error("[Security] No webhook secret provided in request");
+    return { valid: false, reason: "missing webhook secret" };
+  }
+
+  // Constant-time comparison to prevent timing attacks
+  if (receivedSecret.length !== webhookSecret.length) {
+    console.error("[Security] Webhook secret length mismatch");
+    return { valid: false, reason: "invalid webhook secret" };
+  }
+
+  let mismatch = 0;
+  for (let i = 0; i < webhookSecret.length; i++) {
+    mismatch |= webhookSecret.charCodeAt(i) ^ receivedSecret.charCodeAt(i);
+  }
+
+  if (mismatch !== 0) {
+    console.error("[Security] Webhook secret mismatch — possible forgery attempt");
+    return { valid: false, reason: "invalid webhook secret" };
+  }
+
+  return { valid: true };
+}
+
+// ── Security: Validate payment data integrity ──
+function validatePaymentData(billingData: any, metadata: any): { valid: boolean; reason?: string; plan?: string; days?: number } {
+  const username = metadata?.username;
+  if (!username || typeof username !== "string" || username.trim().length === 0) {
+    return { valid: false, reason: "missing or invalid username in metadata" };
+  }
+
+  // Sanitize username: only allow alphanumeric, dots, underscores, hyphens
+  if (!/^[a-zA-Z0-9._-]{1,100}$/.test(username)) {
+    console.error(`[Security] Invalid username format: ${username}`);
+    return { valid: false, reason: "invalid username format" };
+  }
+
+  // Determine plan from metadata or amount
+  let planKey: string | undefined;
+
+  if (metadata?.plan && typeof metadata.plan === "string") {
+    planKey = metadata.plan.toLowerCase();
+    if (!VALID_PLANS[planKey]) {
+      console.error(`[Security] Invalid plan in metadata: ${metadata.plan}`);
+      return { valid: false, reason: "invalid plan in metadata" };
+    }
+  } else {
+    // Fallback: determine from amount
+    const amount = billingData?.amount || billingData?.products?.[0]?.price;
+    if (typeof amount === "number" && PLAN_BY_AMOUNT[amount]) {
+      planKey = PLAN_BY_AMOUNT[amount];
+    } else {
+      console.error(`[Security] Cannot determine plan — no valid plan in metadata or recognizable amount`);
+      return { valid: false, reason: "cannot determine plan from payment data" };
+    }
+  }
+
+  // Cross-validate: if both plan and amount are present, they must match
+  if (metadata?.plan && billingData?.amount) {
+    const expectedPrice = VALID_PLANS[planKey]?.priceCents;
+    if (expectedPrice && billingData.amount !== expectedPrice) {
+      console.error(`[Security] Price mismatch: plan=${planKey} expects ${expectedPrice}, got ${billingData.amount}`);
+      return { valid: false, reason: "plan/amount mismatch — possible tampering" };
+    }
+  }
+
+  const plan = VALID_PLANS[planKey];
+  return { valid: true, plan: planKey, days: plan.days };
 }
 
 Deno.serve(async (req) => {
@@ -25,12 +108,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const natvToken = Deno.env.get("NATV_API_TOKEN")!;
-    const abacateApiKey = Deno.env.get("ABACATEPAY_API_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
     if (req.method !== "POST") {
       return new Response("Method not allowed", { status: 405, headers: corsHeaders });
     }
@@ -46,7 +123,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ─── Action: create_billing (called from frontend) ───
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // ─── Action: create_billing (called from frontend — just returns checkout URLs now) ───
     if (body.action === "create_billing") {
       const { username, plan } = body;
       if (!username || !plan) {
@@ -55,122 +136,86 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
-      const planPrices: Record<string, number> = {
-        mensal: 3500,
-        trimestral: 9000,
-        semestral: 17000,
-      };
-
-      const priceCents = planPrices[plan];
-      if (!priceCents) {
+      if (!VALID_PLANS[plan]) {
         return new Response(JSON.stringify({ error: "invalid plan" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
-      const planLabels: Record<string, string> = {
-        mensal: "Renovação 1 Mês",
-        trimestral: "Renovação 3 Meses",
-        semestral: "Renovação 6 Meses",
-      };
-
-      // Create billing via AbacatePay API
-      const billingResponse = await fetch(`${ABACATE_API}/billing/create`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${abacateApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          frequency: "ONE_TIME",
-          methods: ["PIX"],
-          products: [
-            {
-              externalId: `${plan}_${username}_${Date.now()}`,
-              name: planLabels[plan],
-              quantity: 1,
-              price: priceCents,
-            },
-          ],
-          metadata: { username, plan },
-          returnUrl: "https://clientestoptv.lovable.app/dashboard",
-          completionUrl: "https://clientestoptv.lovable.app/dashboard",
-        }),
-      });
-
-      const billingData = await billingResponse.json();
-      console.log("[AbacatePay] Billing created:", JSON.stringify(billingData));
-
-      if (!billingResponse.ok) {
-        console.error("[AbacatePay] Error creating billing:", billingData);
-        return new Response(JSON.stringify({ error: "Failed to create billing", details: billingData }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const checkoutUrl = billingData.data?.url || billingData.url;
-
-      return new Response(JSON.stringify({ url: checkoutUrl }), {
+      // Checkout links are now handled client-side; this endpoint remains for backward compatibility
+      return new Response(JSON.stringify({ error: "checkout links are now handled client-side" }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // ─── Webhook: billing.paid event from AbacatePay ───
     if (body.event === "billing.paid" || body.event === "BILLING_PAID") {
-      // Validate webhook secret
-      const webhookSecret = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET");
-      const receivedSecret = req.headers.get("x-webhook-secret") || body.secret;
-      if (webhookSecret && receivedSecret !== webhookSecret) {
-        console.error("[AbacatePay Webhook] Invalid webhook secret");
+      // STEP 1: Validate webhook secret (MANDATORY)
+      const secretValidation = validateWebhookSecret(req, body);
+      if (!secretValidation.valid) {
+        console.error(`[Security] Webhook REJECTED: ${secretValidation.reason}`);
         return new Response(JSON.stringify({ error: "unauthorized" }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      console.log(`[AbacatePay Webhook] Event: ${body.event}`, JSON.stringify(body));
+
+      console.log(`[AbacatePay Webhook] Authenticated event: ${body.event}`);
 
       const billingData = body.data || body;
       const metadata = billingData.metadata || {};
-      const username = metadata.username;
 
-      if (!username) {
-        console.error("[AbacatePay Webhook] No username found in metadata");
-        return new Response(JSON.stringify({ error: "no username in metadata" }), {
+      // STEP 2: Validate payment data integrity
+      const paymentValidation = validatePaymentData(billingData, metadata);
+      if (!paymentValidation.valid) {
+        console.error(`[Security] Payment validation FAILED: ${paymentValidation.reason}`);
+        return new Response(JSON.stringify({ error: paymentValidation.reason }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Determine plan from metadata or amount
-      let planInfo: { plan: string; days: number };
-      if (metadata.plan && ["mensal", "trimestral", "semestral"].includes(metadata.plan)) {
-        const planDays: Record<string, number> = { mensal: 30, trimestral: 90, semestral: 180 };
-        planInfo = { plan: metadata.plan, days: planDays[metadata.plan] };
-      } else {
-        const amount = billingData.amount || billingData.products?.[0]?.price || 0;
-        planInfo = getPlanByAmount(amount);
+      const username = metadata.username.trim();
+      const planKey = paymentValidation.plan!;
+      const days = paymentValidation.days!;
+
+      // STEP 3: Check for duplicate transactions
+      const transactionId = billingData.id || billingData.billing_id || "unknown";
+      const abacateTransactionId = `abacate_${transactionId}`;
+
+      if (transactionId !== "unknown") {
+        const { data: existingTx } = await supabase
+          .from("payment_transactions")
+          .select("id")
+          .eq("cakto_transaction_id", abacateTransactionId)
+          .maybeSingle();
+
+        if (existingTx) {
+          console.warn(`[Security] Duplicate transaction detected: ${abacateTransactionId} — skipping`);
+          return new Response(JSON.stringify({ success: true, message: "already processed" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
 
-      console.log(`[AbacatePay Webhook] Activating: ${username}, plan: ${planInfo.plan}, days: ${planInfo.days}`);
+      console.log(`[AbacatePay Webhook] Validated: user=${username}, plan=${planKey}, days=${days}, tx=${abacateTransactionId}`);
 
-      // Log transaction
-      const transactionId = billingData.id || billingData.billing_id || "unknown";
+      // STEP 4: Log transaction BEFORE activation
       const { data: txData } = await supabase.from("payment_transactions").insert({
         client_username: username,
-        plan: planInfo.plan,
-        days: planInfo.days,
-        cakto_transaction_id: `abacate_${transactionId}`,
+        plan: planKey,
+        days: days,
+        cakto_transaction_id: abacateTransactionId,
         status: "approved",
       }).select("id").single();
 
-      // Activate via NATV API
+      // STEP 5: Activate via NATV API
+      const natvToken = Deno.env.get("NATV_API_TOKEN")!;
       let natvSuccess = false;
       try {
         const natvResponse = await fetch(
-          `https://natv-api.sytes.net/api/user/activation?token=${natvToken}&username=${encodeURIComponent(username)}&days=${planInfo.days}`,
+          `https://natv-api.sytes.net/api/user/activation?token=${natvToken}&username=${encodeURIComponent(username)}&days=${days}`,
           { method: "GET" }
         );
         const natvResult = await natvResponse.text();
@@ -180,7 +225,7 @@ Deno.serve(async (req) => {
         console.error("[NATV API] Error:", err);
       }
 
-      // Update transaction status
+      // STEP 6: Update transaction status
       if (txData?.id) {
         await supabase.from("payment_transactions").update({
           natv_activated: natvSuccess,
@@ -188,7 +233,7 @@ Deno.serve(async (req) => {
         }).eq("id", txData.id);
       }
 
-      // Update clients_list expiration
+      // STEP 7: Update clients_list expiration
       if (natvSuccess) {
         try {
           const { data: clientsData } = await supabase
@@ -205,7 +250,7 @@ Deno.serve(async (req) => {
               const currentExp = clients[idx].e ? new Date(clients[idx].e) : now;
               const baseDate = currentExp > now ? currentExp : now;
               const newExp = new Date(baseDate);
-              newExp.setDate(newExp.getDate() + planInfo.days);
+              newExp.setDate(newExp.getDate() + days);
 
               clients[idx].e = newExp.toISOString().split("T")[0];
               clients[idx].t = "Ativo";
@@ -225,19 +270,19 @@ Deno.serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ success: true, activated: natvSuccess, username, plan: planInfo.plan }),
+        JSON.stringify({ success: true, activated: natvSuccess, username, plan: planKey }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Unknown event
+    // Unknown event — don't process, just acknowledge
     console.log(`[AbacatePay Webhook] Unhandled event: ${body.event || "none"}`);
     return new Response(JSON.stringify({ received: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
     console.error("[AbacatePay Webhook] Error:", err);
-    return new Response(JSON.stringify({ error: String(err) }), {
+    return new Response(JSON.stringify({ error: "internal error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
