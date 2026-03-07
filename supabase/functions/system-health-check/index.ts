@@ -176,13 +176,31 @@ const TEST_SUITE: TestCase[] = [
   { name: "cakto-webhook: formato estável", category: "regression", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc", data: {} }, expect: { status: [401] } },
 
   // ═══════════════════════════════════════════════
-  // abacatepay-webhook (5 tests)
+  // abacatepay-webhook (18 tests) — Ciclo completo de pagamento
   // ═══════════════════════════════════════════════
-  { name: "abacatepay-webhook: create_billing sem username = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", plan: "mensal" }, expect: { status: [400] } },
-  { name: "abacatepay-webhook: create_billing sem plan = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test" }, expect: { status: [400] } },
-  { name: "abacatepay-webhook: create_billing com plan inválido = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test", plan: "invalid_plan" }, expect: { status: [400] } },
-  { name: "abacatepay-webhook: evento desconhecido retorna received", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { status: [200], hasKey: "received" } },
-  { name: "abacatepay-webhook: não vazar segredos", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { notContains: ["ABACATEPAY_API_KEY", "ABACATEPAY_WEBHOOK_SECRET", "NATV_API_TOKEN", "service_role", "SUPABASE_SERVICE_ROLE_KEY"] } },
+  // Criação de cobrança
+  { name: "abacatepay: create_billing sem username = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", plan: "mensal" }, expect: { status: [400] } },
+  { name: "abacatepay: create_billing sem plan = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test" }, expect: { status: [400] } },
+  { name: "abacatepay: create_billing plan inválido = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test", plan: "invalid_plan" }, expect: { status: [400] } },
+  { name: "abacatepay: create_billing plan vazio = 400", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_test", plan: "" }, expect: { status: [400] } },
+  { name: "abacatepay: create_billing username XSS = 400", category: "security", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "<script>alert(1)</script>", plan: "mensal" }, expect: { status: [400] } },
+  // Webhook sem/com secret
+  { name: "abacatepay: billing.paid sem secret = 401", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "billing.paid", data: { id: "hc_fake", metadata: { username: "hc_test", plan: "mensal" } } }, expect: { status: [401] } },
+  { name: "abacatepay: billing.paid secret errado = 401", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "billing.paid", secret: "wrong_secret_hc", data: { id: "hc_fake2", metadata: { username: "hc_test", plan: "mensal" } } }, expect: { status: [401] } },
+  { name: "abacatepay: payment.completed sem secret = 401", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "payment.completed", data: { payment: { id: "hc_pay", amount: 3500 } } }, expect: { status: [401] } },
+  { name: "abacatepay: checkout.paid sem secret = 401", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "checkout.paid", data: { checkout: { id: "hc_chk", amount: 3500 } } }, expect: { status: [401] } },
+  // Formatos de payload (não devem crashar)
+  { name: "abacatepay: metadata em body.metadata não crash", category: "integration", fn: "abacatepay-webhook", method: "POST", body: { event: "billing.paid", metadata: { username: "hc_format1", plan: "mensal" }, data: { id: "hc_fmt1" } }, expect: { status: [401] } },
+  { name: "abacatepay: externalId no checkout não crash", category: "integration", fn: "abacatepay-webhook", method: "POST", body: { event: "billing.paid", data: { checkout: { id: "hc_fmt2", externalId: "mensal_hc_format2", amount: 3500 } } }, expect: { status: [401] } },
+  { name: "abacatepay: externalId em products não crash", category: "integration", fn: "abacatepay-webhook", method: "POST", body: { event: "billing.paid", data: { id: "hc_fmt3", products: [{ externalId: "trimestral_hc_format3", price: 9000 }] } }, expect: { status: [401] } },
+  { name: "abacatepay: description fallback não crash", category: "integration", fn: "abacatepay-webhook", method: "POST", body: { event: "billing.paid", data: { id: "hc_fmt4", products: [{ description: "Renovação 1 Mês - hc_format4", price: 3500 }] } }, expect: { status: [401] } },
+  // Eventos aceitos vs ignorados
+  { name: "abacatepay: evento desconhecido = received", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { status: [200], hasKey: "received" } },
+  { name: "abacatepay: checkout.disputed = ignorado", category: "regression", fn: "abacatepay-webhook", method: "POST", body: { event: "checkout.disputed", data: {} }, expect: { status: [200], hasKey: "received" } },
+  { name: "abacatepay: BILLING_PAID = processado (401)", category: "functional", fn: "abacatepay-webhook", method: "POST", body: { event: "BILLING_PAID", data: { id: "hc_upper" } }, expect: { status: [401] } },
+  // Segurança geral
+  { name: "abacatepay: não vazar segredos", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "unknown_event_hc", data: {} }, expect: { notContains: ["ABACATEPAY_API_KEY", "ABACATEPAY_WEBHOOK_SECRET", "NATV_API_TOKEN", "service_role", "SUPABASE_SERVICE_ROLE_KEY"] } },
+  { name: "abacatepay: GET bloqueado = 405", category: "security", fn: "abacatepay-webhook", method: "GET", expect: { status: [405] } },
 
   // ═══════════════════════════════════════════════
   // football-matches (5 tests)
