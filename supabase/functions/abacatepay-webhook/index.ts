@@ -92,9 +92,17 @@ function validateWebhookSecret(req: Request, body: any): { valid: boolean; reaso
 }
 
 // ── Security: Validate payment data integrity ──
-function validatePaymentData(billingData: any, metadata: any): { valid: boolean; reason?: string; plan?: string; days?: number } {
-  const username = metadata?.username;
-  if (!username || typeof username !== "string" || username.trim().length === 0) {
+function validatePaymentData(
+  billingData: any,
+  metadata: any,
+  txFallback?: { client_username?: string; plan?: string; days?: number }
+): { valid: boolean; reason?: string; plan?: string; days?: number; username?: string } {
+  const fallbackUsername = txFallback?.client_username;
+  const fallbackPlan = txFallback?.plan;
+  const fallbackDays = txFallback?.days;
+
+  const username = (metadata?.username || fallbackUsername || "").trim();
+  if (!username || typeof username !== "string" || username.length === 0) {
     return { valid: false, reason: "missing or invalid username in metadata" };
   }
 
@@ -104,18 +112,29 @@ function validatePaymentData(billingData: any, metadata: any): { valid: boolean;
     return { valid: false, reason: "invalid username format" };
   }
 
-  // Determine plan from metadata or amount
+  // Determine plan from metadata, transaction fallback or amount
   let planKey: string | undefined;
 
-  if (metadata?.plan && typeof metadata.plan === "string") {
-    planKey = metadata.plan.toLowerCase();
+  const metadataPlan = typeof metadata?.plan === "string" ? metadata.plan.toLowerCase() : undefined;
+  if (metadataPlan) {
+    planKey = metadataPlan;
     if (!VALID_PLANS[planKey]) {
       console.error(`[Security] Invalid plan in metadata: ${metadata.plan}`);
       return { valid: false, reason: "invalid plan in metadata" };
     }
+  } else if (fallbackPlan && VALID_PLANS[fallbackPlan]) {
+    planKey = fallbackPlan;
   } else {
     // Fallback: determine from amount
-    const amount = billingData?.amount || billingData?.products?.[0]?.price;
+    const amount =
+      billingData?.amount ??
+      billingData?.paidAmount ??
+      billingData?.products?.[0]?.price ??
+      billingData?.checkout?.amount ??
+      billingData?.checkout?.paidAmount ??
+      billingData?.payment?.amount ??
+      billingData?.payment?.paidAmount;
+
     if (typeof amount === "number" && PLAN_BY_AMOUNT[amount]) {
       planKey = PLAN_BY_AMOUNT[amount];
     } else {
@@ -125,16 +144,109 @@ function validatePaymentData(billingData: any, metadata: any): { valid: boolean;
   }
 
   // Cross-validate: if both plan and amount are present, they must match
-  if (metadata?.plan && billingData?.amount) {
+  const amountForValidation =
+    billingData?.amount ??
+    billingData?.paidAmount ??
+    billingData?.checkout?.amount ??
+    billingData?.checkout?.paidAmount ??
+    billingData?.payment?.amount ??
+    billingData?.payment?.paidAmount;
+
+  if (typeof amountForValidation === "number") {
     const expectedPrice = VALID_PLANS[planKey]?.priceCents;
-    if (expectedPrice && billingData.amount !== expectedPrice) {
-      console.error(`[Security] Price mismatch: plan=${planKey} expects ${expectedPrice}, got ${billingData.amount}`);
+    if (expectedPrice && amountForValidation !== expectedPrice) {
+      console.error(`[Security] Price mismatch: plan=${planKey} expects ${expectedPrice}, got ${amountForValidation}`);
       return { valid: false, reason: "plan/amount mismatch — possible tampering" };
     }
   }
 
   const plan = VALID_PLANS[planKey];
-  return { valid: true, plan: planKey, days: plan.days };
+  const days = fallbackDays && fallbackDays > 0 ? fallbackDays : plan.days;
+  return { valid: true, plan: planKey, days, username };
+}
+
+function parsePlanAndUsernameFromExternalId(rawExternalId: unknown): { plan?: string; username?: string } {
+  if (typeof rawExternalId !== "string") return {};
+  const match = rawExternalId.match(/^(mensal|trimestral|semestral)_(.+)$/i);
+  if (!match) return {};
+  return { plan: match[1].toLowerCase(), username: match[2] };
+}
+
+function buildWebhookMetadata(body: any, billingData: any): Record<string, any> {
+  const metadataSources = [
+    body?.metadata,
+    body?.data?.metadata,
+    billingData?.metadata,
+    billingData?.checkout?.metadata,
+    billingData?.payment?.metadata,
+  ];
+
+  const metadata = metadataSources.reduce((acc, source) => {
+    if (source && typeof source === "object" && !Array.isArray(source)) {
+      return { ...acc, ...source };
+    }
+    return acc;
+  }, {} as Record<string, any>);
+
+  const externalIdCandidates = [
+    billingData?.externalId,
+    billingData?.external_id,
+    billingData?.checkout?.externalId,
+    billingData?.checkout?.external_id,
+    billingData?.payment?.externalId,
+    billingData?.payment?.external_id,
+    billingData?.products?.[0]?.externalId,
+    billingData?.products?.[0]?.external_id,
+    billingData?.items?.[0]?.externalId,
+    billingData?.items?.[0]?.external_id,
+  ];
+
+  for (const externalId of externalIdCandidates) {
+    const parsed = parsePlanAndUsernameFromExternalId(externalId);
+    if (parsed.plan && !metadata.plan) metadata.plan = parsed.plan;
+    if (parsed.username && !metadata.username) metadata.username = parsed.username;
+  }
+
+  if (!metadata.username) {
+    const descriptions = [
+      billingData?.products?.[0]?.description,
+      billingData?.items?.[0]?.description,
+      billingData?.checkout?.description,
+      billingData?.payment?.description,
+    ];
+    for (const desc of descriptions) {
+      if (typeof desc !== "string") continue;
+      const match = desc.match(/- ([a-zA-Z0-9._-]+)$/);
+      if (match?.[1]) {
+        metadata.username = match[1];
+        break;
+      }
+    }
+  }
+
+  return metadata;
+}
+
+function resolveTransactionId(body: any, billingData: any): string {
+  const candidates = [
+    billingData?.id,
+    billingData?.billing_id,
+    billingData?.checkout?.id,
+    billingData?.payment?.id,
+    body?.data?.id,
+    body?.data?.billing_id,
+    body?.data?.checkout?.id,
+    body?.data?.payment?.id,
+    body?.id,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return "unknown";
 }
 
 Deno.serve(async (req) => {
@@ -275,12 +387,29 @@ Deno.serve(async (req) => {
           });
         }
 
+        const billingId = abacateData.data.id as string;
+        const transactionRef = billingId ? `abacate_${billingId}` : null;
+
+        if (transactionRef) {
+          const { error: pendingTxError } = await supabase.from("payment_transactions").insert({
+            client_username: username,
+            plan,
+            days: planInfo.days,
+            cakto_transaction_id: transactionRef,
+            status: "pending",
+          });
+
+          if (pendingTxError) {
+            console.warn(`[create_billing] Could not store pending transaction ${transactionRef}:`, pendingTxError.message);
+          }
+        }
+
         console.log(`[create_billing] Created billing for ${username}, plan=${plan}, url=${abacateData.data.url}`);
 
         return new Response(JSON.stringify({ 
           success: true, 
           url: abacateData.data.url,
-          billing_id: abacateData.data.id,
+          billing_id: billingId,
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -294,7 +423,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── Webhook: billing.paid event from AbacatePay ───
-    if (body.event === "billing.paid" || body.event === "BILLING_PAID") {
+    if (["billing.paid", "BILLING_PAID", "payment.completed", "checkout.paid"].includes(body.event)) {
       // STEP 1: Validate webhook secret (MANDATORY)
       const secretValidation = validateWebhookSecret(req, body);
       if (!secretValidation.valid) {
@@ -308,35 +437,46 @@ Deno.serve(async (req) => {
       console.log(`[AbacatePay Webhook] Authenticated event: ${body.event}`);
 
       const billingData = body.data || body;
-      
-      // AbacatePay can send metadata in various locations depending on payload version
-      let metadata = billingData.metadata || body.metadata || {};
-      
-      // Fallback: extract username/plan from product externalId (format: "plan_username")
-      if ((!metadata.username || !metadata.plan) && billingData.products && Array.isArray(billingData.products) && billingData.products.length > 0) {
-        const externalId = billingData.products[0].externalId || billingData.products[0].external_id || "";
-        console.log(`[AbacatePay Webhook] Trying externalId fallback: "${externalId}"`);
-        const match = externalId.match(/^(mensal|trimestral|semestral)_(.+)$/);
-        if (match) {
-          metadata = { ...metadata, plan: metadata.plan || match[1], username: metadata.username || match[2] };
-          console.log(`[AbacatePay Webhook] Extracted from externalId: username=${metadata.username}, plan=${metadata.plan}`);
+      const transactionId = resolveTransactionId(body, billingData);
+      const abacateTransactionId = transactionId !== "unknown" ? `abacate_${transactionId}` : null;
+
+      let existingTx: {
+        id: string;
+        status: string;
+        natv_activated: boolean;
+        client_username: string;
+        plan: string;
+        days: number;
+      } | null = null;
+
+      if (abacateTransactionId) {
+        const { data } = await supabase
+          .from("payment_transactions")
+          .select("id, status, natv_activated, client_username, plan, days")
+          .eq("cakto_transaction_id", abacateTransactionId)
+          .maybeSingle();
+
+        existingTx = data;
+
+        if (existingTx && existingTx.status === "approved") {
+          console.warn(`[Security] Duplicate transaction detected: ${abacateTransactionId} — skipping`);
+          return new Response(JSON.stringify({ success: true, message: "already processed" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
       }
-      
-      // Fallback: extract from product description (format: "Renovação ... - username")
-      if ((!metadata.username) && billingData.products && Array.isArray(billingData.products) && billingData.products.length > 0) {
-        const desc = billingData.products[0].description || "";
-        const descMatch = desc.match(/- ([a-zA-Z0-9._-]+)$/);
-        if (descMatch) {
-          metadata = { ...metadata, username: descMatch[1] };
-          console.log(`[AbacatePay Webhook] Extracted username from description: ${metadata.username}`);
-        }
+
+      const metadata = buildWebhookMetadata(body, billingData);
+
+      if (existingTx) {
+        metadata.username = metadata.username || existingTx.client_username;
+        metadata.plan = metadata.plan || existingTx.plan;
       }
-      
-      console.log(`[AbacatePay Webhook] Final metadata: ${JSON.stringify(metadata)}`);
+
+      console.log(`[AbacatePay Webhook] Transaction=${abacateTransactionId || "unknown"}, metadata=${JSON.stringify(metadata)}`);
 
       // STEP 2: Validate payment data integrity
-      const paymentValidation = validatePaymentData(billingData, metadata);
+      const paymentValidation = validatePaymentData(billingData, metadata, existingTx || undefined);
       if (!paymentValidation.valid) {
         console.error(`[Security] Payment validation FAILED: ${paymentValidation.reason}`);
         return new Response(JSON.stringify({ error: paymentValidation.reason }), {
@@ -345,39 +485,45 @@ Deno.serve(async (req) => {
         });
       }
 
-      const username = metadata.username.trim();
+      const username = paymentValidation.username!;
       const planKey = paymentValidation.plan!;
       const days = paymentValidation.days!;
 
-      // STEP 3: Check for duplicate transactions
-      const transactionId = billingData.id || billingData.billing_id || "unknown";
-      const abacateTransactionId = `abacate_${transactionId}`;
+      console.log(`[AbacatePay Webhook] Validated: user=${username}, plan=${planKey}, days=${days}, tx=${abacateTransactionId || "unknown"}`);
 
-      if (transactionId !== "unknown") {
-        const { data: existingTx } = await supabase
+      // STEP 3: Persist approved transaction BEFORE activation
+      let txData: { id: string } | null = null;
+
+      if (existingTx?.id) {
+        const { data } = await supabase
           .from("payment_transactions")
+          .update({
+            client_username: username,
+            plan: planKey,
+            days,
+            status: "approved",
+          })
+          .eq("id", existingTx.id)
           .select("id")
-          .eq("cakto_transaction_id", abacateTransactionId)
-          .maybeSingle();
+          .single();
 
-        if (existingTx) {
-          console.warn(`[Security] Duplicate transaction detected: ${abacateTransactionId} — skipping`);
-          return new Response(JSON.stringify({ success: true, message: "already processed" }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+        txData = data;
+      } else {
+        const { data } = await supabase
+          .from("payment_transactions")
+          .insert({
+            client_username: username,
+            plan: planKey,
+            days,
+            cakto_transaction_id: abacateTransactionId,
+            status: "approved",
+          })
+          .select("id")
+          .single();
+
+        txData = data;
       }
 
-      console.log(`[AbacatePay Webhook] Validated: user=${username}, plan=${planKey}, days=${days}, tx=${abacateTransactionId}`);
-
-      // STEP 4: Log transaction BEFORE activation
-      const { data: txData } = await supabase.from("payment_transactions").insert({
-        client_username: username,
-        plan: planKey,
-        days: days,
-        cakto_transaction_id: abacateTransactionId,
-        status: "approved",
-      }).select("id").single();
 
       // STEP 5: Activate via NATV API
       const natvToken = Deno.env.get("NATV_API_TOKEN")!;
