@@ -644,33 +644,39 @@ Deno.serve(async (req) => {
 
       const rowId = inserted?.id;
 
-      // Run tests one by one with small delay between calls to avoid rate limiting
-      const results: any[] = [];
-      for (let i = 0; i < TEST_SUITE.length; i++) {
-        // Delay between tests to avoid Supabase rate limiting
-        // Every 5 tests, pause 1.5s; every 15, pause 3s
-        if (i > 0) {
-          if (i % 15 === 0) {
-            await new Promise(r => setTimeout(r, 3000));
-          } else if (i % 5 === 0) {
-            await new Promise(r => setTimeout(r, 1500));
-          } else {
-            await new Promise(r => setTimeout(r, 300));
-          }
+      // Run tests in parallel batches for speed (avoid Edge Function timeout)
+      const BATCH_SIZE = 10;
+      const results: any[] = new Array(TEST_SUITE.length);
+      
+      for (let batchStart = 0; batchStart < TEST_SUITE.length; batchStart += BATCH_SIZE) {
+        // Small delay between batches to avoid rate limiting
+        if (batchStart > 0) {
+          await new Promise(r => setTimeout(r, 800));
         }
 
-        const result = await runTest(baseUrl, anonKey, TEST_SUITE[i]);
-        results.push(result);
+        const batchEnd = Math.min(batchStart + BATCH_SIZE, TEST_SUITE.length);
+        const batchPromises = [];
+        
+        for (let i = batchStart; i < batchEnd; i++) {
+          batchPromises.push(
+            runTest(baseUrl, anonKey, TEST_SUITE[i]).then(result => {
+              results[i] = result;
+            })
+          );
+        }
+
+        await Promise.all(batchPromises);
 
         // Update partial results in DB for real-time polling
         if (rowId) {
-          const passed = results.filter(r => r.passed).length;
-          const failed = results.filter(r => !r.passed).length;
+          const completed = results.filter(Boolean);
+          const passed = completed.filter(r => r.passed).length;
+          const failed = completed.filter(r => !r.passed).length;
           await supabase.from("test_results").update({
             passed,
             failed,
             duration_ms: Date.now() - startTime,
-            results,
+            results: completed,
           }).eq("id", rowId);
         }
       }
