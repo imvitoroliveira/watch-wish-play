@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { AlertTriangle, Shield } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import RenewalModal from '@/components/RenewalModal';
 import { Button } from '@/components/ui/button';
 import { useBillingEnabled } from '@/hooks/useBillingEnabled';
@@ -13,6 +13,14 @@ const ExpiredScreen = () => {
 
   const savedClient = localStorage.getItem('msc_client');
   const username = savedClient ? JSON.parse(savedClient)?.u || '' : '';
+
+  // Auto-show renewal popup when billing is enabled
+  useEffect(() => {
+    if (billingEnabled) {
+      const timer = setTimeout(() => setShowRenewal(true), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [billingEnabled]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
