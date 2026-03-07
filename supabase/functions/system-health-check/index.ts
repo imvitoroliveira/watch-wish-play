@@ -394,8 +394,18 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // POST (run tests) and DELETE (remove results) require admin auth
-  if ((req.method === "POST" || req.method === "DELETE") && !validateAdmin(req)) {
+  // Allow cron triggers (POST with trigger=cron) without admin auth
+  let isCronTrigger = false;
+  if (req.method === "POST") {
+    try {
+      const cloned = req.clone();
+      const body = await cloned.json();
+      isCronTrigger = body?.trigger === "cron";
+    } catch {}
+  }
+
+  // POST (run tests) and DELETE (remove results) require admin auth, except cron
+  if ((req.method === "POST" || req.method === "DELETE") && !isCronTrigger && !validateAdmin(req)) {
     return new Response(
       JSON.stringify({ error: "Unauthorized" }),
       { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
