@@ -158,7 +158,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   </div>
 
                   <span className="text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
-                    Pagar →
+                    {loadingPlan === plan.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Pagar →'}
                   </span>
                 </motion.button>
               );
