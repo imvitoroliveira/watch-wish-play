@@ -44,3 +44,18 @@ verify_jwt = false
 
 [functions.abacatepay-webhook]
 verify_jwt = false
+
+[functions.app-settings]
+verify_jwt = false
+
+[functions.system-health-check]
+verify_jwt = false
+
+[functions.push-test]
+verify_jwt = false
+
+[functions.stream-proxy]
+verify_jwt = false
+
+[functions.stream-lookup]
+verify_jwt = false
