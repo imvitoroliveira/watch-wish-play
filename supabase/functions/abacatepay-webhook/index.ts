@@ -195,9 +195,9 @@ Deno.serve(async (req) => {
         // Build customer object inline — AbacatePay will show these in checkout
         const customerObj: Record<string, string> = {
           name: displayName,
-          email: `${username}@cliente.local`,
-          cellphone: clientPhone || "11999999999",
-          taxId: "52998224725", // Valid CPF required by API
+          email: "preenchaseuemail@aqui.com",
+          cellphone: clientPhone || "00000000000",
+          taxId: "52998224725",
         };
 
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
