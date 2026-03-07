@@ -164,53 +164,6 @@ Deno.serve(async (req) => {
       const returnUrl = "https://clientestoptv.lovable.app";
 
       try {
-        const customersRes = await fetch("https://api.abacatepay.com/v1/customer/list", {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${abacateApiKey}`,
-            "Accept": "application/json",
-          },
-        });
-
-        const customersData = await customersRes.json();
-        let customerId = customersData?.data?.[0]?.id;
-
-        if (!customersRes.ok) {
-          console.error("[create_billing] Error listing customers:", JSON.stringify(customersData));
-          return new Response(JSON.stringify({ error: "payment customer listing failed" }), {
-            status: 500,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-
-        if (!customerId) {
-          const createCustomerRes = await fetch("https://api.abacatepay.com/v1/customer/create", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${abacateApiKey}`,
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-            },
-            body: JSON.stringify({
-              name: "Cliente Stream Hub",
-              cellphone: "(11) 99999-9999",
-              email: "pagamentos@clientestoptv.com",
-              taxId: "529.982.247-25",
-            }),
-          });
-
-          const createCustomerData = await createCustomerRes.json();
-          customerId = createCustomerData?.data?.id;
-
-          if (!createCustomerRes.ok || !customerId) {
-            console.error("[create_billing] Could not create fallback customer:", JSON.stringify(createCustomerData));
-            return new Response(JSON.stringify({ error: "payment customer not configured" }), {
-              status: 500,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-        }
-
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
           method: "POST",
           headers: {
@@ -222,7 +175,6 @@ Deno.serve(async (req) => {
             methods: ["PIX"],
             returnUrl: returnUrl,
             completionUrl: returnUrl,
-            customerId,
             products: [
               {
                 externalId: `${plan}_${username}`,
