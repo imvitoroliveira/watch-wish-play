@@ -252,11 +252,11 @@ const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   // Caminhos felizes (happy path) ausentes (5 tests)
   // ═══════════════════════════════════════════════
-  { name: "user-presence: list_online com auth admin", category: "functional", fn: "user-presence", method: "POST", body: { action: "list_online" }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "users" } },
+  { name: "user-presence: list_online com auth admin", category: "functional", fn: "user-presence", method: "POST", body: { action: "list_online" }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "online" } },
   { name: "push-test: validate com auth admin", category: "functional", fn: "push-test", method: "POST", body: { action: "validate" }, headers: ADMIN_HDR, expect: { status: [200] } },
   { name: "match-reminders: add sem dados = 400", category: "functional", fn: "match-reminders", method: "POST", body: { action: "add" }, expect: { status: [400] } },
   { name: "content-alerts: add sem dados = 400", category: "functional", fn: "content-alerts", method: "POST", body: { action: "add" }, expect: { status: [400] } },
-  { name: "trailer-challenge: POST com dados válidos", category: "functional", fn: "trailer-challenge", method: "POST", body: { action: "watch", username: "hc_test", movie_id: 550 }, expect: { status: [200] } },
+  { name: "trailer-challenge: POST com dados válidos", category: "functional", fn: "trailer-challenge", method: "POST", body: { action: "watch_trailer", username: "hc_test" }, expect: { status: [200] } },
 
   // ═══════════════════════════════════════════════
   // Validação de estrutura de resposta (4 tests)
@@ -403,10 +403,10 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // user-presence list_online: users must be array
+  // user-presence list_online: online must be array
   if (test.name === "user-presence: list_online com auth admin") {
-    if (!Array.isArray(data?.users)) {
-      return "Campo 'users' não é array — endpoint list_online pode estar quebrado.";
+    if (!Array.isArray(data?.online)) {
+      return "Campo 'online' não é array — endpoint list_online pode estar quebrado.";
     }
   }
 
@@ -645,13 +645,13 @@ Deno.serve(async (req) => {
       const rowId = inserted?.id;
 
       // Run tests in parallel batches for speed (avoid Edge Function timeout)
-      const BATCH_SIZE = 10;
+      const BATCH_SIZE = 5;
       const results: any[] = new Array(TEST_SUITE.length);
       
       for (let batchStart = 0; batchStart < TEST_SUITE.length; batchStart += BATCH_SIZE) {
-        // Small delay between batches to avoid rate limiting
+        // Delay between batches to avoid rate limiting
         if (batchStart > 0) {
-          await new Promise(r => setTimeout(r, 800));
+          await new Promise(r => setTimeout(r, 1500));
         }
 
         const batchEnd = Math.min(batchStart + BATCH_SIZE, TEST_SUITE.length);
