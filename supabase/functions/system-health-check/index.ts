@@ -252,11 +252,11 @@ const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   // Caminhos felizes (happy path) ausentes (5 tests)
   // ═══════════════════════════════════════════════
-  { name: "user-presence: list_online com auth admin", category: "functional", fn: "user-presence", method: "POST", body: { action: "list_online" }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "users" } },
+  { name: "user-presence: list_online com auth admin", category: "functional", fn: "user-presence", method: "POST", body: { action: "list_online" }, headers: ADMIN_HDR, expect: { status: [200], hasKey: "online" } },
   { name: "push-test: validate com auth admin", category: "functional", fn: "push-test", method: "POST", body: { action: "validate" }, headers: ADMIN_HDR, expect: { status: [200] } },
   { name: "match-reminders: add sem dados = 400", category: "functional", fn: "match-reminders", method: "POST", body: { action: "add" }, expect: { status: [400] } },
   { name: "content-alerts: add sem dados = 400", category: "functional", fn: "content-alerts", method: "POST", body: { action: "add" }, expect: { status: [400] } },
-  { name: "trailer-challenge: POST com dados válidos", category: "functional", fn: "trailer-challenge", method: "POST", body: { action: "watch", username: "hc_test", movie_id: 550 }, expect: { status: [200] } },
+  { name: "trailer-challenge: POST com dados válidos", category: "functional", fn: "trailer-challenge", method: "POST", body: { action: "watch_trailer", username: "hc_test" }, expect: { status: [200] } },
 
   // ═══════════════════════════════════════════════
   // Validação de estrutura de resposta (4 tests)
@@ -403,10 +403,10 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // user-presence list_online: users must be array
+  // user-presence list_online: online must be array
   if (test.name === "user-presence: list_online com auth admin") {
-    if (!Array.isArray(data?.users)) {
-      return "Campo 'users' não é array — endpoint list_online pode estar quebrado.";
+    if (!Array.isArray(data?.online)) {
+      return "Campo 'online' não é array — endpoint list_online pode estar quebrado.";
     }
   }
 
@@ -610,7 +610,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // POST = run tests
+    // POST = run tests (background execution to avoid CPU timeout)
     if (req.method === "POST") {
       let triggerType = "manual";
       try {
@@ -621,8 +621,6 @@ Deno.serve(async (req) => {
       const baseUrl = Deno.env.get("SUPABASE_URL")!;
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
       const runId = crypto.randomUUID().slice(0, 8) + "-" + Date.now().toString(36);
-
-      const startTime = Date.now();
 
       // Save billing state before tests (tests toggle it on/off)
       let savedBillingEnabled: boolean | null = null;
@@ -644,72 +642,92 @@ Deno.serve(async (req) => {
 
       const rowId = inserted?.id;
 
-      // Run tests in parallel batches for speed (avoid Edge Function timeout)
-      const BATCH_SIZE = 10;
-      const results: any[] = new Array(TEST_SUITE.length);
-      
-      for (let batchStart = 0; batchStart < TEST_SUITE.length; batchStart += BATCH_SIZE) {
-        // Small delay between batches to avoid rate limiting
-        if (batchStart > 0) {
-          await new Promise(r => setTimeout(r, 800));
-        }
-
-        const batchEnd = Math.min(batchStart + BATCH_SIZE, TEST_SUITE.length);
-        const batchPromises = [];
+      // Background execution using EdgeRuntime.waitUntil
+      const backgroundWork = (async () => {
+        const startTime = Date.now();
+        const BATCH_SIZE = 5;
+        const results: any[] = new Array(TEST_SUITE.length);
         
-        for (let i = batchStart; i < batchEnd; i++) {
-          batchPromises.push(
-            runTest(baseUrl, anonKey, TEST_SUITE[i]).then(result => {
-              results[i] = result;
-            })
-          );
+        for (let batchStart = 0; batchStart < TEST_SUITE.length; batchStart += BATCH_SIZE) {
+          if (batchStart > 0) {
+            await new Promise(r => setTimeout(r, 1500));
+          }
+
+          const batchEnd = Math.min(batchStart + BATCH_SIZE, TEST_SUITE.length);
+          const batchPromises = [];
+          
+          for (let i = batchStart; i < batchEnd; i++) {
+            batchPromises.push(
+              runTest(baseUrl, anonKey, TEST_SUITE[i]).then(result => {
+                results[i] = result;
+              })
+            );
+          }
+
+          await Promise.all(batchPromises);
+
+          // Update partial results in DB for real-time polling
+          if (rowId) {
+            const completed = results.filter(Boolean);
+            const passed = completed.filter(r => r.passed).length;
+            const failed = completed.filter(r => !r.passed).length;
+            await supabase.from("test_results").update({
+              passed,
+              failed,
+              duration_ms: Date.now() - startTime,
+              results: completed,
+            }).eq("id", rowId);
+          }
         }
 
-        await Promise.all(batchPromises);
+        // Restore billing state after tests
+        if (savedBillingEnabled !== null) {
+          try {
+            await supabase.from("app_settings").update({ billing_enabled: savedBillingEnabled }).eq("id", "main");
+          } catch {}
+        }
 
-        // Update partial results in DB for real-time polling
+        const totalDuration = Date.now() - startTime;
+        const passed = results.filter(r => r.passed).length;
+        const failed = results.filter(r => !r.passed).length;
+
+        // Final update
         if (rowId) {
-          const completed = results.filter(Boolean);
-          const passed = completed.filter(r => r.passed).length;
-          const failed = completed.filter(r => !r.passed).length;
           await supabase.from("test_results").update({
             passed,
             failed,
-            duration_ms: Date.now() - startTime,
-            results: completed,
+            duration_ms: totalDuration,
+            results: results.filter(Boolean),
           }).eq("id", rowId);
         }
-      }
 
-      // Restore billing state after tests so we don't leave it toggled
-      if (savedBillingEnabled !== null) {
-        try {
-          await supabase.from("app_settings").update({ billing_enabled: savedBillingEnabled }).eq("id", "main");
-        } catch {}
-      }
+        // Keep only last 50 runs
+        const { data: old } = await supabase
+          .from("test_results")
+          .select("id")
+          .order("run_at", { ascending: false })
+          .range(50, 999);
 
-      const totalDuration = Date.now() - startTime;
-      const passed = results.filter(r => r.passed).length;
-      const failed = results.filter(r => !r.passed).length;
+        if (old && old.length > 0) {
+          await supabase.from("test_results").delete().in("id", old.map(r => r.id));
+        }
+      })();
 
-      // Keep only last 50 runs
-      const { data: old } = await supabase
-        .from("test_results")
-        .select("id")
-        .order("run_at", { ascending: false })
-        .range(50, 999);
-
-      if (old && old.length > 0) {
-        await supabase.from("test_results").delete().in("id", old.map(r => r.id));
+      // Use EdgeRuntime.waitUntil for background processing
+      // @ts-ignore - EdgeRuntime is available in Deno edge functions
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(backgroundWork);
+      } else {
+        // Fallback: await directly (may timeout for large suites)
+        await backgroundWork;
       }
 
       return new Response(JSON.stringify({
         run_id: runId,
-        total: results.length,
-        passed,
-        failed,
-        duration_ms: totalDuration,
-        results,
+        total: TEST_SUITE.length,
+        status: "running",
+        message: "Testes iniciados em background. Acompanhe o progresso pelo polling.",
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

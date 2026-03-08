@@ -84,21 +84,33 @@ export default function SystemTestsTab() {
   const runTests = async () => {
     setRunning(true);
     try {
-      const pollInterval = setInterval(async () => {
-        try {
-          const { data } = await supabase.functions.invoke('system-health-check', { method: 'GET' });
-          if (data?.results) setRuns(data.results as TestRun[]);
-        } catch {}
-      }, 3000);
-
+      // Trigger tests (returns immediately, runs in background)
       await supabase.functions.invoke('system-health-check', {
         method: 'POST',
         body: { trigger: 'manual' },
         headers: { 'x-admin-auth': adminAuth },
       });
 
-      clearInterval(pollInterval);
-      await loadRuns();
+      // Poll for results until tests complete
+      const pollUntilDone = async () => {
+        let attempts = 0;
+        const maxAttempts = 120; // ~4 min max
+        while (attempts < maxAttempts) {
+          await new Promise(r => setTimeout(r, 2000));
+          attempts++;
+          try {
+            const { data } = await supabase.functions.invoke('system-health-check', { method: 'GET' });
+            if (data?.results) {
+              setRuns(data.results as TestRun[]);
+              const latest = data.results[0];
+              if (latest && (latest.passed + latest.failed) >= latest.total_tests && latest.total_tests > 0) {
+                break; // Tests finished
+              }
+            }
+          } catch {}
+        }
+      };
+      await pollUntilDone();
     } catch {} finally { setRunning(false); }
   };
 
