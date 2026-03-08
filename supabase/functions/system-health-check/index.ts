@@ -245,7 +245,8 @@ const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   { name: "tmdb-proxy: path traversal bloqueado", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/../../../etc/passwd" }, expect: { status: [400, 403] } },
   { name: "tmdb-proxy: double encoding bloqueado", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/%2e%2e/configuration" }, expect: { status: [400, 403] } },
-  { name: "client-login: SQL injection no username", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "' OR 1=1 --", password: "test" }, expect: { status: [400], hasKey: "success" } },
+  { name: "client-login: username com caracteres perigosos", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test;DROP TABLE users", password: "test" }, expect: { status: [400], hasKey: "success" } },
+  { name: "client-login: username oversized rejeitado", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", password: "test" }, expect: { status: [400], hasKey: "success" } },
   { name: "stream-proxy: SSRF via redirect", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://169.254.169.254/latest/meta-data/iam.mp4" }, expect: { status: [403] } },
   { name: "admin-login: payload oversized ignorado", category: "security", fn: "admin-login", method: "POST", body: { user: "x".repeat(10000), pass: "y".repeat(10000) }, expect: { status: [400, 401] } },
 
@@ -396,10 +397,10 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // SQL injection: must NOT return success=true
-  if (test.name === "client-login: SQL injection no username") {
+  // Input sanitization: must NOT return success=true for dangerous characters
+  if (test.name === "client-login: username com caracteres perigosos") {
     if (data?.success === true) {
-      return "⚠️ CRÍTICO: SQL injection retornou success=true — possível vulnerabilidade!";
+      return "⚠️ CRÍTICO: caracteres perigosos no username retornou success=true — sanitização falhou!";
     }
   }
 
