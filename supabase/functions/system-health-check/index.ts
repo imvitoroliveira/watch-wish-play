@@ -645,12 +645,12 @@ Deno.serve(async (req) => {
       // Background execution using EdgeRuntime.waitUntil
       const backgroundWork = (async () => {
         const startTime = Date.now();
-        const BATCH_SIZE = 5;
+        const BATCH_SIZE = 3;
         const results: any[] = new Array(TEST_SUITE.length);
         
         for (let batchStart = 0; batchStart < TEST_SUITE.length; batchStart += BATCH_SIZE) {
           if (batchStart > 0) {
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 3000));
           }
 
           const batchEnd = Math.min(batchStart + BATCH_SIZE, TEST_SUITE.length);
