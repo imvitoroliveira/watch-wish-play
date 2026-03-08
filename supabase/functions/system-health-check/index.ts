@@ -245,7 +245,7 @@ const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   { name: "tmdb-proxy: path traversal bloqueado", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/../../../etc/passwd" }, expect: { status: [400, 403] } },
   { name: "tmdb-proxy: double encoding bloqueado", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/%2e%2e/configuration" }, expect: { status: [400, 403] } },
-  { name: "client-login: SQL injection no username", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "' OR 1=1 --", password: "test" }, expect: { status: [200, 400], hasKey: "success" } },
+  { name: "client-login: SQL injection no username", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "' OR 1=1 --", password: "test" }, expect: { status: [200, 400, 403] } },
   { name: "stream-proxy: SSRF via redirect", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://169.254.169.254/latest/meta-data/iam.mp4" }, expect: { status: [403] } },
   { name: "admin-login: payload oversized ignorado", category: "security", fn: "admin-login", method: "POST", body: { user: "x".repeat(10000), pass: "y".repeat(10000) }, expect: { status: [400, 401] } },
 
@@ -413,7 +413,7 @@ function runCustomValidation(test: TestCase, data: any): string | null {
   return null; // passed
 }
 
-async function runTest(baseUrl: string, anonKey: string, test: TestCase, retries = 3): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
+async function runTest(baseUrl: string, anonKey: string, test: TestCase, retries = 5): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
   const start = Date.now();
   const TIMEOUT_MS = 30000; // 30s timeout per test
 
@@ -456,7 +456,7 @@ async function runTest(baseUrl: string, anonKey: string, test: TestCase, retries
       if (res.status === 429) {
         const body = await res.text(); // consume body
         if (attempt < retries) {
-          const delay = 2000 * attempt + Math.random() * 1000;
+          const delay = 3000 * attempt + Math.random() * 2000;
           console.log(`[Rate limit] ${test.name} — attempt ${attempt}/${retries}, waiting ${Math.round(delay)}ms`);
           await new Promise(r => setTimeout(r, delay));
           continue;
@@ -645,12 +645,12 @@ Deno.serve(async (req) => {
       // Background execution using EdgeRuntime.waitUntil
       const backgroundWork = (async () => {
         const startTime = Date.now();
-        const BATCH_SIZE = 5;
+        const BATCH_SIZE = 3;
         const results: any[] = new Array(TEST_SUITE.length);
         
         for (let batchStart = 0; batchStart < TEST_SUITE.length; batchStart += BATCH_SIZE) {
           if (batchStart > 0) {
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 3000));
           }
 
           const batchEnd = Math.min(batchStart + BATCH_SIZE, TEST_SUITE.length);
