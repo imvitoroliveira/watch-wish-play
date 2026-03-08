@@ -398,9 +398,9 @@ function runCustomValidation(test: TestCase, data: any): string | null {
   }
 
   // Input sanitization: must NOT return success=true for dangerous characters
-  if (test.name === "client-login: username com caracteres perigosos") {
+  if (test.name === "client-login: WAF bloqueia caracteres perigosos") {
     if (data?.success === true) {
-      return "⚠️ CRÍTICO: caracteres perigosos no username retornou success=true — sanitização falhou!";
+      return "⚠️ CRÍTICO: caracteres perigosos no username retornou success=true — proteção falhou!";
     }
   }
 
