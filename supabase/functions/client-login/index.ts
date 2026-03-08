@@ -69,6 +69,15 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Input sanitization: reject usernames with SQL/XSS patterns
+      const dangerousPattern = /['";<>\\\/\-\-]|(\bOR\b|\bAND\b|\bUNION\b|\bSELECT\b|\bDROP\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bEXEC\b|<script|javascript:)/i;
+      if (dangerousPattern.test(username) || username.length > 100 || password.length > 200) {
+        return new Response(JSON.stringify({ success: false, reason: 'invalid' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       // Get clients list from DB
       const { data: row } = await supabase
         .from('clients_list')
