@@ -397,10 +397,10 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // SQL injection: must NOT return success=true
-  if (test.name === "client-login: SQL injection no username") {
+  // Input sanitization: must NOT return success=true for dangerous characters
+  if (test.name === "client-login: username com caracteres perigosos") {
     if (data?.success === true) {
-      return "⚠️ CRÍTICO: SQL injection retornou success=true — possível vulnerabilidade!";
+      return "⚠️ CRÍTICO: caracteres perigosos no username retornou success=true — sanitização falhou!";
     }
   }
 
