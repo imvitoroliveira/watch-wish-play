@@ -230,6 +230,13 @@ const AdminPanel = () => {
     setLoginLoading(false);
     if (success) {
       setError('');
+      if (rememberAdmin) {
+        localStorage.setItem('msc_admin_user', user.trim());
+        localStorage.setItem('msc_admin_pass', pass.trim());
+      } else {
+        localStorage.removeItem('msc_admin_user');
+        localStorage.removeItem('msc_admin_pass');
+      }
     } else {
       setError('Credenciais inválidas');
     }
