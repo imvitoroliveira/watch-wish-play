@@ -1,12 +1,13 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { TMDBMovie, tmdbImg, getMovieVideos, getMovieDetails, searchByTitles, getTrendingByType } from '@/lib/tmdb';
 import { GENRES } from '@/lib/tmdb';
 import { normalizeTitle } from '@/lib/m3u-parser';
 import { fetchRandomM3UTitles } from '@/lib/m3u-parser';
-import { Dices, Sparkles, Star, Play, Volume2, VolumeX, Loader2, X } from 'lucide-react';
+import { Dices, Sparkles, Star, Play, Volume2, VolumeX, Loader2, X, SlidersHorizontal, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Slider } from '@/components/ui/slider';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
@@ -19,12 +20,15 @@ interface CineRoletaProps {
   onToggleFavorite: (id: number) => void;
   onToggleWatched: (id: number) => void;
   onTrailerWatched?: () => void;
+  favoriteMovies?: TMDBMovie[];
 }
 
 const CARD_W = 140;
 const CARD_H = 210;
 const GAP = 12;
 const STEP = CARD_W + GAP;
+const HISTORY_KEY = 'msc_roleta_history';
+const MAX_HISTORY = 20;
 
 const playClickSound = (ctx: AudioContext, volume: number = 0.08) => {
   const osc = ctx.createOscillator();
@@ -66,7 +70,34 @@ function dedupeMovies(movies: TMDBMovie[]): TMDBMovie[] {
   });
 }
 
-const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite, onToggleWatched, onTrailerWatched }: CineRoletaProps) => {
+/** Get spin history from sessionStorage */
+function getSpinHistory(): number[] {
+  try {
+    const saved = sessionStorage.getItem(HISTORY_KEY);
+    return saved ? JSON.parse(saved) : [];
+  } catch { return []; }
+}
+
+/** Add to spin history */
+function addToSpinHistory(id: number) {
+  const history = getSpinHistory();
+  history.push(id);
+  if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
+  sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+/** Extract favorite genre weights from favorite movies */
+function getFavoriteGenreWeights(favoriteMovies: TMDBMovie[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const m of favoriteMovies) {
+    for (const gid of (m.genre_ids || [])) {
+      counts.set(gid, (counts.get(gid) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite, onToggleWatched, onTrailerWatched, favoriteMovies = [] }: CineRoletaProps) => {
   const { currentClient } = useAuth();
   const [selectedGenre, setSelectedGenre] = useState<number | null>(null);
   const [mediaType, setMediaType] = useState<'movie' | 'tv'>('movie');
@@ -81,12 +112,22 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
   const [modalOpen, setModalOpen] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
 
+  // Year filter state
+  const [yearFilter, setYearFilter] = useState<number>(1970);
+  const [useYearFilter, setUseYearFilter] = useState(false);
+
+  // "Baseado no que você curtiu" toggle
+  const [useGenreBias, setUseGenreBias] = useState(false);
+
   const stripRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const animFrameRef = useRef<number>(0);
   const trailerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trailerCreditedRef = useRef(false);
+
+  // Memoize genre weights from favorites
+  const favoriteGenreWeights = useMemo(() => getFavoriteGenreWeights(favoriteMovies), [favoriteMovies]);
 
   // Initialize display pool from trending
   useEffect(() => {
@@ -125,7 +166,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
     setShowIndicator(true);
 
     try {
-      // 1. Fetch random titles from the M3U catalog (ONLY source for roulette)
+      // 1. Fetch random titles from the M3U catalog
       const randomTitles = await fetchRandomM3UTitles(100);
 
       if (randomTitles.length === 0) {
@@ -136,7 +177,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         return;
       }
 
-      // 2. Search TMDB for those M3U titles to get metadata
+      // 2. Search TMDB for those M3U titles
       let combined = await searchByTitles(randomTitles, randomTitles.length, mediaType);
 
       // 2b. Strict media_type filtering
@@ -144,6 +185,17 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         const type = m.media_type || (m.first_air_date && !m.release_date ? 'tv' : 'movie');
         return type === mediaType;
       });
+
+      // 2c. Year filter
+      if (useYearFilter) {
+        const yearFiltered = combined.filter(m => {
+          const dateStr = m.release_date || m.first_air_date;
+          if (!dateStr) return true;
+          const year = parseInt(dateStr.substring(0, 4), 10);
+          return year >= yearFilter;
+        });
+        if (yearFiltered.length >= 3) combined = yearFiltered;
+      }
 
       // 3. Filter by genre if selected
       if (selectedGenre) {
@@ -155,21 +207,27 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       combined = combined.filter(m => m.poster_path);
       combined = dedupeMovies(combined);
 
+      // 4b. Remove recently spun titles (anti-repetition)
+      const history = new Set(getSpinHistory());
+      const withoutHistory = combined.filter(m => !history.has(m.id));
+      // Only apply if we still have enough titles
+      if (withoutHistory.length >= 3) {
+        combined = withoutHistory;
+      }
+
       if (combined.length === 0) {
-        toast({ title: '🎲 Sem resultados', description: 'Nenhum título encontrado com esses filtros. Tente outro gênero.', variant: 'destructive' });
+        toast({ title: '🎲 Sem resultados', description: 'Nenhum título encontrado com esses filtros. Tente outro gênero ou ano.', variant: 'destructive' });
         setLoading(false);
         setSpinning(false);
         setShowIndicator(false);
         return;
       }
 
-      // 5. WEIGHTED ALGORITHM: 50% trending, 35% non-trending, 15% random
-      // Fetch TMDB trending to identify what's "buzzing"
+      // 5. WEIGHTED ALGORITHM with cascading pool fallback
       const trendingList = await getTrendingByType(mediaType);
       const trendingIds = new Set(trendingList.map(t => t.id));
       const trendingNames = new Set(trendingList.map(t => normalizeTitle(t.title || t.name || '')));
 
-      // Split M3U-available pool into trending vs non-trending
       const poolTrending: TMDBMovie[] = [];
       const poolRegular: TMDBMovie[] = [];
 
@@ -185,27 +243,38 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
 
       console.log(`[CineRoleta] Pools: ${poolTrending.length} trending, ${poolRegular.length} regular (total ${combined.length})`);
 
-      // Weighted selection: pick which pool to draw from
+      // Cascading pool fallback: pick pool, if empty → next → combined
       const roll = Math.random();
-      let winner: TMDBMovie;
       let winnerPool: TMDBMovie[];
 
-      if (roll < 0.50 && poolTrending.length > 0) {
-        // 50% chance: trending pool
-        winnerPool = poolTrending;
-      } else if (roll < 0.85 && poolRegular.length > 0) {
-        // 35% chance: non-trending pool
-        winnerPool = poolRegular;
+      if (roll < 0.50) {
+        // Try trending → regular → combined
+        winnerPool = poolTrending.length > 0 ? poolTrending : poolRegular.length > 0 ? poolRegular : combined;
+      } else if (roll < 0.85) {
+        // Try regular → trending → combined
+        winnerPool = poolRegular.length > 0 ? poolRegular : poolTrending.length > 0 ? poolTrending : combined;
       } else {
-        // 15% chance: any from combined (current algorithm)
         winnerPool = combined;
       }
 
-      // Within the chosen pool, use popularity as weight
-      winnerPool.sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+      // Within the chosen pool, use logarithmic vote_average as weight
+      // + genre bias from favorites if enabled
+      const weights = winnerPool.map(m => {
+        let w = Math.log((m.vote_average || 1) + 1); // logarithmic scale
 
-      // Weighted random within pool using popularity
-      const weights = winnerPool.map(m => Math.max(1, m.vote_average || 1));
+        // Genre bias: boost movies matching favorite genres
+        if (useGenreBias && favoriteGenreWeights.size > 0 && m.genre_ids) {
+          let genreBoost = 0;
+          for (const gid of m.genre_ids) {
+            genreBoost += (favoriteGenreWeights.get(gid) || 0);
+          }
+          // Multiply weight by genre affinity (1 + normalized boost)
+          w *= (1 + Math.min(genreBoost * 0.3, 3));
+        }
+
+        return Math.max(0.1, w);
+      });
+
       const totalWeight = weights.reduce((sum, w) => sum + w, 0);
       let pickRoll = Math.random() * totalWeight;
       let winnerIndex = 0;
@@ -213,9 +282,9 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         pickRoll -= weights[i];
         if (pickRoll <= 0) { winnerIndex = i; break; }
       }
-      winner = winnerPool[winnerIndex];
+      let winner = winnerPool[winnerIndex];
 
-      // 5b. For TV: validate winner has seasons; if not, try others from winnerPool
+      // 5b. For TV: validate winner has seasons
       if (mediaType === 'tv') {
         const tried = new Set<number>();
         for (let attempt = 0; attempt < Math.min(5, winnerPool.length); attempt++) {
@@ -232,13 +301,14 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         }
       }
 
-      // Find winner's index in combined for carousel animation
-      // Shuffle combined but ensure winner is placed at a known position
+      // Save to history (anti-repetition)
+      addToSpinHistory(winner.id);
+
+      // Shuffle combined and place winner
       for (let i = combined.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [combined[i], combined[j]] = [combined[j], combined[i]];
       }
-      // Ensure winner is in combined and find its index
       const combinedWinnerIdx = combined.findIndex(m => m.id === winner.id);
       const finalWinnerIndex = combinedWinnerIdx >= 0 ? combinedWinnerIdx : 0;
 
@@ -249,7 +319,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       await new Promise(r => setTimeout(r, 50));
 
-      // 7. Start spinning animation — SAME duration for both movies & series
+      // 7. Start spinning animation
       setSpinning(true);
       const ctx = getAudioCtx();
       const strip = stripRef.current;
@@ -266,12 +336,10 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       strip.style.transform = 'translateX(0)';
       void strip.offsetHeight;
 
-      // Fixed duration: 5-6s for both types — deceleration roulette feel
       const duration = 5000 + Math.random() * 1000;
       strip.style.transition = `transform ${duration}ms cubic-bezier(0.25, 1, 0.5, 1)`;
       strip.style.transform = `translateX(${finalX}px)`;
 
-      // Click sounds during spin — volume fades as roulette decelerates
       const spinStartTime = performance.now();
       let lastClickX = 0;
 
@@ -284,7 +352,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         const currentX = Math.abs(matrix.m41);
 
         if (currentX - lastClickX > STEP) {
-          // Volume fades from 0.10 → 0.01 as progress goes 0 → 1
           const vol = 0.10 * (1 - progress * 0.9);
           playClickSound(ctx, vol);
           lastClickX = currentX - (currentX % STEP);
@@ -311,7 +378,7 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       setLoading(false);
       setSpinning(false);
     }
-  }, [spinning, loading, selectedGenre, mediaType, movies, getAudioCtx, currentClient?.u, onTrailerWatched]);
+  }, [spinning, loading, selectedGenre, mediaType, movies, getAudioCtx, currentClient?.u, onTrailerWatched, yearFilter, useYearFilter, useGenreBias, favoriteGenreWeights]);
 
   useEffect(() => {
     return () => {
@@ -380,13 +447,75 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         </div>
       </div>
 
+      {/* Advanced filters: Year slider + Genre bias */}
+      <div className="flex flex-col sm:flex-row gap-4 p-4 rounded-xl bg-card border border-border">
+        {/* Year filter */}
+        <div className="flex-1 space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-foreground flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
+              Ano mínimo
+            </label>
+            <button
+              onClick={() => { if (!spinning && !loading) setUseYearFilter(!useYearFilter); }}
+              className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
+                useYearFilter
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-secondary text-muted-foreground'
+              }`}
+            >
+              {useYearFilter ? 'Ativo' : 'Inativo'}
+            </button>
+          </div>
+          <div className={`transition-opacity ${useYearFilter ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+            <Slider
+              min={1970}
+              max={2026}
+              step={1}
+              value={[yearFilter]}
+              onValueChange={([v]) => setYearFilter(v)}
+              disabled={spinning || loading}
+            />
+            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+              <span>1970</span>
+              <span className="text-foreground font-semibold">{yearFilter}+</span>
+              <span>2026</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Genre bias toggle */}
+        <div className="flex-1 space-y-2">
+          <label className="text-sm font-medium text-foreground flex items-center gap-2">
+            <Heart className="w-4 h-4 text-muted-foreground" />
+            Baseado no que você curtiu
+          </label>
+          <p className="text-xs text-muted-foreground">
+            Prioriza gêneros dos seus filmes favoritados
+          </p>
+          <button
+            onClick={() => { if (!spinning && !loading) setUseGenreBias(!useGenreBias); }}
+            disabled={favoriteMovies.length === 0}
+            className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+              useGenreBias && favoriteMovies.length > 0
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-muted-foreground'
+            } ${favoriteMovies.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+          >
+            {favoriteMovies.length === 0
+              ? 'Favorite filmes para ativar'
+              : useGenreBias ? '❤️ Ativo' : 'Inativo'}
+          </button>
+        </div>
+      </div>
+
       {/* Carousel strip */}
       <div
         ref={containerRef}
         className="relative overflow-hidden rounded-2xl bg-card/50 border border-border"
-        style={{ height: CARD_H + 48 }} /* card + vertical padding */
+        style={{ height: CARD_H + 48 }}
       >
-        {/* Center indicator — clickable when result is shown */}
+        {/* Center indicator */}
         <div
           onClick={() => { if (showResult && result) { setModalOpen(true); setShowTrailer(false); } }}
           className={`absolute z-20 border-2 border-primary rounded-xl transition-all duration-300 ${showResult && result ? 'cursor-pointer' : 'pointer-events-none'}`}
@@ -414,16 +543,13 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
         <div className="absolute top-0 bottom-0 left-0 w-24 bg-gradient-to-r from-card to-transparent z-10 pointer-events-none" />
         <div className="absolute top-0 bottom-0 right-0 w-24 bg-gradient-to-l from-card to-transparent z-10 pointer-events-none" />
 
-        <div
-          className="absolute top-0 bottom-0 left-0 right-0 flex items-center"
-        >
+        <div className="absolute top-0 bottom-0 left-0 right-0 flex items-center">
           <div
             ref={stripRef}
             className="flex items-center"
             style={{ willChange: 'transform', gap: GAP }}
           >
             {stripItems.length === 0 ? (
-              // Skeleton loading for carousel
               Array.from({ length: 12 }).map((_, i) => (
                 <div
                   key={`skel-${i}`}
@@ -533,7 +659,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
                     <Button
                       onClick={() => {
                         setShowTrailer(true);
-                        // Start 30s challenge timer
                         trailerCreditedRef.current = false;
                         if (trailerTimerRef.current) clearTimeout(trailerTimerRef.current);
                         trailerTimerRef.current = setTimeout(async () => {
