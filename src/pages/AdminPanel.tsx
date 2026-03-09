@@ -16,9 +16,10 @@ import { Switch } from '@/components/ui/switch';
 
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList, getAdminAuth } = useAuth();
-  const [user, setUser] = useState('');
-  const [pass, setPass] = useState('');
+  const [user, setUser] = useState(() => localStorage.getItem('msc_admin_user') || '');
+  const [pass, setPass] = useState(() => localStorage.getItem('msc_admin_pass') || '');
   const [error, setError] = useState('');
+  const [rememberAdmin, setRememberAdmin] = useState(() => !!localStorage.getItem('msc_admin_user'));
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
