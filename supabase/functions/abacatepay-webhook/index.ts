@@ -151,6 +151,8 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
     billingData?.payment?.description,
     billingData?.products?.[0]?.name,
     billingData?.items?.[0]?.name,
+    billingData?.billing?.products?.[0]?.description,
+    billingData?.billing?.products?.[0]?.name,
   ];
   for (const desc of descriptions) {
     if (typeof desc !== "string") continue;
