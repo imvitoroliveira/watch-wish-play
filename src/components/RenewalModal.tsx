@@ -15,6 +15,7 @@ const plans = [
     label: '1 Mês',
     price: 'R$ 35,00',
     badge: null,
+    badgeColor: '',
     icon: Zap,
     color: 'from-blue-500 to-blue-600',
     borderColor: 'border-blue-500/30',
