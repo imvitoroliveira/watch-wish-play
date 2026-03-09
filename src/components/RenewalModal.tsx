@@ -146,7 +146,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                       <p className="font-semibold text-foreground text-base">
                         {plan.label}
                       </p>
-                      <span className="text-sm font-bold text-primary">{plan.price}</span>
+                      <span className="text-sm font-bold text-accent">{plan.price}</span>
                     </div>
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
                       {plan.perks.map((perk) => (
