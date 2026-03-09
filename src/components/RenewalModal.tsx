@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Shield, Zap, Crown, Star, CheckCircle2, Loader2 } from 'lucide-react';
+import { X, Shield, Zap, CheckCircle2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -15,6 +15,7 @@ const plans = [
     label: '1 Mês',
     price: 'R$ 35,00',
     badge: null,
+    badgeColor: '',
     icon: Zap,
     color: 'from-blue-500 to-blue-600',
     borderColor: 'border-blue-500/30',
@@ -26,10 +27,11 @@ const plans = [
     label: '3 Meses',
     price: 'R$ 90,00',
     badge: 'POPULAR',
-    icon: Crown,
-    color: 'from-primary to-red-500',
-    borderColor: 'border-primary/40',
-    bgGlow: 'bg-primary/5',
+    badgeColor: 'from-red-500 to-red-600',
+    icon: Zap,
+    color: 'from-blue-500 to-blue-600',
+    borderColor: 'border-blue-500/30',
+    bgGlow: 'bg-blue-500/5',
     perks: ['Acesso completo', 'Suporte prioritário', 'Economia garantida'],
   },
   {
@@ -37,10 +39,11 @@ const plans = [
     label: '6 Meses',
     price: 'R$ 170,00',
     badge: 'MELHOR VALOR',
-    icon: Star,
-    color: 'from-accent to-yellow-500',
-    borderColor: 'border-accent/40',
-    bgGlow: 'bg-accent/5',
+    badgeColor: 'from-green-700 to-green-800',
+    icon: Zap,
+    color: 'from-blue-500 to-blue-600',
+    borderColor: 'border-blue-500/30',
+    bgGlow: 'bg-blue-500/5',
     perks: ['Acesso completo', 'Suporte VIP', 'Maior economia', 'Tranquilidade total'],
   },
 ];
@@ -96,18 +99,13 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
-                <Shield className="w-5 h-5 text-blue-400" />
-              </div>
-              <div>
-                <h2 className="text-xl font-display text-foreground tracking-wide">
-                  RENOVE SUA ASSINATURA
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Continue assistindo sem interrupções
-                </p>
-              </div>
+            <div>
+              <h2 className="text-xl font-display text-foreground tracking-wide">
+                RENOVE SUA ASSINATURA
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Continue assistindo sem interrupções
+              </p>
             </div>
 
             <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2 mt-3">
@@ -132,7 +130,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {plan.badge && (
-                    <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.color} text-white`}>
+                    <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.badgeColor} text-white`}>
                       {plan.badge}
                     </span>
                   )}
