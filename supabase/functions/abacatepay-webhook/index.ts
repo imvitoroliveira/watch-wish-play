@@ -9,10 +9,10 @@ const corsHeaders = {
 // ═══════════════════════════════════════════════════════════════
 // PLANS CONFIGURATION
 // ═══════════════════════════════════════════════════════════════
-const VALID_PLANS: Record<string, { priceCents: number; days: number; label: string }> = {
-  mensal: { priceCents: 3500, days: 30, label: "Renovação 1 Mês" },
-  trimestral: { priceCents: 9000, days: 90, label: "Renovação 3 Meses" },
-  semestral: { priceCents: 17000, days: 180, label: "Renovação 6 Meses" },
+const VALID_PLANS: Record<string, { priceCents: number; days: number; months: number; label: string }> = {
+  mensal: { priceCents: 3500, days: 30, months: 1, label: "Renovação 1 Mês" },
+  trimestral: { priceCents: 9000, days: 90, months: 3, label: "Renovação 3 Meses" },
+  semestral: { priceCents: 17000, days: 180, months: 6, label: "Renovação 6 Meses" },
 };
 
 const PLAN_BY_AMOUNT: Record<number, string> = {
