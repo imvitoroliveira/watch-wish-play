@@ -572,7 +572,10 @@ Deno.serve(async (req) => {
       }
 
       console.log(`[Webhook] ═══ COMPLETE: user=${username}, plan=${planKey}, natv=${natvSuccess} ═══`);
-      return jsonResponse({ success: true, activated: natvSuccess, username, plan: planKey });
+      if (!natvSuccess) {
+        return jsonResponse({ success: false, activated: false, username, plan: planKey, error: "natv activation failed" }, 502);
+      }
+      return jsonResponse({ success: true, activated: true, username, plan: planKey });
     }
 
     // Unknown event — acknowledge to prevent AbacatePay retries
