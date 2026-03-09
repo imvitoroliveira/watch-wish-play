@@ -395,7 +395,6 @@ const CineRoleta = ({ movies, onMovieClick, favorites, watched, onToggleFavorite
       {/* Header */}
       <div className="text-center">
         <h2 className="text-3xl font-display text-foreground mb-2">
-          <Sparkles className="w-6 h-6 inline mr-2 text-accent" />
           CINE-ROLETA
         </h2>
         <p className="text-muted-foreground text-sm">Não sabe o que assistir? Deixe a sorte decidir!</p>
