@@ -204,12 +204,24 @@ function resolveTransactionId(body: any, billingData: any): string {
 
 // Try NATV activation with retries and fallback base URLs
 async function activateNatvUser(username: string, days: number, natvToken: string): Promise<boolean> {
-  const baseUrls = Array.from(new Set([
+  const rawBaseUrls = [
     Deno.env.get("NATV_API_BASE_URL")?.trim(),
     Deno.env.get("NATV_API_URL")?.trim(),
     "https://natv-api.sytes.net",
     "http://natv-api.sytes.net",
-  ].filter((v): v is string => !!v)));
+  ].filter((v): v is string => !!v);
+
+  const baseUrls = Array.from(new Set(rawBaseUrls.filter((base) => {
+    try {
+      const parsed = new URL(base);
+      const validProtocol = parsed.protocol === "https:" || parsed.protocol === "http:";
+      if (!validProtocol) return false;
+      return true;
+    } catch {
+      console.warn(`[Webhook] Ignoring invalid NATV base URL secret value: ${base}`);
+      return false;
+    }
+  })));
 
   for (const base of baseUrls) {
     const normalizedBase = base.replace(/\/$/, "");
