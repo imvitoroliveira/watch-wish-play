@@ -202,6 +202,42 @@ function resolveTransactionId(body: any, billingData: any): string {
   return "unknown";
 }
 
+// Try NATV activation with retries and fallback base URLs
+async function activateNatvUser(username: string, days: number, natvToken: string): Promise<boolean> {
+  const baseUrls = Array.from(new Set([
+    Deno.env.get("NATV_API_BASE_URL")?.trim(),
+    Deno.env.get("NATV_API_URL")?.trim(),
+    "https://natv-api.sytes.net",
+    "http://natv-api.sytes.net",
+  ].filter((v): v is string => !!v)));
+
+  for (const base of baseUrls) {
+    const normalizedBase = base.replace(/\/$/, "");
+    const natvUrl = `${normalizedBase}/api/user/activation?token=${natvToken}&username=${encodeURIComponent(username)}&days=${days}`;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`[Webhook] Calling NATV API (attempt ${attempt}): ${natvUrl.replace(natvToken, "***")}`);
+        const natvResponse = await fetch(natvUrl, { method: "GET" });
+        const natvResult = await natvResponse.text();
+        const ok = natvResponse.ok;
+
+        console.log(`[Webhook] NATV Response: base=${normalizedBase}, status=${natvResponse.status}, body=${natvResult.substring(0, 500)}`);
+
+        if (ok) return true;
+      } catch (err) {
+        console.error(`[Webhook] NATV API network error (base=${normalizedBase}, attempt=${attempt}):`, err);
+      }
+
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  }
+
+  return false;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════
@@ -386,10 +422,14 @@ Deno.serve(async (req) => {
         console.log(`[Webhook] Pending tx lookup by ID: ${existingTx ? "FOUND" : "NOT FOUND"}`);
       }
 
-      // Skip if already processed
-      if (existingTx?.status === "approved") {
-        console.warn(`[Webhook] Already processed: ${abacateTxId}`);
+      // Skip only if already approved AND NATV already activated
+      const alreadyApproved = existingTx?.status === "approved";
+      if (alreadyApproved && existingTx?.natv_activated) {
+        console.warn(`[Webhook] Already processed with NATV activated: ${abacateTxId}`);
         return jsonResponse({ success: true, message: "already processed" });
+      }
+      if (alreadyApproved && !existingTx?.natv_activated) {
+        console.warn(`[Webhook] Approved tx without NATV activation detected. Retrying NATV activation for: ${abacateTxId}`);
       }
 
       // ── STEP 3: Extract username + plan from payload ──
@@ -430,31 +470,35 @@ Deno.serve(async (req) => {
       const days = existingTx?.days || VALID_PLANS[planKey].days;
       console.log(`[Webhook] ✅ Validated: user=${username}, plan=${planKey}, days=${days}`);
 
-      // ── STEP 4: Update transaction to approved ──
-      let txId: string | null = null;
-      if (existingTx?.id) {
-        const { data } = await supabase
-          .from("payment_transactions")
-          .update({ client_username: username, plan: planKey, days, status: "approved" })
-          .eq("id", existingTx.id)
-          .select("id")
-          .single();
-        txId = data?.id || null;
-        console.log(`[Webhook] Updated existing tx to approved: ${txId}`);
+      // ── STEP 4: Ensure transaction is approved ──
+      let txId: string | null = existingTx?.id || null;
+      if (!alreadyApproved) {
+        if (existingTx?.id) {
+          const { data } = await supabase
+            .from("payment_transactions")
+            .update({ client_username: username, plan: planKey, days, status: "approved" })
+            .eq("id", existingTx.id)
+            .select("id")
+            .single();
+          txId = data?.id || null;
+          console.log(`[Webhook] Updated existing tx to approved: ${txId}`);
+        } else {
+          const { data } = await supabase
+            .from("payment_transactions")
+            .insert({
+              client_username: username,
+              plan: planKey,
+              days,
+              cakto_transaction_id: abacateTxId,
+              status: "approved",
+            })
+            .select("id")
+            .single();
+          txId = data?.id || null;
+          console.log(`[Webhook] Inserted new approved tx: ${txId}`);
+        }
       } else {
-        const { data } = await supabase
-          .from("payment_transactions")
-          .insert({
-            client_username: username,
-            plan: planKey,
-            days,
-            cakto_transaction_id: abacateTxId,
-            status: "approved",
-          })
-          .select("id")
-          .single();
-        txId = data?.id || null;
-        console.log(`[Webhook] Inserted new approved tx: ${txId}`);
+        console.log(`[Webhook] Reusing existing approved tx for NATV retry: ${txId}`);
       }
 
       // ── STEP 5: Activate via NATV API ──
@@ -463,21 +507,9 @@ Deno.serve(async (req) => {
       if (!natvToken) {
         console.error("[Webhook] NATV_API_TOKEN not configured!");
       } else {
-        try {
-          const natvUrl = `https://natv-api.sytes.net/api/user/activation?token=${natvToken}&username=${encodeURIComponent(username)}&days=${days}`;
-          console.log(`[Webhook] Calling NATV API: ${natvUrl.replace(natvToken, "***")}`);
-          
-          const natvResponse = await fetch(natvUrl, { method: "GET" });
-          const natvResult = await natvResponse.text();
-          natvSuccess = natvResponse.ok;
-          
-          console.log(`[Webhook] NATV Response: status=${natvResponse.status}, body=${natvResult.substring(0, 500)}`);
-          
-          if (!natvSuccess) {
-            console.error(`[Webhook] NATV activation FAILED: status=${natvResponse.status}`);
-          }
-        } catch (err) {
-          console.error("[Webhook] NATV API network error:", err);
+        natvSuccess = await activateNatvUser(username, days, natvToken);
+        if (!natvSuccess) {
+          console.error(`[Webhook] NATV activation FAILED after retries: user=${username}, days=${days}`);
         }
       }
 
