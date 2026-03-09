@@ -5,6 +5,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Input sanitization: reject usernames with SQL/XSS patterns
+const dangerousPattern = /['";<>\\\/\-\-]|(\bOR\b|\bAND\b|\bUNION\b|\bSELECT\b|\bDROP\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bEXEC\b|<script|javascript:)/i;
+
+function validateUsername(username: string | null | undefined): Response | null {
+  if (!username) return null;
+  if (dangerousPattern.test(username) || username.length > 100) {
+    return new Response(JSON.stringify({ error: 'Invalid username' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -19,6 +33,8 @@ Deno.serve(async (req) => {
     if (req.method === 'GET') {
       const url = new URL(req.url);
       const username = url.searchParams.get('username');
+      const usernameError = validateUsername(username);
+      if (usernameError) return usernameError;
       if (!username) return new Response(JSON.stringify({ error: 'username required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
       const today = new Date().toISOString().split('T')[0];
