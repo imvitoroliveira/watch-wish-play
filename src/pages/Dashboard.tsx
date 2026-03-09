@@ -140,6 +140,7 @@ const Dashboard = () => {
               onMovieClick={setSelectedMovie}
               favorites={favorites}
               watched={watchedSet}
+              favoriteMovies={favoriteMovies}
               onToggleFavorite={(id) => {
                 const movie = [...displayMovies, ...m3uConfirmedMovies].find(m => m.id === id);
                 if (movie) toggleFavorite(movie);
