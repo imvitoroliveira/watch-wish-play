@@ -130,9 +130,15 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (presence) {
-        return new Response(JSON.stringify({ success: false, reason: 'already_online' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        // Allow up to 2 re-logins within the 2 min presence window
+        // (covers: user closed browser and came back, or brief disconnect)
+        // Block only on 3rd+ attempt to prevent abuse
+        const attempts = getReloginCount(username);
+        if (attempts > 2) {
+          return new Response(JSON.stringify({ success: false, reason: 'already_online' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
 
       // Clear any stale presence so the new session starts clean
