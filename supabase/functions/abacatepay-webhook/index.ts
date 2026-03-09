@@ -56,6 +56,8 @@ function generateDeterministicCpf(username: string): string {
 }
 
 // ── Security: Validate webhook authenticity ──
+// AbacatePay sends the secret as a query parameter (?webhookSecret=...) in the URL
+// It also sends HMAC signature in X-Webhook-Signature header
 function validateWebhookSecret(req: Request, body: any): { valid: boolean; reason?: string } {
   const webhookSecret = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET");
 
@@ -64,11 +66,19 @@ function validateWebhookSecret(req: Request, body: any): { valid: boolean; reaso
     return { valid: false, reason: "webhook secret not configured on server" };
   }
 
-  // Check header first, then body field
-  const receivedSecret = req.headers.get("x-webhook-secret") || body?.secret;
+  // Check ALL possible locations where AbacatePay might send the secret:
+  // 1. Query parameter (official AbacatePay v2 method)
+  // 2. Header x-webhook-secret (custom)
+  // 3. Body field "secret" (legacy/v1)
+  const url = new URL(req.url);
+  const receivedSecret =
+    url.searchParams.get("webhookSecret") ||
+    req.headers.get("x-webhook-secret") ||
+    body?.secret;
 
   if (!receivedSecret) {
-    console.error("[Security] No webhook secret provided in request");
+    console.error("[Security] No webhook secret provided in request (checked: query param, header, body)");
+    console.error("[Security] URL:", req.url);
     return { valid: false, reason: "missing webhook secret" };
   }
 
