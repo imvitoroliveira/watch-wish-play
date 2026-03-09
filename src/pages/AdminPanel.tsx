@@ -333,6 +333,16 @@ const AdminPanel = () => {
               maxLength={100}
             />
             {error && <p className="text-primary text-sm text-center">{error}</p>}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="rememberAdmin"
+                checked={rememberAdmin}
+                onCheckedChange={(v) => setRememberAdmin(!!v)}
+              />
+              <label htmlFor="rememberAdmin" className="text-sm text-muted-foreground cursor-pointer select-none">
+                Lembrar-se de mim
+              </label>
+            </div>
             <Button type="submit" disabled={loginLoading} className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
               {loginLoading ? 'Verificando...' : 'Entrar'}
             </Button>
