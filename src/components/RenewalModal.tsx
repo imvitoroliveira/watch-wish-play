@@ -130,7 +130,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
                   className={`w-full relative flex items-start gap-4 p-4 rounded-xl border ${plan.borderColor} ${plan.bgGlow} hover:scale-[1.02] active:scale-[0.98] transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {plan.badge && (
-                    <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.color} text-white`}>
+                    <span className={`absolute -top-2.5 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${plan.badgeColor} text-white`}>
                       {plan.badge}
                     </span>
                   )}
