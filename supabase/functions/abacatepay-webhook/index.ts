@@ -9,10 +9,10 @@ const corsHeaders = {
 // ═══════════════════════════════════════════════════════════════
 // PLANS CONFIGURATION
 // ═══════════════════════════════════════════════════════════════
-const VALID_PLANS: Record<string, { priceCents: number; days: number; label: string }> = {
-  mensal: { priceCents: 3500, days: 30, label: "Renovação 1 Mês" },
-  trimestral: { priceCents: 9000, days: 90, label: "Renovação 3 Meses" },
-  semestral: { priceCents: 17000, days: 180, label: "Renovação 6 Meses" },
+const VALID_PLANS: Record<string, { priceCents: number; days: number; months: number; label: string }> = {
+  mensal: { priceCents: 3500, days: 30, months: 1, label: "Renovação 1 Mês" },
+  trimestral: { priceCents: 9000, days: 90, months: 3, label: "Renovação 3 Meses" },
+  semestral: { priceCents: 17000, days: 180, months: 6, label: "Renovação 6 Meses" },
 };
 
 const PLAN_BY_AMOUNT: Record<number, string> = {
@@ -202,48 +202,47 @@ function resolveTransactionId(body: any, billingData: any): string {
   return "unknown";
 }
 
-// Try NATV activation with retries and fallback base URLs
+// NATV API activation via POST /user/activation (per OpenAPI spec at revenda.pixbot.link)
+// Maps days to months: 30→1, 90→3, 180→6
+const DAYS_TO_MONTHS: Record<number, number> = { 30: 1, 90: 3, 180: 6 };
+
 async function activateNatvUser(username: string, days: number, natvToken: string): Promise<boolean> {
-  const rawBaseUrls = [
-    Deno.env.get("NATV_API_BASE_URL")?.trim(),
-    Deno.env.get("NATV_API_URL")?.trim(),
-    "https://natv-api.sytes.net",
-    "http://natv-api.sytes.net",
-  ].filter((v): v is string => !!v);
+  const baseUrl = (Deno.env.get("NATV_API_BASE_URL") || "https://revenda.pixbot.link").trim().replace(/\/$/, "");
+  const months = DAYS_TO_MONTHS[days] || 1;
+  const natvUrl = `${baseUrl}/user/activation`;
 
-  const baseUrls = Array.from(new Set(rawBaseUrls.filter((base) => {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const parsed = new URL(base);
-      const validProtocol = parsed.protocol === "https:" || parsed.protocol === "http:";
-      if (!validProtocol) return false;
-      return true;
-    } catch {
-      console.warn(`[Webhook] Ignoring invalid NATV base URL secret value: ${base}`);
-      return false;
+      console.log(`[Webhook] NATV activation (attempt ${attempt}): POST ${natvUrl}, username=${username}, months=${months}`);
+      
+      const natvResponse = await fetch(natvUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${natvToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, months }),
+      });
+
+      const natvResult = await natvResponse.text();
+      console.log(`[Webhook] NATV Response: status=${natvResponse.status}, body=${natvResult.substring(0, 500)}`);
+
+      if (natvResponse.ok) {
+        console.log(`[Webhook] ✅ NATV activation SUCCESS: user=${username}, months=${months}`);
+        return true;
+      }
+
+      // 402 = insufficient credits, 404 = user not found — don't retry
+      if (natvResponse.status === 402 || natvResponse.status === 404) {
+        console.error(`[Webhook] NATV non-retryable error (${natvResponse.status}): ${natvResult}`);
+        return false;
+      }
+    } catch (err) {
+      console.error(`[Webhook] NATV API network error (attempt ${attempt}):`, err);
     }
-  })));
 
-  for (const base of baseUrls) {
-    const normalizedBase = base.replace(/\/$/, "");
-    const natvUrl = `${normalizedBase}/api/user/activation?token=${natvToken}&username=${encodeURIComponent(username)}&days=${days}`;
-
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        console.log(`[Webhook] Calling NATV API (attempt ${attempt}): ${natvUrl.replace(natvToken, "***")}`);
-        const natvResponse = await fetch(natvUrl, { method: "GET" });
-        const natvResult = await natvResponse.text();
-        const ok = natvResponse.ok;
-
-        console.log(`[Webhook] NATV Response: base=${normalizedBase}, status=${natvResponse.status}, body=${natvResult.substring(0, 500)}`);
-
-        if (ok) return true;
-      } catch (err) {
-        console.error(`[Webhook] NATV API network error (base=${normalizedBase}, attempt=${attempt}):`, err);
-      }
-
-      if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
     }
   }
 
