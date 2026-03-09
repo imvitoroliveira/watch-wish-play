@@ -268,6 +268,64 @@ const TEST_SUITE: TestCase[] = [
   { name: "user-presence: heartbeat retorna ok=true", category: "regression", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "hc_structural_test" }, expect: { status: [200], hasKey: "ok" } },
 
   // ═══════════════════════════════════════════════
+  // Ativação NATV — mapeamento e segurança (6 tests)
+  // ═══════════════════════════════════════════════
+  { name: "natv: create_billing mensal gera billing_id", category: "integration", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_natv_mensal", plan: "mensal" }, expect: { status: [200], hasKey: "billing_id" } },
+  { name: "natv: create_billing trimestral gera billing_id", category: "integration", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_natv_tri", plan: "trimestral" }, expect: { status: [200], hasKey: "billing_id" } },
+  { name: "natv: create_billing semestral gera billing_id", category: "integration", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_natv_sem", plan: "semestral" }, expect: { status: [200], hasKey: "billing_id" } },
+  { name: "natv: billing.paid sem secret não ativa", category: "security", fn: "abacatepay-webhook", method: "POST", body: { event: "billing.paid", data: { id: "hc_natv_nosecret", metadata: { username: "hc_natv_blocked", plan: "mensal" } } }, expect: { status: [401] } },
+  { name: "natv: respostas não vazam NATV tokens", category: "security", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "hc_natv_leak", plan: "mensal" }, expect: { notContains: ["NATV_API_TOKEN", "NATV_API_BASE_URL", "revenda.pixbot", "Bearer "] } },
+  { name: "natv: username path traversal rejeitado", category: "security", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "../../../etc/passwd", plan: "mensal" }, expect: { status: [400] } },
+
+  // ═══════════════════════════════════════════════
+  // system-health-check auto-teste (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "health-check: GET retorna results", category: "functional", fn: "system-health-check", method: "GET", expect: { status: [200], hasKey: "results" } },
+  { name: "health-check: POST sem auth = 401", category: "security", fn: "system-health-check", method: "POST", body: {}, expect: { status: [401] } },
+  { name: "health-check: POST auth inválida = 401", category: "security", fn: "system-health-check", method: "POST", body: {}, headers: { "x-admin-auth": "fake:wrong" }, expect: { status: [401] } },
+  { name: "health-check: não vazar segredos", category: "security", fn: "system-health-check", method: "GET", expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "ADMIN_PASS", "ADMIN_USER"] } },
+
+  // ═══════════════════════════════════════════════
+  // Segurança extra — SQLi cross-function (6 tests)
+  // ═══════════════════════════════════════════════
+  { name: "sqli: client-login password injection", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test", password: "' OR '1'='1" }, expect: { status: [200, 400, 403] } },
+  { name: "sqli: user-presence UNION SELECT", category: "security", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "test' UNION SELECT * FROM auth.users --" }, expect: { status: [400, 403] } },
+  { name: "sqli: content-alerts DELETE injection", category: "security", fn: "content-alerts", method: "POST", body: { action: "list", username: "test'; DELETE FROM content_alerts; --" }, expect: { status: [200, 400, 403] } },
+  { name: "sqli: match-reminders UPDATE injection", category: "security", fn: "match-reminders", method: "POST", body: { action: "list", username: "1; UPDATE payment_transactions SET status='approved'" }, expect: { status: [200, 400, 403] } },
+  { name: "sqli: abacatepay DROP TABLE", category: "security", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "'; DROP TABLE payment_transactions; --", plan: "mensal" }, expect: { status: [400, 403] } },
+  { name: "sqli: cakto-webhook injection", category: "security", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "'; DROP TABLE clients_list; --" }, expect: { status: [400, 403] } },
+
+  // ═══════════════════════════════════════════════
+  // XSS cross-function (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "xss: client-login script tag", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "<script>alert('xss')</script>", password: "test" }, expect: { status: [400, 403] } },
+  { name: "xss: user-presence img onerror", category: "security", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "<img src=x onerror=alert(1)>" }, expect: { status: [400, 403] } },
+  { name: "xss: trailer-challenge script", category: "security", fn: "trailer-challenge", method: "POST", body: { action: "watch_trailer", username: "\"><script>document.cookie</script>" }, expect: { status: [400, 403] } },
+  { name: "xss: abacatepay username XSS", category: "security", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "<svg onload=alert(1)>", plan: "mensal" }, expect: { status: [400] } },
+
+  // ═══════════════════════════════════════════════
+  // SSRF extra (3 tests)
+  // ═══════════════════════════════════════════════
+  { name: "ssrf: stream-proxy 127.0.0.1", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://127.0.0.1/secret.mp4" }, expect: { status: [403] } },
+  { name: "ssrf: stream-proxy 10.x interno", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://10.0.0.1/internal.mp4" }, expect: { status: [403] } },
+  { name: "ssrf: stream-proxy 192.168.x", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://192.168.1.1/router.mp4" }, expect: { status: [403] } },
+
+  // ═══════════════════════════════════════════════
+  // CORS extra (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "CORS: abacatepay OPTIONS = 200", category: "security", fn: "abacatepay-webhook", method: "OPTIONS", expect: { status: [200, 204] } },
+  { name: "CORS: cakto-webhook OPTIONS = 200", category: "security", fn: "cakto-webhook", method: "OPTIONS", expect: { status: [200, 204] } },
+  { name: "CORS: user-presence OPTIONS = 200", category: "security", fn: "user-presence", method: "OPTIONS", expect: { status: [200, 204] } },
+  { name: "CORS: system-health-check OPTIONS = 200", category: "security", fn: "system-health-check", method: "OPTIONS", expect: { status: [200, 204] } },
+
+  // ═══════════════════════════════════════════════
+  // Métodos HTTP bloqueados extra (3 tests)
+  // ═══════════════════════════════════════════════
+  { name: "method: cakto-webhook GET = 405", category: "security", fn: "cakto-webhook", method: "GET", expect: { status: [405] } },
+  { name: "method: google-sheets-sync GET = 405", category: "security", fn: "google-sheets-sync", method: "GET", expect: { status: [405] } },
+  { name: "method: system-health-check PUT = 405", category: "security", fn: "system-health-check", method: "PUT", expect: { status: [405] } },
+
+  // ═══════════════════════════════════════════════
   // Cleanup de dados de teste (2 tests)
   // ═══════════════════════════════════════════════
   { name: "user-presence: cleanup hc_test", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "health_check_test" }, expect: { status: [200] } },
