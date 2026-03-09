@@ -432,8 +432,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ─── Webhook: billing.paid event from AbacatePay ───
-    if (["billing.paid", "BILLING_PAID", "payment.completed", "checkout.paid"].includes(body.event)) {
+    // ─── Webhook: payment events from AbacatePay ───
+    // v1: billing.paid, BILLING_PAID
+    // v2: checkout.completed, payment.completed
+    const PAID_EVENTS = ["billing.paid", "BILLING_PAID", "payment.completed", "checkout.paid", "checkout.completed"];
+    
+    // Log EVERY incoming webhook for debugging
+    console.log(`[AbacatePay Webhook] ═══ INCOMING REQUEST ═══`);
+    console.log(`[AbacatePay Webhook] Event: ${body.event || "none"}`);
+    console.log(`[AbacatePay Webhook] API Version: ${body.apiVersion || "unknown"}`);
+    console.log(`[AbacatePay Webhook] Dev Mode: ${body.devMode ?? "unknown"}`);
+    console.log(`[AbacatePay Webhook] URL: ${req.url}`);
+    console.log(`[AbacatePay Webhook] Body keys: ${Object.keys(body).join(", ")}`);
+    console.log(`[AbacatePay Webhook] Full body: ${JSON.stringify(body).substring(0, 2000)}`);
+    
+    if (PAID_EVENTS.includes(body.event)) {
       // STEP 1: Validate webhook secret (MANDATORY)
       const secretValidation = validateWebhookSecret(req, body);
       if (!secretValidation.valid) {
