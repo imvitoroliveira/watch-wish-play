@@ -71,6 +71,8 @@ Deno.serve(async (req) => {
     if (req.method === 'POST') {
       const { username, action } = await req.json();
       if (!username) return new Response(JSON.stringify({ error: 'username required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const usernameError = validateUsername(username);
+      if (usernameError) return usernameError;
 
       if (action === 'watch_trailer') {
         const today = new Date().toISOString().split('T')[0];
