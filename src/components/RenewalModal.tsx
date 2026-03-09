@@ -110,8 +110,8 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
               </div>
             </div>
 
-            <div className="bg-accent/10 border border-accent/20 rounded-lg px-3 py-2 mt-3">
-              <p className="text-xs text-accent font-medium flex items-center gap-1.5">
+            <div className="bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2 mt-3">
+              <p className="text-xs text-green-400 font-medium flex items-center gap-1.5">
                 ⚡ Pagamento via PIX · Ativação instantânea
               </p>
             </div>
