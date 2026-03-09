@@ -88,7 +88,7 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="relative px-6 pt-6 pb-4 bg-gradient-to-b from-primary/15 to-transparent">
+          <div className="relative px-6 pt-6 pb-4 bg-gradient-to-b from-blue-500/15 to-transparent">
             <button
               onClick={onClose}
               className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
