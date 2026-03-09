@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
 import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi, CreditCard, FlaskConical } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -15,9 +16,10 @@ import { Switch } from '@/components/ui/switch';
 
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList, getAdminAuth } = useAuth();
-  const [user, setUser] = useState('');
-  const [pass, setPass] = useState('');
+  const [user, setUser] = useState(() => localStorage.getItem('msc_admin_user') || '');
+  const [pass, setPass] = useState(() => localStorage.getItem('msc_admin_pass') || '');
   const [error, setError] = useState('');
+  const [rememberAdmin, setRememberAdmin] = useState(() => !!localStorage.getItem('msc_admin_user'));
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -228,6 +230,13 @@ const AdminPanel = () => {
     setLoginLoading(false);
     if (success) {
       setError('');
+      if (rememberAdmin) {
+        localStorage.setItem('msc_admin_user', user.trim());
+        localStorage.setItem('msc_admin_pass', pass.trim());
+      } else {
+        localStorage.removeItem('msc_admin_user');
+        localStorage.removeItem('msc_admin_pass');
+      }
     } else {
       setError('Credenciais inválidas');
     }
@@ -324,6 +333,16 @@ const AdminPanel = () => {
               maxLength={100}
             />
             {error && <p className="text-primary text-sm text-center">{error}</p>}
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="rememberAdmin"
+                checked={rememberAdmin}
+                onCheckedChange={(v) => setRememberAdmin(!!v)}
+              />
+              <label htmlFor="rememberAdmin" className="text-sm text-muted-foreground cursor-pointer select-none">
+                Lembrar-se de mim
+              </label>
+            </div>
             <Button type="submit" disabled={loginLoading} className="w-full h-12 bg-accent text-accent-foreground hover:bg-accent/90 font-semibold">
               {loginLoading ? 'Verificando...' : 'Entrar'}
             </Button>
