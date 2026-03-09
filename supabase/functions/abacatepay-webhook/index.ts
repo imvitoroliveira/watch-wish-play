@@ -180,10 +180,12 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
 // Resolve checkout/billing ID from webhook payload
 function resolveTransactionId(body: any, billingData: any): string {
   const candidates = [
+    billingData?.billing?.id,
     billingData?.checkout?.id,
     billingData?.payment?.id,
     billingData?.id,
     billingData?.billing_id,
+    body?.data?.billing?.id,
     body?.data?.checkout?.id,
     body?.data?.payment?.id,
     body?.data?.id,
