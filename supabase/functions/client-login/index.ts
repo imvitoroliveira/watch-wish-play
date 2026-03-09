@@ -21,6 +21,21 @@ function isRateLimited(ip: string): boolean {
   return entry.count > 10; // Max 10 attempts per minute
 }
 
+// Track per-username re-login attempts within 2 min window
+// Allows up to 2 logins when presence is active; blocks on 3rd+
+const reloginAttempts = new Map<string, { count: number; resetAt: number }>();
+
+function getReloginCount(username: string): number {
+  const now = Date.now();
+  const entry = reloginAttempts.get(username);
+  if (!entry || now > entry.resetAt) {
+    reloginAttempts.set(username, { count: 1, resetAt: now + 2 * 60_000 }); // 2 min window
+    return 1;
+  }
+  entry.count++;
+  return entry.count;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -115,9 +130,15 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (presence) {
-        return new Response(JSON.stringify({ success: false, reason: 'already_online' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        // Allow up to 2 re-logins within the 2 min presence window
+        // (covers: user closed browser and came back, or brief disconnect)
+        // Block only on 3rd+ attempt to prevent abuse
+        const attempts = getReloginCount(username);
+        if (attempts > 2) {
+          return new Response(JSON.stringify({ success: false, reason: 'already_online' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
 
       // Clear any stale presence so the new session starts clean
