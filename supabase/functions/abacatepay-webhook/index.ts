@@ -130,6 +130,9 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
     billingData?.payment?.external_id,
     billingData?.products?.[0]?.externalId,
     billingData?.items?.[0]?.externalId,
+    // AbacatePay v1 nests under billing object
+    billingData?.billing?.products?.[0]?.externalId,
+    billingData?.billing?.externalId,
   ];
   for (const eid of externalIdCandidates) {
     if (typeof eid !== "string") continue;
