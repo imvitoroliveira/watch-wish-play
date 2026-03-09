@@ -56,6 +56,8 @@ function generateDeterministicCpf(username: string): string {
 }
 
 // ── Security: Validate webhook authenticity ──
+// AbacatePay sends the secret as a query parameter (?webhookSecret=...) in the URL
+// It also sends HMAC signature in X-Webhook-Signature header
 function validateWebhookSecret(req: Request, body: any): { valid: boolean; reason?: string } {
   const webhookSecret = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET");
 
@@ -64,11 +66,19 @@ function validateWebhookSecret(req: Request, body: any): { valid: boolean; reaso
     return { valid: false, reason: "webhook secret not configured on server" };
   }
 
-  // Check header first, then body field
-  const receivedSecret = req.headers.get("x-webhook-secret") || body?.secret;
+  // Check ALL possible locations where AbacatePay might send the secret:
+  // 1. Query parameter (official AbacatePay v2 method)
+  // 2. Header x-webhook-secret (custom)
+  // 3. Body field "secret" (legacy/v1)
+  const url = new URL(req.url);
+  const receivedSecret =
+    url.searchParams.get("webhookSecret") ||
+    req.headers.get("x-webhook-secret") ||
+    body?.secret;
 
   if (!receivedSecret) {
-    console.error("[Security] No webhook secret provided in request");
+    console.error("[Security] No webhook secret provided in request (checked: query param, header, body)");
+    console.error("[Security] URL:", req.url);
     return { valid: false, reason: "missing webhook secret" };
   }
 
@@ -422,8 +432,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ─── Webhook: billing.paid event from AbacatePay ───
-    if (["billing.paid", "BILLING_PAID", "payment.completed", "checkout.paid"].includes(body.event)) {
+    // ─── Webhook: payment events from AbacatePay ───
+    // v1: billing.paid, BILLING_PAID
+    // v2: checkout.completed, payment.completed
+    const PAID_EVENTS = ["billing.paid", "BILLING_PAID", "payment.completed", "checkout.paid", "checkout.completed"];
+    
+    // Log EVERY incoming webhook for debugging
+    console.log(`[AbacatePay Webhook] ═══ INCOMING REQUEST ═══`);
+    console.log(`[AbacatePay Webhook] Event: ${body.event || "none"}`);
+    console.log(`[AbacatePay Webhook] API Version: ${body.apiVersion || "unknown"}`);
+    console.log(`[AbacatePay Webhook] Dev Mode: ${body.devMode ?? "unknown"}`);
+    console.log(`[AbacatePay Webhook] URL: ${req.url}`);
+    console.log(`[AbacatePay Webhook] Body keys: ${Object.keys(body).join(", ")}`);
+    console.log(`[AbacatePay Webhook] Full body: ${JSON.stringify(body).substring(0, 2000)}`);
+    
+    if (PAID_EVENTS.includes(body.event)) {
       // STEP 1: Validate webhook secret (MANDATORY)
       const secretValidation = validateWebhookSecret(req, body);
       if (!secretValidation.valid) {
