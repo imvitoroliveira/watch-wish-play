@@ -97,8 +97,8 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
             </button>
 
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Shield className="w-5 h-5 text-primary" />
+            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                <Shield className="w-5 h-5 text-blue-400" />
               </div>
               <div>
                 <h2 className="text-xl font-display text-foreground tracking-wide">
