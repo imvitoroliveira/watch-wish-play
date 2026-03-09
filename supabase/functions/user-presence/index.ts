@@ -6,6 +6,20 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type, x-admin-auth, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+// Input sanitization: reject usernames with SQL/XSS patterns
+const dangerousPattern = /['";<>\\\/\-\-]|(\bOR\b|\bAND\b|\bUNION\b|\bSELECT\b|\bDROP\b|\bINSERT\b|\bDELETE\b|\bUPDATE\b|\bEXEC\b|<script|javascript:)/i;
+
+function validateUsername(username: string | undefined): Response | null {
+  if (!username || typeof username !== 'string') return null;
+  if (dangerousPattern.test(username) || username.length > 100) {
+    return new Response(JSON.stringify({ error: 'Invalid username' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -18,6 +32,12 @@ Deno.serve(async (req) => {
 
   try {
     const { action, username } = await req.json();
+
+    // Validate username for actions that use it
+    if ((action === 'heartbeat' || action === 'logout') && username) {
+      const invalid = validateUsername(username);
+      if (invalid) return invalid;
+    }
 
     // Logout: set last_seen to far past so user is no longer "online"
     if (action === 'logout' && username) {
