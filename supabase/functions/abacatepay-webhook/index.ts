@@ -130,6 +130,9 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
     billingData?.payment?.external_id,
     billingData?.products?.[0]?.externalId,
     billingData?.items?.[0]?.externalId,
+    // AbacatePay v1 nests under billing object
+    billingData?.billing?.products?.[0]?.externalId,
+    billingData?.billing?.externalId,
   ];
   for (const eid of externalIdCandidates) {
     if (typeof eid !== "string") continue;
@@ -148,6 +151,8 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
     billingData?.payment?.description,
     billingData?.products?.[0]?.name,
     billingData?.items?.[0]?.name,
+    billingData?.billing?.products?.[0]?.description,
+    billingData?.billing?.products?.[0]?.name,
   ];
   for (const desc of descriptions) {
     if (typeof desc !== "string") continue;
@@ -158,6 +163,7 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
   // 4. Determine plan from amount if still missing
   if (!plan) {
     const amount =
+      billingData?.billing?.amount ??
       billingData?.amount ??
       billingData?.paidAmount ??
       billingData?.checkout?.amount ??
@@ -165,7 +171,8 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
       billingData?.payment?.amount ??
       billingData?.payment?.paidAmount ??
       billingData?.products?.[0]?.price ??
-      billingData?.items?.[0]?.price;
+      billingData?.items?.[0]?.price ??
+      billingData?.billing?.products?.[0]?.price;
     if (typeof amount === "number" && PLAN_BY_AMOUNT[amount]) {
       plan = PLAN_BY_AMOUNT[amount];
     }
@@ -177,10 +184,12 @@ function extractUsernameAndPlan(body: any, billingData: any): { username?: strin
 // Resolve checkout/billing ID from webhook payload
 function resolveTransactionId(body: any, billingData: any): string {
   const candidates = [
+    billingData?.billing?.id,
     billingData?.checkout?.id,
     billingData?.payment?.id,
     billingData?.id,
     billingData?.billing_id,
+    body?.data?.billing?.id,
     body?.data?.checkout?.id,
     body?.data?.payment?.id,
     body?.data?.id,
