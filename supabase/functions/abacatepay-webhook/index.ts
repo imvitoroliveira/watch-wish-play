@@ -202,6 +202,42 @@ function resolveTransactionId(body: any, billingData: any): string {
   return "unknown";
 }
 
+// Try NATV activation with retries and fallback base URLs
+async function activateNatvUser(username: string, days: number, natvToken: string): Promise<boolean> {
+  const baseUrls = Array.from(new Set([
+    Deno.env.get("NATV_API_BASE_URL")?.trim(),
+    Deno.env.get("NATV_API_URL")?.trim(),
+    "https://natv-api.sytes.net",
+    "http://natv-api.sytes.net",
+  ].filter((v): v is string => !!v)));
+
+  for (const base of baseUrls) {
+    const normalizedBase = base.replace(/\/$/, "");
+    const natvUrl = `${normalizedBase}/api/user/activation?token=${natvToken}&username=${encodeURIComponent(username)}&days=${days}`;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`[Webhook] Calling NATV API (attempt ${attempt}): ${natvUrl.replace(natvToken, "***")}`);
+        const natvResponse = await fetch(natvUrl, { method: "GET" });
+        const natvResult = await natvResponse.text();
+        const ok = natvResponse.ok;
+
+        console.log(`[Webhook] NATV Response: base=${normalizedBase}, status=${natvResponse.status}, body=${natvResult.substring(0, 500)}`);
+
+        if (ok) return true;
+      } catch (err) {
+        console.error(`[Webhook] NATV API network error (base=${normalizedBase}, attempt=${attempt}):`, err);
+      }
+
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  }
+
+  return false;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════
