@@ -2,14 +2,21 @@
  * Hook para gerenciar notificações push via PushAlert
  * - Associa o username do cliente ao subscriber do PushAlert
  * - Permite que notificações sejam direcionadas por usuário
+ * 
+ * Usa a JS API oficial do PushAlert:
+ * (pushalertbyiw = window.pushalertbyiw || []).push(['addAttributes', {key: value}])
  */
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 
 declare global {
   interface Window {
-    PushAlertCo?: any;
-    pushalertbyiw?: any;
+    PushAlertCo?: {
+      subs_id?: string;
+      getSubsInfo?: () => { status: string; subs_id: string };
+      [key: string]: any;
+    };
+    pushalertbyiw?: any[];
   }
 }
 
@@ -20,45 +27,37 @@ export function usePushNotifications() {
   useEffect(() => {
     if (!isClient || !currentClient?.u || registeredRef.current) return;
 
-    const tryRegister = () => {
-      // PushAlert SDK exposes window.PushAlertCo or window.pushalertbyiw
-      const pa = window.PushAlertCo || window.pushalertbyiw;
-      
-      if (pa && typeof pa.putAttribute === 'function') {
-        // Associate username with this subscriber for targeted notifications
-        pa.putAttribute('username', currentClient.u);
-        registeredRef.current = true;
-        console.log('[Push] Username attribute set:', currentClient.u);
-        return true;
-      }
+    const username = currentClient.u;
 
-      // Alternative: use the onReady callback approach
-      if (typeof (window as any).pushalert === 'object') {
-        (window as any).pushalert = (window as any).pushalert || [];
-        (window as any).pushalert.push(['onReady', function() {
-          const paReady = window.PushAlertCo || window.pushalertbyiw;
-          if (paReady && typeof paReady.putAttribute === 'function') {
-            paReady.putAttribute('username', currentClient!.u);
-            registeredRef.current = true;
-            console.log('[Push] Username attribute set on ready:', currentClient!.u);
+    // Use PushAlert's official JS API: addAttributes via the pushalertbyiw queue
+    // This works both before and after SDK initialization
+    (window.pushalertbyiw = window.pushalertbyiw || []).push([
+      'addAttributes',
+      { username },
+    ]);
+
+    // Also register onReady to confirm subscription and log status
+    (window.pushalertbyiw = window.pushalertbyiw || []).push([
+      'onReady',
+      function () {
+        const pa = window.PushAlertCo;
+        if (pa) {
+          const subsInfo = pa.getSubsInfo?.();
+          console.log('[Push] PushAlert ready. Status:', subsInfo?.status, '| subs_id:', subsInfo?.subs_id || pa.subs_id);
+
+          // Re-add attributes after confirmation of subscription
+          if (subsInfo?.status === 'subscribed') {
+            (window.pushalertbyiw = window.pushalertbyiw || []).push([
+              'addAttributes',
+              { username },
+            ]);
+            console.log('[Push] Username attribute set:', username);
           }
-        }]);
-        return true;
-      }
+        }
+        registeredRef.current = true;
+      },
+    ]);
 
-      return false;
-    };
-
-    // Try immediately
-    if (!tryRegister()) {
-      // Retry after SDK loads
-      const interval = setInterval(() => {
-        if (tryRegister()) clearInterval(interval);
-      }, 2000);
-
-      // Stop trying after 30s
-      const timeout = setTimeout(() => clearInterval(interval), 30000);
-      return () => { clearInterval(interval); clearTimeout(timeout); };
-    }
+    console.log('[Push] Queued addAttributes for username:', username);
   }, [isClient, currentClient]);
 }
