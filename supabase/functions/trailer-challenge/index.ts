@@ -5,6 +5,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Rejects usernames containing SQL/XSS/path-traversal patterns
+function isMaliciousInput(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  const dangerous = /(<\s*script|<\s*img|on\w+\s*=|javascript:|union\s+select|;\s*drop\s|;\s*delete\s|'\s*or\s+'|'\s*or\s+1|--\s*$|\/\.\.|%00)/i;
+  return dangerous.test(value);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -20,6 +27,7 @@ Deno.serve(async (req) => {
       const url = new URL(req.url);
       const username = url.searchParams.get('username');
       if (!username) return new Response(JSON.stringify({ error: 'username required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (isMaliciousInput(username)) return new Response(JSON.stringify({ error: 'Invalid username' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
       const today = new Date().toISOString().split('T')[0];
       const month = today.substring(0, 7);
