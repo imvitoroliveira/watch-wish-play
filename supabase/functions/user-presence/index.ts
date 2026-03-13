@@ -6,6 +6,13 @@ const corsHeaders = {
     'authorization, x-client-info, apikey, content-type, x-admin-auth, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+// Rejects usernames containing SQL/XSS/path-traversal patterns
+function isMaliciousInput(value: string): boolean {
+  if (!value || typeof value !== 'string') return false;
+  const dangerous = /(<\s*script|<\s*img|on\w+\s*=|javascript:|union\s+select|;\s*drop\s|;\s*delete\s|'\s*or\s+'|'\s*or\s+1|--\s*$|\/\.\.|%00)/i;
+  return dangerous.test(value);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -18,6 +25,14 @@ Deno.serve(async (req) => {
 
   try {
     const { action, username } = await req.json();
+
+    // Validate username against injection attacks
+    if (username && isMaliciousInput(username)) {
+      return new Response(JSON.stringify({ error: 'Invalid username' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Logout: set last_seen to far past so user is no longer "online"
     if (action === 'logout' && username) {
