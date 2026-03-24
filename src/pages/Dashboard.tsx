@@ -16,6 +16,7 @@ import CatalogUpdates from '@/components/CatalogUpdates';
 import RenewalModal from '@/components/RenewalModal';
 import { useBillingEnabled } from '@/hooks/useBillingEnabled';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { clientSideAutoRefresh } from '@/lib/m3u-parser';
 
 import { supabase } from '@/integrations/supabase/client';
 
