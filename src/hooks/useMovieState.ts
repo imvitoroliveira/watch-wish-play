@@ -104,10 +104,12 @@ export function useMovieState() {
   const toggleContentAlert = useCallback(async (movie: TMDBMovie) => {
     if (!currentClient?.u) return;
     const title = movie.title || movie.name || '';
+    // For movies, original_title is the English title; for TV, use name as fallback
+    const originalTitle = (movie as any).original_title || (movie as any).original_name || '';
     try {
       const { data } = await supabase.functions.invoke('content-alerts', {
         method: 'POST',
-        body: { username: currentClient.u, action: 'toggle', movie_title: title, movie_id: movie.id },
+        body: { username: currentClient.u, action: 'toggle', movie_title: title, original_title: originalTitle, movie_id: movie.id },
       });
       if (data) {
         setContentAlerts(prev => {
