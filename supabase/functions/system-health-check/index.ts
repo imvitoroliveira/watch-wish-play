@@ -760,12 +760,12 @@ Deno.serve(async (req) => {
           }).eq("id", rowId);
         }
 
-        // Keep only last 50 runs
+        // Keep only last 10 runs
         const { data: old } = await supabase
           .from("test_results")
           .select("id")
           .order("run_at", { ascending: false })
-          .range(50, 999);
+          .range(10, 999);
 
         if (old && old.length > 0) {
           await supabase.from("test_results").delete().in("id", old.map(r => r.id));
