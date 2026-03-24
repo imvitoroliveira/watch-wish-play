@@ -77,67 +77,6 @@ export async function fetchM3UCatalog(): Promise<{ titles: string[]; total: numb
   }
 }
 
-// Check if catalog needs refresh (>3h old) and do it from client browser
-export async function clientSideAutoRefresh(): Promise<{ refreshed: boolean; count?: number; newTitles?: number }> {
-  try {
-    // Get catalog metadata to check staleness
-    const { data, error } = await supabase.functions.invoke('parse-m3u', {
-      method: 'GET',
-    });
-    if (error) throw error;
-
-    const updatedAt = data?.updated_at;
-    if (!updatedAt) return { refreshed: false };
-
-    const hoursSince = (Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60);
-    if (hoursSince < 3) return { refreshed: false };
-
-    // Check cooldown - don't retry more than once per hour from client
-    const lastClientRefresh = localStorage.getItem('msc_m3u_client_refresh');
-    if (lastClientRefresh) {
-      const sinceLastRefresh = (Date.now() - parseInt(lastClientRefresh)) / (1000 * 60 * 60);
-      if (sinceLastRefresh < 1) return { refreshed: false };
-    }
-
-    // Get source URL from the catalog
-    const { data: catalogData } = await supabase
-      .from('m3u_catalog')
-      .select('source_url')
-      .eq('id', '00000000-0000-0000-0000-000000000001')
-      .maybeSingle();
-
-    const sourceUrl = (catalogData as any)?.source_url;
-    if (!sourceUrl) return { refreshed: false };
-
-    console.log('[M3U] Catalog stale (', hoursSince.toFixed(1), 'h), refreshing from browser...');
-    localStorage.setItem('msc_m3u_client_refresh', Date.now().toString());
-
-    // Fetch M3U from the browser (uses user's IP — not blocked)
-    const res = await fetch(sourceUrl);
-    if (!res.ok) {
-      console.warn('[M3U] Client fetch failed:', res.status);
-      return { refreshed: false };
-    }
-
-    const content = await res.text();
-    if (!content || content.length < 100) return { refreshed: false };
-
-    // Send content (not URL) to backend for parsing and saving
-    const { data: result, error: processError } = await supabase.functions.invoke('parse-m3u', {
-      method: 'POST',
-      body: { content },
-    });
-
-    if (processError) throw processError;
-
-    console.log('[M3U] Client refresh done:', result?.count, 'titles,', result?.new_titles, 'new');
-    return { refreshed: true, count: result?.count, newTitles: result?.new_titles };
-  } catch (e) {
-    console.warn('[M3U] Client auto-refresh failed:', (e as Error).message);
-    return { refreshed: false };
-  }
-}
-
 // Fetch a random sample of titles from the full catalog
 export async function fetchRandomM3UTitles(count: number): Promise<string[]> {
   try {
