@@ -326,10 +326,49 @@ const TEST_SUITE: TestCase[] = [
   { name: "method: system-health-check PUT = 405", category: "security", fn: "system-health-check", method: "PUT", expect: { status: [405] } },
 
   // ═══════════════════════════════════════════════
-  // Cleanup de dados de teste (2 tests)
+  // Integridade de Dados — tabelas críticas (6 tests)
+  // ═══════════════════════════════════════════════
+  { name: "data: app_settings singleton existe", category: "integration", fn: "app-settings", method: "GET", expect: { status: [200], hasKey: "billing_enabled" } },
+  { name: "data: clients_list acessível via manage-clients", category: "integration", fn: "manage-clients", method: "GET", headers: ADMIN_HDR, expect: { status: [200], hasKey: "clients" } },
+  { name: "data: parse-m3u catálogo não está vazio", category: "integration", fn: "parse-m3u", method: "GET", expect: { status: [200], hasKey: "total" } },
+  { name: "data: football-matches retorna estrutura válida", category: "integration", fn: "football-matches", method: "GET", expect: { status: [200] } },
+  { name: "data: trailer-challenge retorna today válido", category: "integration", fn: "trailer-challenge", method: "GET", expect: { status: [200], hasKey: "today" } },
+  { name: "data: content-alerts retorna array para user válido", category: "integration", fn: "content-alerts", method: "POST", body: { action: "list", username: "data_integrity_test" }, expect: { status: [200], hasKey: "alerts" } },
+
+  // ═══════════════════════════════════════════════
+  // Resiliência e Concorrência (6 tests)
+  // ═══════════════════════════════════════════════
+  { name: "resiliência: tmdb-proxy aceita requests consecutivos", category: "integration", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/trending/movie/week" }, expect: { status: [200], hasKey: "results" } },
+  { name: "resiliência: user-presence heartbeat idempotente", category: "integration", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "resilience_test_user" }, expect: { status: [200], hasKey: "ok" } },
+  { name: "resiliência: user-presence heartbeat repetido idempotente", category: "integration", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "resilience_test_user" }, expect: { status: [200], hasKey: "ok" } },
+  { name: "resiliência: match-reminders list idempotente", category: "integration", fn: "match-reminders", method: "POST", body: { action: "list", username: "resilience_test" }, expect: { status: [200], hasKey: "reminders" } },
+  { name: "resiliência: content-alerts add duplicado não crash", category: "integration", fn: "content-alerts", method: "POST", body: { action: "add", username: "resilience_dup", movie_id: 999999, movie_title: "Teste Resiliência" }, expect: { status: [200, 400, 409] } },
+  { name: "resiliência: stream-proxy URL malformada não crash", category: "functional", fn: "stream-proxy", method: "POST", body: { url: "not-a-valid-url" }, expect: { status: [400, 403] } },
+
+  // ═══════════════════════════════════════════════
+  // Consistência de Autenticação — todos endpoints protegidos (6 tests)
+  // ═══════════════════════════════════════════════
+  { name: "auth-consistency: manage-clients POST sem auth = 401", category: "security", fn: "manage-clients", method: "POST", body: { clients: [{ u: "x", p: "y" }] }, expect: { status: [401] } },
+  { name: "auth-consistency: push-test POST sem auth = 401", category: "security", fn: "push-test", method: "POST", body: { action: "send", username: "test" }, expect: { status: [401] } },
+  { name: "auth-consistency: google-sheets-sync POST sem auth = 401", category: "security", fn: "google-sheets-sync", method: "POST", body: { spreadsheet_id: "x", clients: [] }, expect: { status: [401] } },
+  { name: "auth-consistency: system-health-check DELETE sem auth = 401", category: "security", fn: "system-health-check", method: "DELETE", body: { id: "fake" }, expect: { status: [401] } },
+  { name: "auth-consistency: n8n-proxy POST sem auth = 401", category: "security", fn: "n8n-proxy", method: "POST", body: { webhook_url: "https://example.com", payload: {} }, expect: { status: [401] } },
+  { name: "auth-consistency: user-presence list_online sem auth = 401", category: "security", fn: "user-presence", method: "POST", body: { action: "list_online" }, expect: { status: [401] } },
+
+  // ═══════════════════════════════════════════════
+  // Validação de Arquitetura — respostas JSON consistentes (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "arquitetura: admin-login erro retorna JSON", category: "regression", fn: "admin-login", method: "POST", body: { user: "arch_test", pass: "arch_test" }, expect: { status: [401], hasKey: "error" } },
+  { name: "arquitetura: client-login erro retorna JSON com success", category: "regression", fn: "client-login", method: "POST", body: { action: "login", username: "arch_nobody", password: "wrong" }, expect: { status: [200], hasKey: "success" } },
+  { name: "arquitetura: manage-clients 401 retorna JSON com error", category: "regression", fn: "manage-clients", method: "GET", expect: { status: [401], hasKey: "error" } },
+  { name: "arquitetura: push-test 401 retorna JSON", category: "regression", fn: "push-test", method: "POST", body: {}, expect: { status: [401], hasKey: "error" } },
+
+  // ═══════════════════════════════════════════════
+  // Cleanup de dados de teste (3 tests)
   // ═══════════════════════════════════════════════
   { name: "user-presence: cleanup hc_test", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "health_check_test" }, expect: { status: [200] } },
   { name: "user-presence: cleanup hc_structural", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "hc_structural_test" }, expect: { status: [200] } },
+  { name: "user-presence: cleanup resilience_test", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "resilience_test_user" }, expect: { status: [200] } },
 ];
 
 // Custom deep validations beyond simple status/key checks
