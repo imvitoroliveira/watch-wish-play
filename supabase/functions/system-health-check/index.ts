@@ -474,7 +474,7 @@ function runCustomValidation(test: TestCase, data: any): string | null {
 
 async function runTest(baseUrl: string, anonKey: string, test: TestCase, retries = 5): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
   const start = Date.now();
-  const TIMEOUT_MS = 30000; // 30s timeout per test
+  const TIMEOUT_MS = test.fn === "n8n-proxy" ? 45000 : 30000; // n8n-proxy needs more time for cold starts
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
