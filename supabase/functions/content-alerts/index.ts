@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method === 'POST') {
-      const { username, action, movie_title, movie_id } = await req.json();
+      const { username, action, movie_title, original_title, movie_id } = await req.json();
       if (!username) return new Response(JSON.stringify({ error: 'username required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
       if (action === 'toggle') {
@@ -44,6 +44,7 @@ Deno.serve(async (req) => {
           await supabase.from('content_alerts').insert({
             client_username: username,
             movie_title,
+            original_title: original_title || '',
             movie_id,
           });
           return new Response(JSON.stringify({ active: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -62,7 +63,6 @@ Deno.serve(async (req) => {
 
     // GET: cron - check M3U catalog for newly available content
     if (req.method === 'GET') {
-      // Get pending alerts
       const { data: pendingAlerts } = await supabase
         .from('content_alerts')
         .select('*')
@@ -72,7 +72,6 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ sent: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // Get M3U catalog
       const { data: catalog } = await supabase
         .from('m3u_catalog')
         .select('titles')
@@ -88,20 +87,32 @@ Deno.serve(async (req) => {
       const m3uSet = new Set(m3uTitles);
       const pushAlertKey = Deno.env.get('PUSHALERT_API_KEY');
       let sent = 0;
+      const results: any[] = [];
 
       for (const alert of pendingAlerts) {
-        const normalizedAlert = normalizeTitle(alert.movie_title);
-        let found = m3uSet.has(normalizedAlert);
-        if (!found) {
-          for (const m3u of m3uTitles) {
-            if (m3u.includes(normalizedAlert) || normalizedAlert.includes(m3u)) {
-              found = true;
-              break;
-            }
+        // Build list of normalized titles to check (PT + original EN)
+        const titlesToCheck: string[] = [];
+        const normalizedPT = normalizeTitle(alert.movie_title);
+        if (normalizedPT.length >= 2) titlesToCheck.push(normalizedPT);
+        
+        if (alert.original_title) {
+          const normalizedEN = normalizeTitle(alert.original_title);
+          if (normalizedEN.length >= 2 && normalizedEN !== normalizedPT) {
+            titlesToCheck.push(normalizedEN);
+          }
+        }
+
+        // Strict exact match only — no partial includes()
+        let found = false;
+        for (const check of titlesToCheck) {
+          if (m3uSet.has(check)) {
+            found = true;
+            break;
           }
         }
 
         if (found) {
+          let pushResult: any = null;
           try {
             if (pushAlertKey) {
               const params = new URLSearchParams();
@@ -117,22 +128,34 @@ Deno.serve(async (req) => {
                 },
                 body: params,
               });
-              const pushResult = await pushRes.text();
-              console.log(`[Push] content-alert for ${alert.client_username}:`, pushResult);
+              const pushText = await pushRes.text();
+              console.log(`[Push] content-alert for ${alert.client_username}:`, pushRes.status, pushText);
+              try { pushResult = JSON.parse(pushText); } catch { pushResult = pushText; }
             }
 
             await supabase
               .from('content_alerts')
               .update({ notified: true })
               .eq('id', alert.id);
+
+            // Log to notifications table for audit
+            await supabase.from('notifications').insert({
+              title: '🎬 Conteúdo Disponível!',
+              body: `"${alert.movie_title}" disponível. Push status: ${pushResult?.success ?? 'no_key'}`,
+              target_user: alert.client_username,
+              type: 'content_alert',
+            });
+
             sent++;
+            results.push({ user: alert.client_username, title: alert.movie_title, push: pushResult });
           } catch (e) {
             console.error('Failed to send content alert:', e);
+            results.push({ user: alert.client_username, title: alert.movie_title, error: (e as Error).message });
           }
         }
       }
 
-      return new Response(JSON.stringify({ sent }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ sent, checked: pendingAlerts.length, results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
