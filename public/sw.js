@@ -1,4 +1,4 @@
-const CACHE_NAME = 'meu-stream-v1';
+const CACHE_NAME = 'meu-stream-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -6,6 +6,13 @@ const STATIC_ASSETS = [
   '/pwa-icon-192.png',
   '/pwa-icon-512.png',
 ];
+
+// Listen for skip waiting message from the app
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
 // Install: cache static assets
 self.addEventListener('install', (event) => {
@@ -16,7 +23,7 @@ self.addEventListener('install', (event) => {
       });
     })
   );
-  self.skipWaiting();
+  // Don't auto skipWaiting — let the app control when to activate
 });
 
 // Activate: clean old caches
@@ -40,6 +47,9 @@ self.addEventListener('fetch', (event) => {
 
   // Skip API/function calls
   if (request.url.includes('/functions/') || request.url.includes('supabase.co')) return;
+
+  // Skip OAuth routes
+  if (request.url.includes('/~oauth')) return;
 
   event.respondWith(
     fetch(request)
