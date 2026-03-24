@@ -16,6 +16,7 @@ import CatalogUpdates from '@/components/CatalogUpdates';
 import RenewalModal from '@/components/RenewalModal';
 import { useBillingEnabled } from '@/hooks/useBillingEnabled';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { clientSideAutoRefresh } from '@/lib/m3u-parser';
 
 import { supabase } from '@/integrations/supabase/client';
 
@@ -77,6 +78,19 @@ const Dashboard = () => {
     const interval = setInterval(sendHeartbeat, 3 * 60 * 1000);
     return () => clearInterval(interval);
   }, [currentClient?.u]);
+
+  // Client-side M3U auto-refresh: fetches from user's browser IP when catalog is stale
+  useEffect(() => {
+    if (!isClient) return;
+    const timer = setTimeout(() => {
+      clientSideAutoRefresh().then(result => {
+        if (result.refreshed) {
+          console.log(`[M3U] Auto-refreshed: ${result.count} titles, ${result.newTitles} new`);
+        }
+      });
+    }, 5000); // 5s delay to not block initial load
+    return () => clearTimeout(timer);
+  }, [isClient]);
 
   useEffect(() => {
     if (!isClient) navigate('/');
