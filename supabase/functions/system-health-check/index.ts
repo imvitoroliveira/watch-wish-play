@@ -596,6 +596,53 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
+  // Prototype pollution: must NOT gain admin access
+  if (test.name === "proto-pollution: __proto__ em client-login") {
+    if (data?.success === true || data?.isAdmin === true) {
+      return "⚠️ CRÍTICO: Prototype pollution permitiu bypass de autenticação!";
+    }
+  }
+  if (test.name === "json-inject: campo extra isAdmin em client-login") {
+    if (data?.isAdmin === true || data?.role === "admin") {
+      return "⚠️ CRÍTICO: Campos extras no JSON foram aceitos para escalação de privilégio!";
+    }
+  }
+
+  // Enumeration: error messages must be generic (not reveal user existence)
+  if (test.name === "enum: login inválido não revela se user existe (msg genérica)") {
+    if (data?.reason === "user_not_found" || data?.reason === "no_such_user") {
+      return "⚠️ Enumeração: resposta diferencia 'user não existe' vs 'senha errada' — atacante pode enumerar usernames.";
+    }
+  }
+  if (test.name.startsWith("enum: admin-login")) {
+    const text = JSON.stringify(data || {}).toLowerCase();
+    if (text.includes("user not found") || text.includes("username not found") || text.includes("no such user")) {
+      return "⚠️ Enumeração: admin-login revela se o username existe — deve retornar erro genérico.";
+    }
+  }
+
+  // Privilege escalation: default credentials must NOT work
+  if (test.name === "privesc: auth header com admin:admin (padrão fraco)") {
+    if (data?.clients || data?.success === true) {
+      return "⚠️ CRÍTICO: Credenciais padrão admin:admin funcionam! Trocar imediatamente.";
+    }
+  }
+
+  // Command injection must not return system output
+  if (test.name.startsWith("cmd-inject:")) {
+    const text = JSON.stringify(data || {}).toLowerCase();
+    if (text.includes("root:") || text.includes("/bin/") || text.includes("uid=")) {
+      return "⚠️ CRÍTICO: Command injection retornou output do sistema!";
+    }
+  }
+
+  // JSON action override: array action should not be processed
+  if (test.name === "json-inject: action override com array") {
+    if (data?.alerts || data?.success === true) {
+      return "⚠️ Action com array foi processada normalmente — validar tipo do campo action.";
+    }
+  }
+
   return null; // passed
 }
 
