@@ -9,7 +9,7 @@ const corsHeaders = {
 // Rejects usernames containing SQL/XSS/path-traversal patterns
 function isMaliciousInput(value: string): boolean {
   if (!value || typeof value !== 'string') return false;
-  const dangerous = /(<\s*script|<\s*img|on\w+\s*=|javascript:|union\s+select|;\s*drop\s|;\s*delete\s|'\s*or\s+'|'\s*or\s+1|--\s*$|\/\.\.|%00)/i;
+  const dangerous = /(<\s*script|<\s*img|on\w+\s*=|javascript:|union\s+select|;\s*drop\s|;\s*delete\s|'\s*or\s+'|'\s*or\s+1|--\s*$|\/\.\.|%00|`|\$\()/i;
   return dangerous.test(value);
 }
 

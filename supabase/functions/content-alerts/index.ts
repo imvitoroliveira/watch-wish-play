@@ -26,10 +26,17 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method === 'POST') {
-      const { username, action, movie_title, original_title, movie_id } = await req.json();
+      const body = await req.json();
+      const { username, action, movie_title, original_title, movie_id } = body;
+
+      // Validate action is a string (block array injection)
+      if (typeof action !== 'string') {
+        return new Response(JSON.stringify({ error: 'Invalid action type' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
       if (!username) return new Response(JSON.stringify({ error: 'username required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-      if (action === 'toggle') {
+      if (action === 'toggle' || action === 'add') {
         const { data: existing } = await supabase
           .from('content_alerts')
           .select('id')
