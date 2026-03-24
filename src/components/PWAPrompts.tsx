@@ -27,11 +27,12 @@ export function PWAPrompts() {
 
   // Detect install prompt (Android / desktop Chrome)
   useEffect(() => {
+    if (isStandalone) return; // Already installed as PWA, no need to prompt
+
     const handler = (e: BeforeInstallPromptEvent) => {
       e.preventDefault();
       setInstallPrompt(e);
 
-      // Show banner if not dismissed recently (24h cooldown)
       const lastDismissed = localStorage.getItem('pwa_install_dismissed');
       if (lastDismissed) {
         const diff = Date.now() - parseInt(lastDismissed);
@@ -42,7 +43,7 @@ export function PWAPrompts() {
 
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  }, [isStandalone]);
 
   // iOS detection (no beforeinstallprompt)
   useEffect(() => {
