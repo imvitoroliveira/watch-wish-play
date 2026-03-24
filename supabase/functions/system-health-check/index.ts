@@ -345,10 +345,10 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     const updatedAt = data?.updated_at;
     if (!updatedAt) return "Campo updated_at ausente — catálogo pode nunca ter sido processado.";
     const age = Date.now() - new Date(updatedAt).getTime();
-    const maxAge = 48 * 60 * 60 * 1000; // 48 hours
+    const maxAge = 336 * 60 * 60 * 1000; // 336 hours (2 weeks) — manual update cycle
     if (age > maxAge) {
       const hours = Math.round(age / (60 * 60 * 1000));
-      return `Catálogo desatualizado há ${hours}h (máx: 48h). Verificar cron m3u-auto-refresh.`;
+      return `Catálogo desatualizado há ${hours}h (máx: 336h). Atualizar manualmente no painel.`;
     }
   }
 
