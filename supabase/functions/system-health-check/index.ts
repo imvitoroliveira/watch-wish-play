@@ -345,10 +345,10 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     const updatedAt = data?.updated_at;
     if (!updatedAt) return "Campo updated_at ausente — catálogo pode nunca ter sido processado.";
     const age = Date.now() - new Date(updatedAt).getTime();
-    const maxAge = 48 * 60 * 60 * 1000; // 48 hours
+    const maxAge = 336 * 60 * 60 * 1000; // 336 hours (2 weeks) — manual update cycle
     if (age > maxAge) {
       const hours = Math.round(age / (60 * 60 * 1000));
-      return `Catálogo desatualizado há ${hours}h (máx: 48h). Verificar cron m3u-auto-refresh.`;
+      return `Catálogo desatualizado há ${hours}h (máx: 336h). Atualizar manualmente no painel.`;
     }
   }
 
@@ -474,7 +474,7 @@ function runCustomValidation(test: TestCase, data: any): string | null {
 
 async function runTest(baseUrl: string, anonKey: string, test: TestCase, retries = 5): Promise<{ name: string; category: string; passed: boolean; error?: string; duration_ms: number }> {
   const start = Date.now();
-  const TIMEOUT_MS = 30000; // 30s timeout per test
+  const TIMEOUT_MS = test.fn === "n8n-proxy" ? 45000 : 30000; // n8n-proxy needs more time for cold starts
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -760,12 +760,12 @@ Deno.serve(async (req) => {
           }).eq("id", rowId);
         }
 
-        // Keep only last 50 runs
+        // Keep only last 10 runs
         const { data: old } = await supabase
           .from("test_results")
           .select("id")
           .order("run_at", { ascending: false })
-          .range(50, 999);
+          .range(10, 999);
 
         if (old && old.length > 0) {
           await supabase.from("test_results").delete().in("id", old.map(r => r.id));
