@@ -501,10 +501,37 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // user-presence list_online: online must be array
-  if (test.name === "user-presence: list_online com auth admin") {
-    if (!Array.isArray(data?.online)) {
-      return "Campo 'online' não é array — endpoint list_online pode estar quebrado.";
+  // Data integrity: catalog must not be empty
+  if (test.name === "data: parse-m3u catálogo não está vazio") {
+    const total = data?.total || (Array.isArray(data?.titles) ? data.titles.length : 0);
+    if (total === 0) return "Catálogo M3U está completamente vazio — dados podem ter sido perdidos.";
+  }
+
+  // Data integrity: clients list should have entries
+  if (test.name === "data: clients_list acessível via manage-clients") {
+    if (!Array.isArray(data?.clients) || data.clients.length === 0) {
+      return "Tabela clients_list sem registros — upload inicial pode não ter sido feito.";
+    }
+  }
+
+  // Data integrity: football must return structured data
+  if (test.name === "data: football-matches retorna estrutura válida") {
+    if (!data?.matches && !Array.isArray(data) && !data?.cached && !data?.source) {
+      return "Resposta de football-matches sem estrutura reconhecida.";
+    }
+  }
+
+  // Resilience: stream-proxy malformed URL must not crash (500)
+  if (test.name === "resiliência: stream-proxy URL malformada não crash") {
+    if (data?.error && typeof data.error === "string" && data.error.includes("stack")) {
+      return "Stream-proxy vazou stack trace em URL malformada — tratar exceção corretamente.";
+    }
+  }
+
+  // Architecture: all 401 responses must be JSON with error key
+  if (test.name.startsWith("arquitetura:") && test.expect.hasKey === "error") {
+    if (typeof data !== "object" || !data?.error) {
+      return "Resposta 401 não retornou JSON com campo 'error' — inconsistência de arquitetura.";
     }
   }
 
