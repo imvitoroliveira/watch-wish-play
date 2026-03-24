@@ -19,6 +19,7 @@ const App = () => (
       <AuthProvider>
         <Toaster />
         <Sonner />
+        <PWAPrompts />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<ClientLogin />} />
