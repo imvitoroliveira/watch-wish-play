@@ -94,6 +94,7 @@ export type Database = {
           movie_id: number
           movie_title: string
           notified: boolean
+          original_title: string | null
         }
         Insert: {
           client_username: string
@@ -102,6 +103,7 @@ export type Database = {
           movie_id: number
           movie_title: string
           notified?: boolean
+          original_title?: string | null
         }
         Update: {
           client_username?: string
@@ -110,6 +112,7 @@ export type Database = {
           movie_id?: number
           movie_title?: string
           notified?: boolean
+          original_title?: string | null
         }
         Relationships: []
       }

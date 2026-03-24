@@ -1,0 +1,1 @@
+ALTER TABLE content_alerts ADD COLUMN IF NOT EXISTS original_title text DEFAULT '';
