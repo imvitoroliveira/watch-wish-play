@@ -57,9 +57,18 @@ Deno.serve(async (req) => {
       url.searchParams.set('api_key', TMDB_TOKEN);
     }
 
-    const res = await fetch(url.toString(), { headers });
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        res = await fetch(url.toString(), { headers });
+        break;
+      } catch (fetchErr) {
+        if (attempt === 2) throw fetchErr;
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+      }
+    }
 
-    const data = await res.json();
+    const data = await res!.json();
     return new Response(JSON.stringify(data), {
       status: res.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
