@@ -21,6 +21,10 @@ export function PWAPrompts() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
+  // Detect if running as installed PWA (standalone mode)
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || (navigator as any).standalone === true;
+
   // Detect install prompt (Android / desktop Chrome)
   useEffect(() => {
     const handler = (e: BeforeInstallPromptEvent) => {
