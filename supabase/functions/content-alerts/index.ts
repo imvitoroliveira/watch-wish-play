@@ -66,6 +66,9 @@ Deno.serve(async (req) => {
           .eq('notified', false);
         return new Response(JSON.stringify({ alerts: (data || []).map(a => a.movie_id) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+
+      // Unknown action
+      return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // GET: cron - check M3U catalog for newly available content
