@@ -79,6 +79,19 @@ const Dashboard = () => {
     return () => clearInterval(interval);
   }, [currentClient?.u]);
 
+  // Client-side M3U auto-refresh: fetches from user's browser IP when catalog is stale
+  useEffect(() => {
+    if (!isClient) return;
+    const timer = setTimeout(() => {
+      clientSideAutoRefresh().then(result => {
+        if (result.refreshed) {
+          console.log(`[M3U] Auto-refreshed: ${result.count} titles, ${result.newTitles} new`);
+        }
+      });
+    }, 5000); // 5s delay to not block initial load
+    return () => clearTimeout(timer);
+  }, [isClient]);
+
   useEffect(() => {
     if (!isClient) navigate('/');
   }, [isClient, navigate]);
