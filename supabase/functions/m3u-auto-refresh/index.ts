@@ -7,9 +7,16 @@ const corsHeaders = {
 };
 
 const SKIP_GROUPS = /\b(canais?|tv|ao.?vivo|live|aberto|esporte|notícia|infantil|music|rádio|radio|adult|xxx|pay.?per.?view|ppv|24h)\b/i;
-
-// Max time for the entire operation (120s to stay under 150s Edge Function limit)
 const MAX_EXECUTION_MS = 120_000;
+
+// Multiple User-Agent strings to rotate on retries
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+  "VLC/3.0.21 LibVLC/3.0.21",
+  "Lavf/60.16.100",
+];
 
 function cleanTitle(title: string): string {
   return title
@@ -27,6 +34,64 @@ function cleanTitle(title: string): string {
     .trim();
 }
 
+async function fetchWithRetry(
+  url: string,
+  maxRetries: number = 3,
+  timeoutMs: number = 60_000
+): Promise<Response> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const ua = USER_AGENTS[attempt % USER_AGENTS.length];
+
+    try {
+      // Add small delay between retries
+      if (attempt > 0) {
+        const delay = Math.min(2000 * attempt, 5000);
+        console.log(`[m3u] Retry ${attempt + 1}/${maxRetries} after ${delay}ms (UA: ${ua.substring(0, 30)}...)`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": ua,
+          "Accept": "*/*",
+          "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+          "Connection": "keep-alive",
+        },
+        signal: controller.signal,
+        redirect: "follow",
+      });
+
+      clearTimeout(timer);
+
+      if (res.ok) return res;
+
+      // Consume body to avoid leaks
+      await res.text();
+
+      // 403/401 might be transient - retry with different UA
+      if ((res.status === 403 || res.status === 401) && attempt < maxRetries - 1) {
+        lastError = new Error(`HTTP ${res.status}`);
+        continue;
+      }
+
+      throw new Error(`HTTP ${res.status} from M3U source`);
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err as Error;
+      if ((err as Error).name === "AbortError") {
+        lastError = new Error(`Fetch timed out (attempt ${attempt + 1})`);
+      }
+      if (attempt === maxRetries - 1) break;
+    }
+  }
+
+  throw lastError || new Error("All fetch retries failed");
+}
+
 async function streamParseM3U(
   stream: ReadableStream<Uint8Array>,
   deadline: number
@@ -41,7 +106,6 @@ async function streamParseM3U(
 
   try {
     while (true) {
-      // Check time budget before reading next chunk
       if (Date.now() > deadline) {
         timedOut = true;
         console.warn(`[m3u] Time budget exceeded after ${rawCount} raw entries, ${titlesSet.size} unique titles`);
@@ -83,7 +147,6 @@ async function streamParseM3U(
     try { reader.releaseLock(); } catch { /* ignore */ }
   }
 
-  // Process remaining buffer if not timed out
   if (!timedOut && buffer.trim().startsWith("#EXTINF:")) {
     try {
       const trimmed = buffer.trim();
@@ -119,15 +182,15 @@ Deno.serve(async (req) => {
   const startTime = Date.now();
   const deadline = startTime + MAX_EXECUTION_MS;
 
-  try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  try {
     // Get saved source_url
     const { data } = await supabase
       .from("m3u_catalog")
-      .select("source_url")
+      .select("source_url, updated_at")
       .eq("id", "00000000-0000-0000-0000-000000000001")
       .maybeSingle();
 
@@ -140,41 +203,53 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[m3u] Auto-refreshing from: ${sourceUrl}`);
+    const lastUpdate = data?.updated_at ? new Date(data.updated_at) : null;
+    const hoursSinceUpdate = lastUpdate
+      ? ((Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60)).toFixed(1)
+      : "unknown";
 
-    // Fetch with 60s timeout via AbortController
-    const controller = new AbortController();
-    const fetchTimeout = setTimeout(() => controller.abort(), 60_000);
+    console.log(`[m3u] Auto-refreshing. Last update: ${hoursSinceUpdate}h ago. URL: ${sourceUrl.substring(0, 60)}...`);
 
+    // Fetch with retry and varied User-Agents
     let res: Response;
     try {
-      res = await fetch(sourceUrl, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        signal: controller.signal,
-      });
+      res = await fetchWithRetry(sourceUrl, 3, 60_000);
     } catch (fetchErr) {
-      clearTimeout(fetchTimeout);
-      const msg = (fetchErr as Error).name === "AbortError"
-        ? "M3U fetch timed out after 60s"
-        : (fetchErr as Error).message;
-      console.error(`[m3u] Fetch failed: ${msg}`);
+      const errMsg = (fetchErr as Error).message;
+      console.error(`[m3u] All fetch attempts failed: ${errMsg}`);
+
+      // Log persistent failure as notification for admin
+      await supabase.from("notifications").insert({
+        title: "⚠️ Falha na Atualização M3U",
+        body: `Todas as tentativas falharam: ${errMsg}. Última atualização: ${hoursSinceUpdate}h atrás. Verifique se a URL M3U ainda é válida.`,
+        type: "system",
+      }).catch(() => {});
+
       return new Response(
-        JSON.stringify({ error: msg }),
+        JSON.stringify({ error: errMsg, hours_since_update: hoursSinceUpdate }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    clearTimeout(fetchTimeout);
 
-    if (!res.ok) throw new Error(`HTTP ${res.status} from M3U source`);
     if (!res.body) throw new Error("No response body");
 
     const { titles, rawCount, timedOut } = await streamParseM3U(res.body, deadline);
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[m3u] Parsed ${rawCount} raw -> ${titles.length} unique in ${elapsed}s${timedOut ? " (TIMED OUT)" : ""}`);
 
-    // Only save if we got a reasonable number of titles (>100 to avoid corrupt data)
+    // Safety check: don't overwrite with too few titles
     if (titles.length < 100) {
-      console.warn(`[m3u] Only ${titles.length} titles parsed, skipping save to prevent data loss`);
+      console.warn(`[m3u] Only ${titles.length} titles parsed, skipping save`);
+
+      // Alert admin if catalog seems broken
+      if (parseFloat(hoursSinceUpdate) > 48) {
+        await supabase.from("notifications").insert({
+          title: "⚠️ Catálogo M3U Desatualizado",
+          body: `Última atualização há ${hoursSinceUpdate}h. Parse retornou apenas ${titles.length} títulos. Verifique a URL fonte.`,
+          type: "system",
+        }).catch(() => {});
+      }
+
       return new Response(
         JSON.stringify({ skipped: true, reason: "too_few_titles", count: titles.length, timed_out: timedOut }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -190,8 +265,6 @@ Deno.serve(async (req) => {
 
     const previousTitles = new Set<string>((prevData?.titles as string[]) || []);
     const previousCount = previousTitles.size;
-
-    // Find new titles
     const newTitles = titles.filter((t: string) => !previousTitles.has(t));
     console.log(`[m3u] ${newTitles.length} new titles (prev: ${previousCount}, now: ${titles.length})`);
 
