@@ -21,13 +21,18 @@ export function PWAPrompts() {
   const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
+  // Detect if running as installed PWA (standalone mode)
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || (navigator as any).standalone === true;
+
   // Detect install prompt (Android / desktop Chrome)
   useEffect(() => {
+    if (isStandalone) return; // Already installed as PWA, no need to prompt
+
     const handler = (e: BeforeInstallPromptEvent) => {
       e.preventDefault();
       setInstallPrompt(e);
 
-      // Show banner if not dismissed recently (24h cooldown)
       const lastDismissed = localStorage.getItem('pwa_install_dismissed');
       if (lastDismissed) {
         const diff = Date.now() - parseInt(lastDismissed);
@@ -38,25 +43,24 @@ export function PWAPrompts() {
 
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, []);
+  }, [isStandalone]);
 
   // iOS detection (no beforeinstallprompt)
   useEffect(() => {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
-      || (navigator as any).standalone === true;
+    if (isStandalone) return; // Already installed, skip iOS prompt
 
-    if (isIOS && !isStandalone) {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+    if (isIOS) {
       const lastDismissed = localStorage.getItem('pwa_install_dismissed');
       if (lastDismissed) {
         const diff = Date.now() - parseInt(lastDismissed);
         if (diff < 24 * 60 * 60 * 1000) return;
       }
-      // Delay to not overwhelm on first load
       const timer = setTimeout(() => setShowInstallBanner(true), 3000);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [isStandalone]);
 
   // Detect SW update
   useEffect(() => {
