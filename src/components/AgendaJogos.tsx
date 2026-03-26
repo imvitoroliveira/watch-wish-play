@@ -184,20 +184,24 @@ function inferStatus(jogo: JogoAtivo): JogoAtivo['status'] | 'provavelmente_em_a
 
 function MatchCard({
   jogo,
+  inferredStatus,
   hasReminder,
   onToggleReminder,
   formatTime,
 }: {
   jogo: JogoAtivo;
+  inferredStatus: string;
   hasReminder: boolean;
   onToggleReminder: () => void;
   formatTime: (d: string) => string;
 }) {
-  const live = jogo.status === 'ao_vivo';
-  const halftime = jogo.status === 'intervalo';
-  const finished = jogo.status === 'finalizado';
-  const upcoming = jogo.status === 'programado';
+  const live = inferredStatus === 'ao_vivo';
+  const halftime = inferredStatus === 'intervalo';
+  const finished = inferredStatus === 'finalizado' || inferredStatus === 'provavelmente_encerrado';
+  const inProgress = inferredStatus === 'provavelmente_em_andamento';
+  const upcoming = inferredStatus === 'programado';
   const showScore = live || halftime || finished;
+  const showInProgress = inProgress;
 
   return (
     <div className={`relative rounded-xl border overflow-hidden transition-all ${
