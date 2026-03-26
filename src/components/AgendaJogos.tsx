@@ -119,6 +119,7 @@ const AgendaJogos = () => {
               >
                 <MatchCard
                   jogo={jogo}
+                  inferredStatus={jogo.inferredStatus}
                   hasReminder={reminders.has(jogo.id_partida)}
                   onToggleReminder={() => handleToggleReminder(jogo)}
                   formatTime={formatTime}
