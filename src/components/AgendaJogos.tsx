@@ -58,11 +58,13 @@ const AgendaJogos = () => {
 
   const leagues = [...new Set(jogos.map(j => j.liga_nome))];
 
+  const jogosWithInferred = jogos.map(j => ({ ...j, inferredStatus: inferStatus(j) }));
+
   const filteredJogos = filter === 'all'
-    ? jogos
+    ? jogosWithInferred
     : filter === 'ao_vivo'
-      ? jogos.filter(j => j.status === 'ao_vivo' || j.status === 'intervalo')
-      : jogos.filter(j => j.liga_nome === filter);
+      ? jogosWithInferred.filter(j => j.inferredStatus === 'ao_vivo' || j.inferredStatus === 'intervalo' || j.inferredStatus === 'provavelmente_em_andamento')
+      : jogosWithInferred.filter(j => j.liga_nome === filter);
 
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -117,6 +119,7 @@ const AgendaJogos = () => {
               >
                 <MatchCard
                   jogo={jogo}
+                  inferredStatus={jogo.inferredStatus}
                   hasReminder={reminders.has(jogo.id_partida)}
                   onToggleReminder={() => handleToggleReminder(jogo)}
                   formatTime={formatTime}
@@ -145,7 +148,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function getStatusLabel(status: JogoAtivo['status']): string {
+function getStatusLabel(status: string): string {
   const map: Record<string, string> = {
     programado: 'A iniciar',
     ao_vivo: 'Ao Vivo',
@@ -154,26 +157,51 @@ function getStatusLabel(status: JogoAtivo['status']): string {
     suspenso: 'Suspenso',
     adiado: 'Adiado',
     cancelado: 'Cancelado',
+    provavelmente_em_andamento: 'Provável em andamento',
+    provavelmente_encerrado: 'Provável encerrado',
   };
   return map[status] || status;
 }
 
+/**
+ * Infere o status real com base no horário de início quando o backend 
+ * não atualizou (ex: Cloud pausado). Só aplica em jogos "programado".
+ */
+function inferStatus(jogo: JogoAtivo): JogoAtivo['status'] | 'provavelmente_em_andamento' | 'provavelmente_encerrado' {
+  if (jogo.status !== 'programado') return jogo.status;
+  
+  const now = new Date();
+  const start = new Date(jogo.horario_inicio);
+  const diffMinutes = (now.getTime() - start.getTime()) / 60000;
+  
+  // Jogo deveria ter começado há mais de 120 min → provavelmente encerrado
+  if (diffMinutes >= 120) return 'provavelmente_encerrado';
+  // Jogo deveria ter começado há mais de 5 min → provavelmente em andamento
+  if (diffMinutes >= 5) return 'provavelmente_em_andamento';
+  
+  return 'programado';
+}
+
 function MatchCard({
   jogo,
+  inferredStatus,
   hasReminder,
   onToggleReminder,
   formatTime,
 }: {
   jogo: JogoAtivo;
+  inferredStatus: string;
   hasReminder: boolean;
   onToggleReminder: () => void;
   formatTime: (d: string) => string;
 }) {
-  const live = jogo.status === 'ao_vivo';
-  const halftime = jogo.status === 'intervalo';
-  const finished = jogo.status === 'finalizado';
-  const upcoming = jogo.status === 'programado';
+  const live = inferredStatus === 'ao_vivo';
+  const halftime = inferredStatus === 'intervalo';
+  const finished = inferredStatus === 'finalizado' || inferredStatus === 'provavelmente_encerrado';
+  const inProgress = inferredStatus === 'provavelmente_em_andamento';
+  const upcoming = inferredStatus === 'programado';
   const showScore = live || halftime || finished;
+  const showInProgress = inProgress;
 
   return (
     <div className={`relative rounded-xl border overflow-hidden transition-all ${
