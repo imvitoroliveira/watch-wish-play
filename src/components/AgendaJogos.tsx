@@ -249,7 +249,9 @@ function MatchCard({
                   initial={{ scale: 1.3 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className="text-3xl sm:text-4xl font-display text-gray-300"
+                  className={`text-3xl sm:text-4xl font-display ${
+                    live ? 'text-foreground' : halftime ? 'text-yellow-400' : 'text-muted-foreground'
+                  }`}
                 >
                   {jogo.placar_casa ?? 0}
                 </motion.span>
@@ -259,7 +261,9 @@ function MatchCard({
                   initial={{ scale: 1.3 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  className="text-3xl sm:text-4xl font-display text-gray-300"
+                  className={`text-3xl sm:text-4xl font-display ${
+                    live ? 'text-foreground' : halftime ? 'text-yellow-400' : 'text-muted-foreground'
+                  }`}
                 >
                   {jogo.placar_fora ?? 0}
                 </motion.span>
