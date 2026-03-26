@@ -58,11 +58,13 @@ const AgendaJogos = () => {
 
   const leagues = [...new Set(jogos.map(j => j.liga_nome))];
 
+  const jogosWithInferred = jogos.map(j => ({ ...j, inferredStatus: inferStatus(j) }));
+
   const filteredJogos = filter === 'all'
-    ? jogos
+    ? jogosWithInferred
     : filter === 'ao_vivo'
-      ? jogos.filter(j => j.status === 'ao_vivo' || j.status === 'intervalo')
-      : jogos.filter(j => j.liga_nome === filter);
+      ? jogosWithInferred.filter(j => j.inferredStatus === 'ao_vivo' || j.inferredStatus === 'intervalo' || j.inferredStatus === 'provavelmente_em_andamento')
+      : jogosWithInferred.filter(j => j.liga_nome === filter);
 
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
