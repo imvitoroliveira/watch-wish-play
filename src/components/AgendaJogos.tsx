@@ -145,7 +145,7 @@ function FilterChip({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function getStatusLabel(status: JogoAtivo['status']): string {
+function getStatusLabel(status: string): string {
   const map: Record<string, string> = {
     programado: 'A iniciar',
     ao_vivo: 'Ao Vivo',
@@ -154,8 +154,29 @@ function getStatusLabel(status: JogoAtivo['status']): string {
     suspenso: 'Suspenso',
     adiado: 'Adiado',
     cancelado: 'Cancelado',
+    provavelmente_em_andamento: 'Provável em andamento',
+    provavelmente_encerrado: 'Provável encerrado',
   };
   return map[status] || status;
+}
+
+/**
+ * Infere o status real com base no horário de início quando o backend 
+ * não atualizou (ex: Cloud pausado). Só aplica em jogos "programado".
+ */
+function inferStatus(jogo: JogoAtivo): JogoAtivo['status'] | 'provavelmente_em_andamento' | 'provavelmente_encerrado' {
+  if (jogo.status !== 'programado') return jogo.status;
+  
+  const now = new Date();
+  const start = new Date(jogo.horario_inicio);
+  const diffMinutes = (now.getTime() - start.getTime()) / 60000;
+  
+  // Jogo deveria ter começado há mais de 120 min → provavelmente encerrado
+  if (diffMinutes >= 120) return 'provavelmente_encerrado';
+  // Jogo deveria ter começado há mais de 5 min → provavelmente em andamento
+  if (diffMinutes >= 5) return 'provavelmente_em_andamento';
+  
+  return 'programado';
 }
 
 function MatchCard({
