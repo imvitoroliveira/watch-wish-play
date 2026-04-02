@@ -3,10 +3,11 @@ import { supabase } from '@/integrations/supabase/client';
 
 export interface ClientData {
   u: string;
-  p: string;
+  p?: string; // senha — NÃO persistida no browser
   e: string; // expiration date
   t: string; // status: "Ativo" | "Expirado"
   "7"?: string; // "1" = expiring soon
+  m3u?: string; // URL da lista M3U individual (opcional)
   [key: string]: string | undefined;
 }
 
@@ -125,8 +126,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return { success: false, reason: data?.reason || 'invalid' };
       }
 
-      // Reconstruct client data with password for local session
-      const client: ClientData = { ...data.client, p: pass };
+      // Salva sessão do cliente — sem a senha para não expô-la no browser
+      const client: ClientData = { ...data.client };
+      delete client.p;
       setCurrentClient(client);
       localStorage.setItem('msc_client', JSON.stringify(client));
       return { success: true };

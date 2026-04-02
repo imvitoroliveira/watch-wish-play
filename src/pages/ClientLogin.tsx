@@ -9,19 +9,22 @@ import eagleLogo from '@/assets/eagle-logo.png';
 
 const REMEMBER_KEY = 'msc_remember_me';
 
-function getSavedCredentials(): { username: string; password: string } | null {
+function getSavedUsername(): string | null {
   try {
     const saved = localStorage.getItem(REMEMBER_KEY);
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    // compatibilidade retroativa: suporte ao formato antigo { username, password }
+    return typeof parsed === 'string' ? parsed : (parsed?.username || null);
   } catch { return null; }
 }
 
 const ClientLogin = () => {
-  const saved = getSavedCredentials();
-  const [username, setUsername] = useState(saved?.username || '');
-  const [password, setPassword] = useState(saved?.password || '');
+  const savedUsername = getSavedUsername();
+  const [username, setUsername] = useState(savedUsername || '');
+  const [password, setPassword] = useState(''); // senha jamais pré-preenchida
   const [showPass, setShowPass] = useState(false);
-  const [rememberMe, setRememberMe] = useState(!!saved);
+  const [rememberMe, setRememberMe] = useState(!!savedUsername);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { loginClient, clientsLoading } = useAuth();
@@ -42,7 +45,8 @@ const ClientLogin = () => {
       const result = await loginClient(trimmedUser, trimmedPass);
       if (result.success) {
         if (rememberMe) {
-          localStorage.setItem(REMEMBER_KEY, JSON.stringify({ username: trimmedUser, password: trimmedPass }));
+          // Salva apenas o usuário — senha nunca é persistida no browser
+          localStorage.setItem(REMEMBER_KEY, JSON.stringify({ username: trimmedUser }));
         } else {
           localStorage.removeItem(REMEMBER_KEY);
         }

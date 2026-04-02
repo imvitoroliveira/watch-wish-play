@@ -63,6 +63,7 @@ const Dashboard = () => {
     m3uConfirmedMovies,
     challengeKey,
     setChallengeKey,
+    m3uNormalized,
   } = useMovieState();
 
   // Heartbeat: send presence every 3 minutes
@@ -180,12 +181,13 @@ const Dashboard = () => {
         <MovieModal
           movie={selectedMovie}
           onClose={() => setSelectedMovie(null)}
-          isFavorite={favorites.has(selectedMovie.id)}
-          isWatched={watchedSet.has(selectedMovie.id)}
-          onToggleFavorite={() => toggleFavorite(selectedMovie)}
-          onToggleWatched={() => toggleWatched(selectedMovie)}
-          onTrailerWatched={() => setChallengeKey(k => k + 1)}
-          availability={getAvailability(selectedMovie)}
+          isFavorite={selectedMovie ? favorites.has(selectedMovie.id) : false}
+          isWatched={selectedMovie ? watchedSet.has(selectedMovie.id) : false}
+          onToggleFavorite={selectedMovie ? () => toggleFavorite(selectedMovie) : undefined}
+          onToggleWatched={selectedMovie ? () => toggleWatched(selectedMovie) : undefined}
+          onTrailerWatched={() => setChallengeKey(prev => prev + 1)}
+          availability={selectedMovie ? getAvailability(selectedMovie) : 'unknown'}
+          m3uNormalized={m3uNormalized}
         />
       )}
 

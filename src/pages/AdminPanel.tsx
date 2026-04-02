@@ -2,28 +2,33 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ClientData } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi, CreditCard, FlaskConical } from 'lucide-react';
+import { Shield, Upload, LogOut, Users, CheckCircle, AlertTriangle, Link, Loader2, Clock, Send, Bell, Wifi, CreditCard, FlaskConical, TestTube } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { processM3UViaBackend, clearM3UCatalog, fetchM3UCatalog } from '@/lib/m3u-parser';
+import { buildProxyUrl } from '@/lib/m3u-client-parser';
 import { supabase } from '@/integrations/supabase/client';
 import OnlineStatusTab from '@/components/OnlineStatusTab';
 import SystemTestsTab from '@/components/SystemTestsTab';
+import UnitTestsPanel from '@/components/UnitTestsPanel';
 import { Switch } from '@/components/ui/switch';
+import { useBillingEnabled, useBillingUpdater } from '@/hooks/useBillingEnabled';
 
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList, getAdminAuth } = useAuth();
   const [user, setUser] = useState(() => localStorage.getItem('msc_admin_user') || '');
-  const [pass, setPass] = useState(() => localStorage.getItem('msc_admin_pass') || '');
+  const [pass, setPass] = useState(''); // senha jamais pré-preenchida do localStorage
   const [error, setError] = useState('');
   const [rememberAdmin, setRememberAdmin] = useState(() => !!localStorage.getItem('msc_admin_user'));
   const fileRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const [m3uUrl, setM3uUrl] = useState(() => localStorage.getItem('msc_m3u_url') || '');
+  const [proxyUrl, setProxyUrl] = useState(() => localStorage.getItem('msc_cloudflare_proxy') || '');
   const [m3uContent, setM3uContent] = useState('');
   const [m3uLoading, setM3uLoading] = useState(false);
   const [m3uTitleCount, setM3uTitleCount] = useState(0);
@@ -38,23 +43,32 @@ const AdminPanel = () => {
   const [onlineUsers, setOnlineUsers] = useState<{ client_username: string; last_seen: string }[]>([]);
   const [onlineLoading, setOnlineLoading] = useState(false);
 
-  // Billing toggle
-  const [billingEnabled, setBillingEnabled] = useState(false);
-  const [billingLoading, setBillingLoading] = useState(true);
+  // Billing: usa cache compartilhado via React Query
+  // (evita chamada duplicada quando Dashboard também está montado)
+  const { billingEnabled, loading: billingLoading } = useBillingEnabled();
+  const updateBillingCache = useBillingUpdater();
   const [billingToggling, setBillingToggling] = useState(false);
   const [clientFilter, setClientFilter] = useState<'todos' | 'ativos' | 'inativos'>('todos');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  useEffect(() => {
-    const loadBilling = async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke('app-settings', {
-          body: { action: 'get' },
-        });
-        if (!error && data) setBillingEnabled(!!data.billing_enabled);
-      } catch {} finally { setBillingLoading(false); }
-    };
-    loadBilling();
-  }, []);
+  // M3U Individual por cliente
+  const [m3uEditClient, setM3uEditClient] = useState<ClientData | null>(null);
+  const [clientM3uUrl, setClientM3uUrl] = useState('');
+
+  const handleSaveClientM3u = () => {
+    if (!m3uEditClient) return;
+    const updated = clientList.map(c => {
+      if (c.u === m3uEditClient.u) {
+        return { ...c, m3u: clientM3uUrl.trim() };
+      }
+      return c;
+    });
+    uploadClientList(updated);
+    toast({ title: 'M3U Configurado', description: `Sincronizado URL para o cliente ${m3uEditClient.u}.` });
+    setM3uEditClient(null);
+    setClientM3uUrl('');
+  };
+
 
   const toggleBilling = async (value: boolean) => {
     setBillingToggling(true);
@@ -65,7 +79,9 @@ const AdminPanel = () => {
         headers: { 'x-admin-auth': adminAuth },
       });
       if (!error && data?.success) {
-        setBillingEnabled(value);
+        // Atualiza o cache do React Query — reflete em todos os componentes
+        // que usam useBillingEnabled (Dashboard, AdminPanel) sem nova requisição
+        updateBillingCache(value);
         toast({ title: value ? 'Cobrança habilitada' : 'Cobrança desabilitada', description: value ? 'Os clientes verão as opções de renovação.' : 'As opções de renovação foram ocultadas.' });
       } else {
         toast({ title: 'Erro', description: 'Não foi possível alterar a configuração.', variant: 'destructive' });
@@ -122,23 +138,59 @@ const AdminPanel = () => {
     loadCatalogInfo();
   }, []);
 
-  const handleM3uProcess = async () => {
-    setM3uLoading(true);
-    const result = await processM3UViaBackend(
-      m3uUrl.trim() || undefined,
-      m3uContent.trim() || undefined
-    );
-    setM3uLoading(false);
+  const cleanTitle = (title: string): string => {
+    return title
+      .replace(/^(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*[-–:]\s*/gi, '')
+      .replace(/\s*(4K|UHD|FHD|HD|SD|720p|1080p|2160p)\s*/gi, ' ')
+      .replace(/^(VOD|FILME|FILMES|SERIE|SERIES|MOVIE|MOVIES)[:\s-]*/i, '')
+      .replace(/\s*\[(DUB|LEG|DUAL|NAC|PT|EN|SPA)\w*\]\s*/gi, '')
+      .replace(/\s*\((DUB|LEG|DUAL|NAC|DUBLADO|LEGENDADO)\)\s*/gi, '')
+      .replace(/\s*\(?\d{4}\)?\s*$/, '')
+      .replace(/\s*\[.*?\]\s*/g, '')
+      .replace(/\s*\|.*$/, '')
+      .replace(/\s*S\d{1,2}\s*E\d{1,3}.*$/i, '')
+      .replace(/\s*T\d{1,2}\s*E\d{1,3}.*$/i, '')
+      .replace(/\s+[-–]\s*$/, '')
+      .trim();
+  };
 
-    if (result.success) {
+  const handleM3uProcess = async () => {
+    if (!m3uUrl.trim() && !m3uContent.trim()) {
+      toast({ title: 'Aviso', description: 'Insira uma URL ou o conteúdo M3U' });
+      return;
+    }
+
+    setM3uLoading(true);
+    try {
+      if (m3uUrl.trim().includes('get.php')) {
+        toast({ title: 'Modo XTream Detectado', description: 'O servidor está processando os IDs do catálogo...' });
+      }
+
+      const result = await processM3UViaBackend(m3uUrl.trim() || undefined, m3uContent || undefined);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
       setM3uTitleCount(result.count);
       setM3uLastUpdate(new Date().toISOString());
-      localStorage.setItem('msc_m3u_url', m3uUrl.trim());
-      toast({ title: 'M3U processado!', description: `${result.rawCount || result.count} entradas → ${result.count} títulos únicos VOD.` });
-    } else {
-      toast({ title: 'Erro ao processar M3U', description: result.error || 'Tente colar o conteúdo diretamente.', variant: 'destructive' });
+      
+      if (m3uUrl.trim()) {
+        localStorage.setItem('msc_m3u_url', m3uUrl.trim());
+      }
+
+      toast({ 
+        title: 'Catálogo Atualizado', 
+        description: `Sucesso! Encontrados ${result.count} títulos VOD/Séries.` 
+      });
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: 'Erro M3U', description: e.message || 'Falha ao processar', variant: 'destructive' });
+    } finally {
+      setM3uLoading(false);
     }
   };
+
 
   const clearM3u = async () => {
     await clearM3UCatalog();
@@ -231,12 +283,13 @@ const AdminPanel = () => {
     if (success) {
       setError('');
       if (rememberAdmin) {
+        // Salva apenas o usuário — senha nunca é persistida no browser
         localStorage.setItem('msc_admin_user', user.trim());
-        localStorage.setItem('msc_admin_pass', pass.trim());
       } else {
         localStorage.removeItem('msc_admin_user');
-        localStorage.removeItem('msc_admin_pass');
       }
+      // Limpa senha antiga salva (migração de segurança)
+      localStorage.removeItem('msc_admin_pass');
     } else {
       setError('Credenciais inválidas');
     }
@@ -429,6 +482,9 @@ const AdminPanel = () => {
             <TabsTrigger value="testes" className="flex items-center gap-1.5">
               <FlaskConical className="w-3.5 h-3.5" /> Testes
             </TabsTrigger>
+            <TabsTrigger value="cobertura" className="flex items-center gap-1.5">
+              <TestTube className="w-3.5 h-3.5" /> Cobertura
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="geral" className="space-y-8">
@@ -490,23 +546,66 @@ const AdminPanel = () => {
               </div>
             </div>
 
+            {/* Cloudflare Proxy Config */}
+            <div className="bg-card rounded-xl border border-border p-6 mt-4">
+              <h2 className="text-xl font-display text-foreground mb-3 flex items-center gap-2">
+                <Wifi className="w-5 h-5 text-accent" />
+                PROXY ANTI-BLOQUEIO (CLOUDFLARE)
+              </h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Insira a URL do seu Worker do Cloudflare. Ele atuará como um intermediário para quebrar os bloqueios de CORS das listas dos clientes permitindo rodar diretamente pelo navegador.
+              </p>
+              <div className="space-y-3">
+                <Input
+                  value={proxyUrl}
+                  onChange={e => setProxyUrl(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
+                  placeholder="Ex: https://proxy-iptv.seunome.workers.dev/"
+                  className="h-10 bg-background border-border text-foreground"
+                  maxLength={500}
+                />
+                <div className="flex items-center gap-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      localStorage.setItem('msc_cloudflare_proxy', proxyUrl.trim());
+                      toast({ title: 'Proxy Salvo', description: 'Todo tráfego M3U/Video passará pelo proxy agora.' });
+                    }}
+                    className="border-accent text-accent hover:bg-accent/10"
+                  >
+                    <CheckCircle className="w-4 h-4 mr-2" /> Salvar Proxy
+                  </Button>
+                  {localStorage.getItem('msc_cloudflare_proxy') && (
+                    <span className="text-sm text-accent font-medium">✅ Proxy Configurado</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Client list preview */}
             {clientList.length > 0 && (
               <div className="bg-card rounded-xl border border-border overflow-hidden">
               <div className="p-4 border-b border-border flex items-center justify-between flex-wrap gap-3">
                   <h3 className="font-display text-lg text-foreground">LISTA DE CLIENTES</h3>
-                  <div className="flex items-center gap-2">
-                    {(['todos', 'ativos', 'inativos'] as const).map((filter) => (
-                      <Button
-                        key={filter}
-                        variant={clientFilter === filter ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => setClientFilter(filter)}
-                        className={clientFilter === filter ? 'bg-accent text-accent-foreground' : 'border-border text-muted-foreground'}
-                      >
-                        {filter === 'todos' ? 'Todos' : filter === 'ativos' ? 'Ativos' : 'Inativos'}
-                      </Button>
-                    ))}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full sm:w-auto">
+                    <Input 
+                      placeholder="Pesquisar cliente (usuário)..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="h-9 w-full sm:w-64 bg-background border-border text-foreground"
+                    />
+                    <div className="flex items-center gap-2">
+                      {(['todos', 'ativos', 'inativos'] as const).map((filter) => (
+                        <Button
+                          key={filter}
+                          variant={clientFilter === filter ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setClientFilter(filter)}
+                          className={clientFilter === filter ? 'bg-accent text-accent-foreground' : 'border-border text-muted-foreground'}
+                        >
+                          {filter === 'todos' ? 'Todos' : filter === 'ativos' ? 'Ativos' : 'Inativos'}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <div className="overflow-x-auto max-h-96 overflow-y-auto">
@@ -516,14 +615,22 @@ const AdminPanel = () => {
                         <th className="text-left p-3 text-muted-foreground font-medium">Usuário</th>
                         <th className="text-left p-3 text-muted-foreground font-medium">Expiração</th>
                         <th className="text-left p-3 text-muted-foreground font-medium">Status</th>
+                        <th className="text-right p-3 text-muted-foreground font-medium">Player Web</th>
                       </tr>
                     </thead>
                     <tbody>
                       {clientList
                         .filter(c => {
-                          if (clientFilter === 'ativos') return c.t?.toLowerCase() === 'ativo';
-                          if (clientFilter === 'inativos') return c.t?.toLowerCase() !== 'ativo';
-                          return true;
+                          const matchesFilter = 
+                            clientFilter === 'ativos' ? c.t?.toLowerCase() === 'ativo' :
+                            clientFilter === 'inativos' ? c.t?.toLowerCase() !== 'ativo' :
+                            true;
+                          
+                          const matchesSearch = 
+                            !searchTerm.trim() || 
+                            c.u.toLowerCase().includes(searchTerm.toLowerCase());
+                          
+                          return matchesFilter && matchesSearch;
                         })
                         .slice(0, 50).map((c, i) => (
                         <tr key={i} className="border-t border-border hover:bg-secondary/50 transition-colors">
@@ -535,6 +642,20 @@ const AdminPanel = () => {
                             }`}>
                               {c.t || 'N/A'}
                             </span>
+                          </td>
+                          <td className="p-3 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setM3uEditClient(c);
+                                setClientM3uUrl(c.m3u || '');
+                              }}
+                              className={`h-8 px-2 ${c.m3u ? 'text-accent' : 'text-muted-foreground hover:text-foreground'}`}
+                            >
+                              <Link className="w-4 h-4 mr-1.5" />
+                              {c.m3u ? 'URL Configurada' : 'Adicionar M3U'}
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -615,7 +736,46 @@ const AdminPanel = () => {
             <SystemTestsTab />
           </TabsContent>
 
+          <TabsContent value="cobertura">
+            <UnitTestsPanel />
+          </TabsContent>
+
         </Tabs>
+
+        {/* Modal: Client M3U Config */}
+        <Dialog open={!!m3uEditClient} onOpenChange={(open) => !open && setM3uEditClient(null)}>
+          <DialogContent className="max-w-md bg-card border-border">
+            <DialogTitle className="text-xl font-display text-foreground mb-1">
+              URL Individual do Player
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground mb-4">
+              Cliente: <strong className="text-foreground">{m3uEditClient?.u}</strong>
+            </p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">URL M3U/Xtream Codes</label>
+                <Input
+                  value={clientM3uUrl}
+                  onChange={e => setClientM3uUrl(e.target.value.replace(/[<>"'`;(){}]/g, ''))}
+                  placeholder="Ex: http://servidor.com:8080/get.php?username=..."
+                  className="bg-background border-border text-foreground"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se preenchido, o botão "[▶ Assistir]" aparecerá no catálogo deste cliente e usará essa fonte para o Player.
+                </p>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" onClick={() => setM3uEditClient(null)} className="border-border text-foreground">
+                  Cancelar
+                </Button>
+                <Button onClick={handleSaveClientM3u} className="bg-accent text-accent-foreground hover:bg-accent/90">
+                  Salvar
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
       </div>
     </div>
   );
