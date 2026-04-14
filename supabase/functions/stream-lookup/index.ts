@@ -4,6 +4,8 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+  "Access-Control-Max-Age": "86400",
 };
 
 function normalizeTitle(title: string): string {
@@ -88,7 +90,7 @@ async function findStreamUrl(
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
@@ -130,11 +132,12 @@ Deno.serve(async (req) => {
     const streamUrl = await findStreamUrl(res.body, searchNormalized);
 
     if (streamUrl) {
-      // Force HTTPS to avoid mixed-content blocks on HTTPS pages
-      const secureUrl = streamUrl.replace(/^http:\/\//i, 'https://');
-      console.log(`[stream-lookup] Found stream URL for "${title}" -> HTTPS: ${secureUrl.substring(0, 80)}`);
+      // NÃO forçar HTTPS — servidores IPTV usam HTTP e não possuem certificado SSL.
+      // O proxy Cloudflare (HTTPS) cuida da segurança entre browser ↔ proxy.
+      // O proxy então faz a requisição HTTP ao servidor IPTV internamente.
+      console.log(`[stream-lookup] Found stream URL for "${title}" -> ${streamUrl.substring(0, 80)}`);
       return new Response(
-        JSON.stringify({ stream_url: secureUrl }),
+        JSON.stringify({ stream_url: streamUrl }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

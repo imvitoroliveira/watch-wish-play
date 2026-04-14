@@ -57,6 +57,10 @@ export const getMovieDetails = async (id: number, type: 'movie' | 'tv' = 'movie'
   return fetchTMDB(`/${type}/${id}`);
 };
 
+export const getSeasonDetails = async (tvId: number, seasonNumber: number) => {
+  return fetchTMDB(`/tv/${tvId}/season/${seasonNumber}`);
+};
+
 export const getMovieVideos = async (id: number, type: 'movie' | 'tv' = 'movie') => {
   const data = await fetchTMDB(`/${type}/${id}/videos`);
   const findTrailer = (results: any[]) =>
@@ -79,20 +83,25 @@ export const searchMovies = async (query: string): Promise<TMDBMovie[]> => {
   return data?.results?.filter((r: any) => r.media_type !== 'person') || [];
 };
 
-export const searchByTitles = async (titles: string[], maxSample = 20, mediaType: 'movie' | 'tv' = 'movie'): Promise<TMDBMovie[]> => {
+export const searchByTitles = async (titles: string[], maxSample = 20, mediaType?: 'movie' | 'tv'): Promise<TMDBMovie[]> => {
   const sample = titles.length <= maxSample ? titles : titles.sort(() => Math.random() - 0.5).slice(0, maxSample);
   const results: TMDBMovie[] = [];
   const seenIds = new Set<number>();
-  const endpoint = mediaType === 'tv' ? '/search/tv' : '/search/movie';
+  
+  // Use /search/multi to automatically detect if it's a movie or series
+  const endpoint = '/search/multi';
 
   for (let i = 0; i < sample.length; i += 10) {
     const batch = sample.slice(i, i + 10);
     const searches = batch.map(async (title) => {
       const data = await fetchTMDB(endpoint, { query: title });
-      const first = data?.results?.[0];
+      // Filter for actual movies or tv shows (exclude persons)
+      const first = data?.results?.find((r: any) => r.media_type === 'movie' || r.media_type === 'tv');
+      
       if (first && !seenIds.has(first.id)) {
         seenIds.add(first.id);
-        results.push({ ...first, media_type: mediaType });
+        // Ensure result has the correct media_type
+        results.push({ ...first, media_type: first.media_type });
       }
     });
     await Promise.all(searches);

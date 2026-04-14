@@ -177,7 +177,9 @@ const CatalogUpdates = ({ onMovieClick }: CatalogUpdatesProps) => {
   const handlePosterClick = (title: string) => {
     const entry = posterMap[title];
     if (entry?.tmdbMovie && onMovieClick) {
-      onMovieClick(entry.tmdbMovie);
+      // Injeta o título exato do M3U para que o MovieModal não falhe a checagem de match por causa de diferenças TMDB vs IPTV
+      const movieToPass = { ...entry.tmdbMovie, _exactM3uTitle: title };
+      onMovieClick(movieToPass as TMDBMovie);
     }
   };
 

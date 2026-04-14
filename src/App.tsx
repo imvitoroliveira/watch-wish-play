@@ -4,10 +4,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { VideoProvider } from "@/contexts/VideoContext";
 import { PWAPrompts } from "@/components/PWAPrompts";
 import ClientLogin from "./pages/ClientLogin";
 import AdminPanel from "./pages/AdminPanel";
 import Dashboard from "./pages/Dashboard";
+import DashboardV2 from "./pages/DashboardV2";
+import VersionSelect from "./pages/VersionSelect";
 import ExpiredScreen from "./pages/ExpiredScreen";
 import NotFound from "./pages/NotFound";
 
@@ -17,18 +20,22 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
-        <Toaster />
-        <Sonner />
-        <PWAPrompts />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<ClientLogin />} />
-            <Route path="/gestor" element={<AdminPanel />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/expirado" element={<ExpiredScreen />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+        <VideoProvider>
+          <Toaster />
+          <Sonner />
+          <PWAPrompts />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<ClientLogin />} />
+              <Route path="/gestor" element={<AdminPanel />} />
+              <Route path="/version-select" element={<VersionSelect />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/dashboard-v2" element={<DashboardV2 />} />
+              <Route path="/expirado" element={<ExpiredScreen />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </VideoProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>

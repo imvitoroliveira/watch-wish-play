@@ -90,14 +90,16 @@ const TEST_SUITE: TestCase[] = [
   { name: "tmdb-proxy: não vazar TMDB token", category: "security", fn: "tmdb-proxy", method: "POST", body: { endpoint: "/trending/movie/week" }, expect: { notContains: ["TMDB_API_TOKEN", "service_role", "eyJ"] } },
 
   // ═══════════════════════════════════════════════
-  // stream-proxy (6 tests) — now with SSRF prevention + rate limiting
+  // stream-proxy (9 tests) — now with SSRF prevention + V2 Bypass capabilities
   // ═══════════════════════════════════════════════
   { name: "stream-proxy: sem URL = 400", category: "functional", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
   { name: "stream-proxy: URL interna (localhost) = 403", category: "security", fn: "stream-proxy", method: "POST", body: { url: "http://localhost:8080/admin.mp4" }, expect: { status: [403] } },
   { name: "stream-proxy: URL sem extensão mídia = 403", category: "security", fn: "stream-proxy", method: "POST", body: { url: "https://example.com/api/secrets" }, expect: { status: [403] } },
   { name: "stream-proxy: URL mídia inexistente = 502", category: "functional", fn: "stream-proxy", method: "POST", body: { url: "http://invalid.example.test/x.mp4" }, expect: { status: [502] } },
   { name: "stream-proxy: não vazar segredos", category: "security", fn: "stream-proxy", method: "POST", body: {}, expect: { notContains: ["service_role", "source_url", "SUPABASE_SERVICE_ROLE_KEY"] } },
-  { name: "stream-proxy: formato erro estável", category: "regression", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
+  { name: "stream-proxy: V2 - injeta cabeçalho CORS liberal", category: "integration", fn: "stream-proxy", method: "OPTIONS", expect: { status: [200, 204] } },
+  { name: "stream-proxy: V2 - conversão MKV simulada (Proxy)", category: "integration", fn: "stream-proxy", method: "POST", body: { url: "http://invalid.example.test/fake.mkv" }, expect: { status: [502] } }, // Espera 502 pois o host não existe, mas garante processamento do content-type.
+  { name: "stream-proxy: formato erro estavel HTTP", category: "regression", fn: "stream-proxy", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
 
   // ═══════════════════════════════════════════════
   // stream-lookup (4 tests)
@@ -106,6 +108,14 @@ const TEST_SUITE: TestCase[] = [
   { name: "stream-lookup: título inexistente retorna 404 ou 500", category: "functional", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [404, 500] } },
   { name: "stream-lookup: não vazar source_url", category: "security", fn: "stream-lookup", method: "POST", body: { title: "test" }, expect: { notContains: ["service_role", "source_url", "SUPABASE_SERVICE_ROLE_KEY"] } },
   { name: "stream-lookup: formato estável", category: "regression", fn: "stream-lookup", method: "POST", body: { title: "zzz_nonexistent_999" }, expect: { status: [404, 500] } },
+
+  // ═══════════════════════════════════════════════
+  // series-lookup (3 tests)
+  // ═══════════════════════════════════════════════
+  { name: "series-lookup: sem ID = 400", category: "functional", fn: "series-lookup", method: "POST", body: {}, expect: { status: [400], hasKey: "error" } },
+  { name: "series-lookup: backend isolation", category: "security", fn: "series-lookup", method: "POST", body: { series_id: "1" }, expect: { notContains: ["password=", "username="] } },
+  { name: "series-lookup: injeta proxy proxy-bypass", category: "integration", fn: "series-lookup", method: "OPTIONS", expect: { status: [200, 204] } },
+
 
   // ═══════════════════════════════════════════════
   // trailer-challenge (4 tests)

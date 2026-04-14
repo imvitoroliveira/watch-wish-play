@@ -1,3 +1,16 @@
+/**
+ * DashboardV2 — Dashboard com Player In-App (GlobalPlayer)
+ * 
+ * Este é uma cópia funcional do Dashboard original com a adição do
+ * GlobalPlayer integrado. Todas as funcionalidades da V1 estão preservadas.
+ * 
+ * Diferenças em relação ao Dashboard.tsx (V1):
+ * - GlobalPlayer renderizado no final do layout
+ * - Futuras funcionalidades V2 serão adicionadas AQUI
+ * 
+ * IMPORTANTE: NÃO modifique o Dashboard.tsx original (V1).
+ * Todas as novas features devem ser adicionadas neste arquivo.
+ */
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,13 +27,13 @@ import AgendaJogos from '@/components/AgendaJogos';
 import CineTrailerChallenge from '@/components/CineTrailerChallenge';
 import CatalogUpdates from '@/components/CatalogUpdates';
 import RenewalModal from '@/components/RenewalModal';
+import GlobalPlayer from '@/components/GlobalPlayer';
+import AssistirPortal from '@/components/AssistirPortal';
 import { useBillingEnabled } from '@/hooks/useBillingEnabled';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
-
-
 import { supabase } from '@/integrations/supabase/client';
 
-const Dashboard = () => {
+const DashboardV2 = () => {
   const { currentClient, isClient, isExpiringSoon, logout } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('home');
@@ -64,6 +77,10 @@ const Dashboard = () => {
     challengeKey,
     setChallengeKey,
     m3uNormalized,
+    m3uMovies,
+    m3uSeries,
+    searchFullM3U,
+    m3uStats
   } = useMovieState();
 
   // Heartbeat: send presence every 3 minutes
@@ -79,7 +96,6 @@ const Dashboard = () => {
     const interval = setInterval(sendHeartbeat, 3 * 60 * 1000);
     return () => clearInterval(interval);
   }, [currentClient?.u]);
-
 
   useEffect(() => {
     if (!isClient) navigate('/');
@@ -97,6 +113,25 @@ const Dashboard = () => {
       />
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {tab === 'assistir' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <AssistirPortal
+              m3uMovies={m3uMovies}
+              m3uSeries={m3uSeries}
+              favorites={favorites}
+              watchedSet={watchedSet}
+              contentAlerts={contentAlerts}
+              onMovieClick={setSelectedMovie}
+              onToggleFavorite={toggleFavorite}
+              onToggleWatched={toggleWatched}
+              onToggleContentAlert={toggleContentAlert}
+              getAvailability={getAvailability}
+              searchFullM3U={searchFullM3U}
+              m3uStats={m3uStats}
+            />
+          </motion.div>
+        )}
+
         {tab === 'home' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <CineTrailerChallenge key={challengeKey} />
@@ -170,7 +205,6 @@ const Dashboard = () => {
           </motion.div>
         )}
 
-
         {tab === 'support' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <SupportTickets />
@@ -198,8 +232,11 @@ const Dashboard = () => {
           onClose={dismissRenewalPopup}
         />
       )}
+
+      {/* 🎬 V2 EXCLUSIVO: GlobalPlayer — player in-app fullscreen + mini-player */}
+      <GlobalPlayer />
     </div>
   );
 };
 
-export default Dashboard;
+export default DashboardV2;

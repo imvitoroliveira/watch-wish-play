@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getTrending, TMDBMovie, searchMovies, searchByTitles } from '@/lib/tmdb';
-import { fetchM3UCatalog, normalizeTitle } from '@/lib/m3u-parser';
+import { fetchM3UCatalog, normalizeTitle, parseCatalogItem } from '@/lib/m3u-parser';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -39,6 +39,7 @@ export function useMovieState() {
   const [m3uConfirmedMovies, setM3uConfirmedMovies] = useState<TMDBMovie[]>([]);
   const [contentAlerts, setContentAlerts] = useState<Set<number>>(new Set());
   const [challengeKey, setChallengeKey] = useState(0);
+  const [m3uStats, setM3uStats] = useState<any>(null);
 
   // Trending with React Query cache
   const { data: movies = [], isLoading: moviesLoading } = useQuery({
@@ -48,46 +49,110 @@ export function useMovieState() {
     gcTime: 30 * 60 * 1000,
   });
 
+  const [m3uMovies, setM3uMovies] = useState<TMDBMovie[]>([]);
+  const [m3uSeries, setM3uSeries] = useState<TMDBMovie[]>([]);
+
   // Load M3U catalog
   useEffect(() => {
     const loadM3U = async () => {
-      // Usar a Nova Estrutura Híbrida: Baixamos os Títulos+IDs Globais
-      const { titles: m3uTitles } = await fetchM3UCatalog();
-      if (m3uTitles.length > 0) {
-        setHasM3U(true);
-        const map = new Map<string, { id: string, isSeries: boolean }>();
-        const pureTitles: string[] = [];
+      try {
+        const { titles: m3uTitles, stats } = await fetchM3UCatalog();
+        if (stats) setM3uStats(stats);
+        if (m3uTitles.length > 0) {
+          setHasM3U(true);
+          const map = new Map<string, { id: string, isSeries: boolean }>();
+          const movieTitles: string[] = [];
+          const seriesTitles: string[] = [];
 
-        for (const t of m3uTitles) {
-          if (t.includes('|')) {
-            const parts = t.split('|');
-            const normalized = normalizeTitle(parts[0]);
-            const existing = map.get(normalized);
+          for (const t of m3uTitles) {
+            // Suporte a AMBOS os formatos:
+            // Novo: "0|12345||Nome do Filme" | "1|67890||Nome da Série" | "2|11111|5|Canal"
+            // Antigo: "Nome do Filme" (sem prefixo)
+            const firstPipe = t.indexOf('|');
             
-            // Só adiciona ou sobrescreve se o novo item tiver ID ou se o anterior não tinha
-            if (!existing || parts[1]) {
-              map.set(normalized, { id: parts[1], isSeries: parts[2] === '1' });
+            if (firstPipe > 0 && firstPipe <= 2 && ['0','1','2'].includes(t[0])) {
+              // === FORMATO NOVO: Tipo|ID|CatID|Nome ===
+              const { type, id, catId, name } = parseCatalogItem(t);
+              if (type === '2') continue; // Canais ao vivo não entram no mapa de VOD
+              
+              const normalized = normalizeTitle(name);
+              const isSeries = type === '1';
+              if (id && normalized) {
+                map.set(normalized, { id, isSeries });
+                if (isSeries) seriesTitles.push(name);
+                else movieTitles.push(name);
+              }
+            } else {
+              // === FORMATO ANTIGO: Nome puro ===
+              // Canais ao vivo têm palavras-chave específicas; todo o resto é VOD
+              const isLikelyLive = /\b(globo|sbt|record|band|tv|canal|sportv|premiere|espn|uhf|hbo|max)\b/i.test(t);
+              if (isLikelyLive) continue;
+              
+              const normalized = normalizeTitle(t);
+              if (normalized && !map.has(normalized)) {
+                map.set(normalized, { id: '', isSeries: false });
+                movieTitles.push(t);
+              }
             }
-            pureTitles.push(parts[0]);
-          } else {
-            const normalized = normalizeTitle(t);
-            // Só adiciona se o título ainda não existir no mapa (evita apagar ID de uma entrada anterior com pipe)
-            if (!map.has(normalized)) {
-              map.set(normalized, { id: '', isSeries: false });
-            }
-            pureTitles.push(t);
           }
-        }
 
         setM3uNormalized(map);
 
-        // Amostragem para VODs Home (pega os primeiros 80 limpos)
-        const m3uMovies = await searchByTitles(pureTitles, 80);
-        setM3uConfirmedMovies(m3uMovies);
+        // Amostragem para VODs Home
+        const [foundMovies, foundSeries] = await Promise.all([
+          searchByTitles(movieTitles, 150, 'movie'),
+          searchByTitles(seriesTitles, 150, 'tv')
+        ]);
+        
+        const foundMoviesWithNames = foundMovies.map(m => {
+          const tMatch = movieTitles.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || ''));
+          return { ...m, _exactM3uTitle: tMatch || m.title || m.name };
+        });
+        const foundSeriesWithNames = foundSeries.map(m => {
+          const tMatch = seriesTitles.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || ''));
+          return { ...m, _exactM3uTitle: tMatch || m.title || m.name };
+        });
+        
+        setM3uMovies(foundMoviesWithNames);
+        setM3uSeries(foundSeriesWithNames);
+          setM3uConfirmedMovies([...foundMoviesWithNames, ...foundSeriesWithNames].sort(() => Math.random() - 0.5));
+        } // Fim do if (m3uTitles.length > 0)
+      } catch (e) {
+        console.error("Erro ao carregar M3U:", e);
       }
     };
     loadM3U();
   }, [currentClient?.m3u]);
+
+  const searchFullM3U = useCallback(async (query: string, type: 'movie' | 'tv'): Promise<TMDBMovie[]> => {
+    if (!query.trim()) return [];
+    
+    const normalizedQuery = normalizeTitle(query);
+    const m3uMatches: string[] = [];
+    
+    // 1. Buscamos no mapa de títulos do M3U (milhares de itens)
+    for (const [title] of m3uNormalized.entries()) {
+      if (title.includes(normalizedQuery)) {
+        m3uMatches.push(title);
+      }
+      if (m3uMatches.length > 30) break;
+    }
+
+    if (m3uMatches.length === 0) return [];
+    
+    // 2. Buscamos metadados no TMDB para esses nomes
+    const results = await searchByTitles(m3uMatches, 30);
+    
+    // 3. Injetamos o título exato do M3U para garantir match perfeito no MovieModal
+    const finalResults = results.map(m => {
+      // Tenta achar qual título do M3U originou este resultado (busca simples)
+      const exactMatch = m3uMatches.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || ''));
+      return { ...m, _exactM3uTitle: exactMatch || m.title || m.name };
+    });
+
+    // 4. Filtramos para garantir que o resultado bate com a categoria da aba (tv ou movie)
+    return finalResults.filter(m => m.media_type === type);
+  }, [m3uNormalized]);
 
   // Content alerts
   useEffect(() => {
@@ -153,9 +218,11 @@ export function useMovieState() {
     if (!hasM3U) return 'unknown';
     const title = movie.title || movie.name || '';
     const originalTitle = (movie as any).original_title || (movie as any).original_name || '';
+    const exactM3u = (movie as any)._exactM3uTitle || '';
     
     const hasMatch = m3uNormalized.has(normalizeTitle(title)) || 
-                     m3uNormalized.has(normalizeTitle(originalTitle));
+                     m3uNormalized.has(normalizeTitle(originalTitle)) ||
+                     (exactM3u && m3uNormalized.has(normalizeTitle(exactM3u)));
     
     return hasMatch ? 'available' : 'soon';
   }, [hasM3U, m3uNormalized]);
@@ -181,8 +248,12 @@ export function useMovieState() {
     getAvailability,
     contentAlerts,
     m3uConfirmedMovies,
+    m3uMovies,
+    m3uSeries,
+    searchFullM3U,
     challengeKey,
     setChallengeKey,
     m3uNormalized, // Exportamos o map para montar o Link Pessoal
+    m3uStats,      // Estatísticas para o Dashboard
   };
 }

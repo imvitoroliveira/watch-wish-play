@@ -1,8 +1,9 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "authorization, x-client-info, apikey, content-type, range, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+  "Access-Control-Max-Age": "86400",
 };
 
 // In-memory rate limiter: IP -> { count, resetAt }
@@ -40,8 +41,8 @@ function isStreamUrl(urlStr: string): boolean {
     const url = new URL(urlStr);
     // Must be http or https
     if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-    // Must look like a media file or HLS stream
-    return ALLOWED_STREAM_PATTERNS.some((p) => p.test(url.pathname + url.search));
+    // Remove strict file extension checks since XTREAM/IPTV Live/VOD routes often lack extensions (e.g. /username/password/12345)
+    return true;
   } catch {
     return false;
   }
@@ -49,18 +50,7 @@ function isStreamUrl(urlStr: string): boolean {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  // Rate limiting
-  const clientIP = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-                   req.headers.get("cf-connecting-ip") ||
-                   "unknown";
-  if (!checkRateLimit(clientIP)) {
-    return new Response(
-      JSON.stringify({ error: "Rate limit exceeded. Max 30 requests/minute." }),
-      { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
@@ -115,87 +105,101 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Convert .mkv to .mp4 for browser compatibility
-    const playableUrl = streamUrl.replace(/\.(mkv|avi|wmv|flv|mov)(\?|$)/i, '.mp4$2');
+    // IPTV servers são rígidos com a extensão no path. 
+    // O navegador Chrome/Edge suporta MKV nativamente se o codec for H.264/AAC.
+    const playableUrl = streamUrl;
     
-    console.log(`[stream-proxy] Proxying: ${playableUrl.substring(0, 100)}...`);
+    console.log(`[stream-proxy] Tunneling: ${playableUrl.substring(0, 80)}...`);
 
-    // Try fetching with various User-Agents and headers that IPTV servers expect
-    const headers: Record<string, string> = {
+    // Extract headers from client request to support seeking (Range)
+    const forwardHeaders: Record<string, string> = {
       "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
       "Accept": "*/*",
       "Connection": "keep-alive",
     };
 
-    // Extract range header from client request to support seeking
     const rangeHeader = req.headers.get("range");
     if (rangeHeader) {
-      headers["Range"] = rangeHeader;
+      forwardHeaders["Range"] = rangeHeader;
     }
 
-    let streamRes: Response;
-    try {
-      streamRes = await fetch(playableUrl, { headers, redirect: "follow" });
-    } catch (fetchErr: any) {
-      console.error(`[stream-proxy] Fetch error for ${playableUrl.substring(0, 80)}: ${fetchErr.message}`);
-      return new Response(
-        JSON.stringify({ error: `Upstream unreachable: ${fetchErr.message}` }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const streamRes = await fetch(playableUrl, { 
+      headers: forwardHeaders, 
+      redirect: "follow" 
+    });
+
+    if (!streamRes.ok) {
+      console.warn(`[stream-proxy] Upstream error: ${streamRes.status}`);
+      // Em caso de 401/403/404, repassamos o código mas sem corpo.
+      // Isso permite que o player (GlobalPlayer) detecte a falha e pule para a próxima rota.
+      return new Response(null, { 
+        status: streamRes.status, 
+        headers: corsHeaders 
+      });
     }
 
-    if (!streamRes.ok || !streamRes.body) {
-      console.error(`[stream-proxy] Upstream HTTP ${streamRes.status} for ${playableUrl.substring(0, 80)}`);
-      
-      // If mp4 fails, try the original URL
-      if (playableUrl !== streamUrl) {
-        console.log(`[stream-proxy] Retrying with original URL...`);
-        let retryRes: Response;
-        try {
-          retryRes = await fetch(streamUrl, { headers, redirect: "follow" });
-        } catch {
-          return new Response(
-            JSON.stringify({ error: `Upstream unreachable` }),
-            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
+    // Pass through relevant headers from upstream
+    const resHeaders = new Headers(corsHeaders);
+    
+    const headersToPass = [
+      "content-type",
+      "content-length",
+      "content-range",
+      "accept-ranges",
+      "cache-control",
+      "server"
+    ];
+
+    headersToPass.forEach(h => {
+      const val = streamRes.headers.get(h);
+      if (val) resHeaders.set(h, val);
+    });
+
+    // Se o upstream não mandar content-type, forçar video/mp4 (genérico para browsers)
+    if (!resHeaders.has("content-type")) {
+      resHeaders.set("content-type", playableUrl.includes(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp4");
+    }
+
+    console.log(`[stream-proxy] Resposta upstream: ${streamRes.status} | Type: ${resHeaders.get("content-type")}`);
+
+    // Middleware M3U8: Extrair texto e reescrever segmentos para forçar o proxy
+    if (playableUrl.toLowerCase().includes(".m3u8")) {
+      let m3u8Text = await streamRes.text();
+      const proxyBaseUrl = new URL(req.url).origin + new URL(req.url).pathname + "?url=";
+      const upstreamBaseUrl = playableUrl.substring(0, playableUrl.lastIndexOf("/") + 1);
+
+      const lines = m3u8Text.split("\n");
+      const rewrittenLines = lines.map(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+          // É uma URL de segmento (absoluta ou relativa)
+          let segmentUrl = trimmed;
+          if (!trimmed.startsWith("http")) {
+            segmentUrl = upstreamBaseUrl + trimmed;
+          }
+          return proxyBaseUrl + encodeURIComponent(segmentUrl);
         }
-        if (retryRes.ok && retryRes.body) {
-          const contentType = retryRes.headers.get("content-type") || "video/mp4";
-          const contentLength = retryRes.headers.get("content-length");
-          const resHeaders: Record<string, string> = {
-            ...corsHeaders,
-            "Content-Type": contentType,
-            "Cache-Control": "no-cache",
-          };
-          if (contentLength) resHeaders["Content-Length"] = contentLength;
-          if (retryRes.headers.get("accept-ranges")) resHeaders["Accept-Ranges"] = retryRes.headers.get("accept-ranges")!;
-          return new Response(retryRes.body, { status: retryRes.status, headers: resHeaders });
+        // Se a linha ditar outro playlist (M3U8 dentro de M3U8), a mesma regra se aplica!
+        if (trimmed.startsWith("#EXT-X-STREAM-INF")) {
+          return line;
         }
-        const retryBody = await retryRes.text().catch(() => "");
-        console.error(`[stream-proxy] Retry also failed: HTTP ${retryRes.status} ${retryBody.substring(0, 200)}`);
-      }
+        return line;
+      });
 
-      return new Response(
-        JSON.stringify({ error: `Upstream HTTP ${streamRes.status}` }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(rewrittenLines.join("\n"), { 
+        status: streamRes.status, 
+        headers: resHeaders 
+      });
     }
 
-    const contentType = streamRes.headers.get("content-type") || "video/mp4";
-    const contentLength = streamRes.headers.get("content-length");
+    // Para Filmes, Séries (.mp4, .mkv) apenas devolve o Stream Puro
+    return new Response(streamRes.body, { 
+      status: streamRes.status, 
+      headers: resHeaders 
+    });
 
-    const resHeaders: Record<string, string> = {
-      ...corsHeaders,
-      "Content-Type": contentType,
-      "Cache-Control": "no-cache",
-    };
-    if (contentLength) resHeaders["Content-Length"] = contentLength;
-    if (streamRes.headers.get("accept-ranges")) resHeaders["Accept-Ranges"] = streamRes.headers.get("accept-ranges")!;
-    if (streamRes.headers.get("content-range")) resHeaders["Content-Range"] = streamRes.headers.get("content-range")!;
-
-    return new Response(streamRes.body, { status: streamRes.status, headers: resHeaders });
   } catch (error) {
-    console.error("[stream-proxy] Error:", (error as Error).message);
+    console.error(`[stream-proxy] Falha crítica:`, (error as Error).message);
     return new Response(
       JSON.stringify({ error: (error as Error).message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

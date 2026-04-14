@@ -11,13 +11,17 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const TMDB_TOKEN = Deno.env.get('TMDB_API_TOKEN');
-  if (!TMDB_TOKEN) {
+  const keysStr = Deno.env.get('TMDB_API_KEYS') || Deno.env.get('TMDB_API_TOKEN');
+  if (!keysStr) {
     return new Response(JSON.stringify({ error: 'TMDB token not configured' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
+  
+  const tmdbKeys = keysStr.split(',').map(k => k.trim()).filter(Boolean);
+  // Simple random rotation for now
+  const TMDB_TOKEN = tmdbKeys[Math.floor(Math.random() * tmdbKeys.length)];
 
   try {
     const { endpoint, params } = await req.json();

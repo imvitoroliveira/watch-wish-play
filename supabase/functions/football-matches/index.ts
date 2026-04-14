@@ -43,17 +43,42 @@ const REJECTED_KEYWORDS = [
   "frauen", "women", "feminino", "reserve", "youth", "amateur", "group stage",
 ];
 
+function normalizeText(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+const PRIORITY_KEYWORDS_NORMALIZED = PRIORITY_KEYWORDS.map(normalizeText);
+const SECONDARY_KEYWORDS_NORMALIZED = SECONDARY_KEYWORDS.map(normalizeText);
+const REJECTED_KEYWORDS_NORMALIZED = REJECTED_KEYWORDS.map(normalizeText);
+
 function classifyLeague(name: string, leagueId?: number): 'priority' | 'secondary' | 'rejected' {
-  const lower = name.toLowerCase().trim();
-  for (const ex of REJECTED_KEYWORDS) { if (lower.includes(ex)) return 'rejected'; }
+  const lower = normalizeText(name);
+  for (const ex of REJECTED_KEYWORDS_NORMALIZED) { if (lower.includes(ex)) return 'rejected'; }
   if (lower.includes("caf champions")) return 'rejected';
 
-  for (const kw of PRIORITY_KEYWORDS) {
-    if (lower === kw || lower.startsWith(kw)) return 'priority';
+  // If we have an exact ID from RapidAPI or APIFootball, respect it first
+  if (leagueId && leagueId > 0) {
+    const priorityIds = [71, 72, 73, 625, 13, 11, 535, 34, 10, 2, 3, 1, 480, 352];
+    const secondaryIds = [140, 135, 39];
+    if (priorityIds.includes(leagueId)) return 'priority';
+    if (secondaryIds.includes(leagueId)) return 'secondary';
   }
-  for (const kw of SECONDARY_KEYWORDS) {
+
+  // Relaxed string matching to catch variations like "CONMEBOL Libertadores" or "Paulista - A1"
+  if (lower.includes("libertadores") || lower.includes("sul-americana") || lower.includes("sudamericana") ||
+      lower.includes("paulista") || lower.includes("carioca") || lower.includes("copa do brasil") ||
+      lower.includes("champions league")) {
+    return 'priority';
+  }
+
+  for (const kw of PRIORITY_KEYWORDS_NORMALIZED) {
+    if (lower === kw || lower.startsWith(kw + " ") || lower.startsWith(kw + "-")) return 'priority';
+  }
+  
+  for (const kw of SECONDARY_KEYWORDS_NORMALIZED) {
     if (lower.includes(kw)) return 'secondary';
   }
+  
   return 'rejected';
 }
 
@@ -599,8 +624,12 @@ async function fetchFromTheSportsDB(dateStr: string): Promise<any[] | null> {
 // SOURCE 4: APIFootball.com (free but limited)
 // ═══════════════════════════════════════════════════════════════════
 async function fetchFromAPIFootball(dateStr: string): Promise<any[] | null> {
-  const apiKey = Deno.env.get("APIFOOTBALL_COM_KEY");
-  if (!apiKey) { console.warn("[Source4] APIFOOTBALL_COM_KEY not set"); return null; }
+  const keysStr = Deno.env.get("APIFOOTBALL_COM_KEYS") || Deno.env.get("APIFOOTBALL_COM_KEY");
+  if (!keysStr) { console.warn("[Source4] APIFOOTBALL_COM_KEYS not set"); return null; }
+  
+  const apiKeys = keysStr.split(',').map(k => k.trim()).filter(Boolean);
+  // Pick one randomly for rotation
+  const apiKey = apiKeys[Math.floor(Math.random() * apiKeys.length)];
 
   try {
     console.log(`[Source4-APIFootball] Fetching for ${dateStr}...`);
@@ -744,7 +773,7 @@ Deno.serve(async (req) => {
     const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     const isCronRequest = req.headers.get("x-cron-source") === "pg_cron";
 
-    // For non-cron requests, just return current data from jogos_ativos
+    // For non-cron requests, just return current data from jogos_ativos if it exists
     if (!isCronRequest) {
       const { data } = await supabase
         .from("jogos_ativos")
@@ -753,9 +782,13 @@ Deno.serve(async (req) => {
         .order("status", { ascending: true })
         .order("horario_inicio", { ascending: true });
 
-      return new Response(JSON.stringify(data || []), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      if (data && data.length > 0) {
+        return new Response(JSON.stringify(data), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      console.log(`[football] No DB data for today (${brDate}). Running manual scrape...`);
     }
 
     // ── CRON: Interval is 5min, no probabilistic skip needed ──
@@ -773,9 +806,11 @@ Deno.serve(async (req) => {
     }
 
     // ── JITTER: Random delay 5-40 seconds (anti-bot pattern breaking) ──
-    const jitterMs = 5000 + Math.floor(Math.random() * 35000);
-    console.log(`[Jitter] Aguardando ${(jitterMs / 1000).toFixed(1)}s antes de disparar...`);
-    await sleep(jitterMs);
+    const jitterMs = isCronRequest ? 5000 + Math.floor(Math.random() * 35000) : 0;
+    if (jitterMs > 0) {
+      console.log(`[Jitter] Aguardando ${(jitterMs / 1000).toFixed(1)}s antes de disparar...`);
+      await sleep(jitterMs);
+    }
 
     // ── Multi-source cascade with key rotation ──
     console.log(`[Scraper] Starting multi-source fetch for ${brDate}`);
@@ -908,6 +943,14 @@ Deno.serve(async (req) => {
       { cache_date: brDate, matches: legacyMatches, fetched_at: new Date().toISOString() },
       { onConflict: "cache_date" }
     );
+
+    if (!isCronRequest) {
+      // Mapeamento necessário para UI matches
+      const { data } = await supabase.from("jogos_ativos").select("*").eq("data_jogo", brDate).order("horario_inicio", { ascending: true });
+      return new Response(JSON.stringify(data || []), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
 
     return new Response(JSON.stringify({
       success: true, source, count: rawMatches.length,

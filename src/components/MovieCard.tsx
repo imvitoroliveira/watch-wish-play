@@ -51,12 +51,21 @@ const MovieCard = ({ movie, onClick, isFavorite, isWatched, onToggleFavorite, on
       </div>
 
       {/* Overlay on hover */}
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
+        {availability === 'available' && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-14 h-14 rounded-full bg-primary/90 flex items-center justify-center glow-red transform scale-90 group-hover:scale-100 transition-transform duration-300 shadow-2xl">
+              <svg className="w-7 h-7 text-primary-foreground fill-current ml-1" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-1 mb-1">
           <Star className="w-3.5 h-3.5 text-accent fill-accent" />
           <span className="text-xs font-medium text-accent">{movie.vote_average?.toFixed(1)}</span>
         </div>
-        <p className="text-sm font-semibold text-foreground line-clamp-2">{title}</p>
+        <p className="text-sm font-semibold text-white line-clamp-2 leading-tight">{title}</p>
       </div>
 
       {/* Quick action buttons - visible on hover AND touch (always visible on mobile) */}

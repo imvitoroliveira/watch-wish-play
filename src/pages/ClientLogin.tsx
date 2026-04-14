@@ -9,22 +9,22 @@ import eagleLogo from '@/assets/eagle-logo.png';
 
 const REMEMBER_KEY = 'msc_remember_me';
 
-function getSavedUsername(): string | null {
+function getSavedCredentials(): { u: string, p: string } | null {
   try {
     const saved = localStorage.getItem(REMEMBER_KEY);
     if (!saved) return null;
     const parsed = JSON.parse(saved);
-    // compatibilidade retroativa: suporte ao formato antigo { username, password }
-    return typeof parsed === 'string' ? parsed : (parsed?.username || null);
+    if (typeof parsed === 'string') return { u: parsed, p: '' };
+    return { u: parsed.username || parsed.u || '', p: parsed.password || parsed.p || '' };
   } catch { return null; }
 }
 
 const ClientLogin = () => {
-  const savedUsername = getSavedUsername();
-  const [username, setUsername] = useState(savedUsername || '');
-  const [password, setPassword] = useState(''); // senha jamais pré-preenchida
+  const saved = getSavedCredentials();
+  const [username, setUsername] = useState(saved?.u || '');
+  const [password, setPassword] = useState(saved?.p || '');
   const [showPass, setShowPass] = useState(false);
-  const [rememberMe, setRememberMe] = useState(!!savedUsername);
+  const [rememberMe, setRememberMe] = useState(!!saved);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { loginClient, clientsLoading } = useAuth();
@@ -45,12 +45,19 @@ const ClientLogin = () => {
       const result = await loginClient(trimmedUser, trimmedPass);
       if (result.success) {
         if (rememberMe) {
-          // Salva apenas o usuário — senha nunca é persistida no browser
-          localStorage.setItem(REMEMBER_KEY, JSON.stringify({ username: trimmedUser }));
+          localStorage.setItem(REMEMBER_KEY, JSON.stringify({ u: trimmedUser, p: trimmedPass }));
         } else {
           localStorage.removeItem(REMEMBER_KEY);
         }
-        navigate('/dashboard');
+        // Checa se já tem versão escolhida — se sim, pula direto
+        const savedVersion = localStorage.getItem('msc_app_version');
+        if (savedVersion === 'v1') {
+          navigate('/dashboard');
+        } else if (savedVersion === 'v2') {
+          navigate('/dashboard-v2');
+        } else {
+          navigate('/version-select');
+        }
       } else if (result.reason === 'expired') {
         navigate('/expirado');
       } else if (result.reason === 'already_online') {

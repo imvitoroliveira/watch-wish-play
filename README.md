@@ -59,7 +59,7 @@ cp .env.example .env
 npm run dev
 ```
 
-O app estará disponível em `http://localhost:8080`
+O app estará disponível em `http://localhost:8081`
 
 ---
 
@@ -149,10 +149,10 @@ watch-wish-play/
 ┌─────────────────────────────────────────────────────┐
 │                   NAVEGADOR (PWA)                    │
 │                                                      │
-│  React App                                           │
+│  React App (Player V2 In-App com PiP Unificado)      │
 │  ├── AuthContext  →  estado de login (sem senha)     │
 │  ├── React Query →  cache de dados (TMDB, etc.)      │
-│  └── localStorage →  preferências (SEM senhas)      │
+│  └── VideoContext →  estado global de reprodução     │
 └────────────────────┬────────────────────────────────┘
                      │ HTTPS
 ┌────────────────────▼────────────────────────────────┐
@@ -163,22 +163,27 @@ watch-wish-play/
 │  Conteúdo:        tmdb-proxy, football-matches       │
 │  Notificações:    push-test, content-alerts          │
 │  Pagamentos:      cakto-webhook, abacatepay-webhook  │
-│  Integrações:     google-sheets-sync, n8n-proxy      │
-│  Sistema:         app-settings, user-presence        │
+│  API Streaming:   stream-lookup, stream-proxy        │
 └────────────────────┬────────────────────────────────┘
-                     │
+                     │ API Proxy Header Builder
 ┌────────────────────▼────────────────────────────────┐
+│             CLOUDFLARE WORKER (CORS BYPASS)           │
+│  → Modifica headers via proxy (A-C-A-O: *)            │
+│  → Mascara o User-Agent (VLC/LibVLC)                  │
+│  → Converte contentType mkv -> video/mp4              │
+└────────────────────┬────────────────────────────────┘
+                     │ Chamada limpa (sem rastros web)
+┌────────────────────▼────────────────────────────────┐
+│             SERVIDORES IPTV TERCEIRIZADOS (FONTE)     │
+└────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
 │          SUPABASE POSTGRESQL (Banco de Dados)         │
-│                                                      │
-│  Tabelas principais:                                 │
 │  ├── clients          → lista de assinantes          │
 │  ├── m3u_catalog      → catálogo M3U processado      │
 │  ├── m3u_updates      → histórico de atualizações    │
-│  ├── user_presence    → heartbeat dos usuários       │
-│  ├── content_alerts   → alertas de chegada de conteúdo│
-│  ├── support_tickets  → tickets de suporte           │
-│  └── app_settings     → configurações globais        │
-└────────────────────────────────────────────────────┘
+│  └── [outras tabelas...]                              │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---

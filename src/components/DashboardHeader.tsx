@@ -9,10 +9,11 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { supabase } from '@/integrations/supabase/client';
 import { getLastSeenDate } from '@/components/CatalogUpdates';
 
-export type Tab = 'home' | 'watchlist' | 'roleta' | 'jogos' | 'updates' | 'support';
+export type Tab = 'home' | 'assistir' | 'watchlist' | 'roleta' | 'jogos' | 'updates' | 'support';
 
 const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'home', label: 'Explorar', icon: <Film className="w-4 h-4" /> },
+  { id: 'home', label: 'Início', icon: <Search className="w-4 h-4" /> },
+  { id: 'assistir', label: 'Categorias', icon: <Film className="w-4 h-4" /> },
   { id: 'watchlist', label: 'Minha Lista', icon: <Heart className="w-4 h-4" /> },
   { id: 'roleta', label: 'Cine-Roleta', icon: <Dices className="w-4 h-4" /> },
   { id: 'jogos', label: 'Agenda Esportiva', icon: <Trophy className="w-4 h-4" /> },

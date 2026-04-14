@@ -60,8 +60,18 @@ export function isInM3UCatalog(tmdbTitle: string, m3uTitlesNormalized: Set<strin
   return m3uTitlesNormalized.has(normalized);
 }
 
+// Helper robusto para extrair dados de uma linha do catálogo (formato: Tipo|ID|CatID|Nome)
+export function parseCatalogItem(t: string): { type: string, id: string, catId: string, name: string } {
+  const parts = t.split('|');
+  const type = parts[0] || '';
+  const id = parts[1] || '';
+  const catId = parts[2] || '';
+  const name = parts.slice(3).join('|'); // Re-junta o resto como nome (caso tenha pipes no nome)
+  return { type, id, catId, name };
+}
+
 // Fetch catalog from backend (DB-cached)
-export async function fetchM3UCatalog(): Promise<{ titles: string[]; total: number; source_url: string | null; updated_at: string | null }> {
+export async function fetchM3UCatalog(): Promise<{ titles: string[]; total: number; source_url: string | null; updated_at: string | null; stats?: any }> {
   try {
     const { data, error } = await supabase.functions.invoke('parse-m3u', {
       method: 'GET',
@@ -71,7 +81,22 @@ export async function fetchM3UCatalog(): Promise<{ titles: string[]; total: numb
     if (titles.length > 0) {
       localStorage.setItem('msc_m3u_titles', JSON.stringify(titles));
     }
-    return { titles, total: data?.total || titles.length, source_url: null, updated_at: data?.updated_at || null };
+
+    let stats = data?.stats;
+    if (!stats && titles.length > 0) {
+      const movieCount = titles.filter(t => t.startsWith('0|')).length;
+      const seriesCount = titles.filter(t => t.startsWith('1|')).length;
+      const liveCount = titles.filter(t => t.startsWith('2|')).length;
+      stats = { movieCount, seriesCount, liveCount, total: titles.length, episodes: 0 };
+    }
+
+    return { 
+      titles, 
+      total: stats?.total || titles.length, 
+      source_url: null, 
+      updated_at: data?.updated_at || null,
+      stats: stats
+    };
   } catch (e) {
     const cached = getStoredM3UTitles();
     return { titles: cached, total: cached.length, source_url: null, updated_at: null };
@@ -101,17 +126,36 @@ export async function fetchRandomM3UTitles(count: number): Promise<string[]> {
 }
 
 // Process M3U via backend edge function
-export async function processM3UViaBackend(url?: string, content?: string): Promise<{ success: boolean; count: number; rawCount?: number; error?: string }> {
+export async function processM3UViaBackend(url?: string, content?: string): Promise<{ success: boolean; count: number; rawCount?: number; stats?: any; error?: string; rawResponse?: any }> {
   try {
     const { data, error } = await supabase.functions.invoke('parse-m3u', {
       method: 'POST',
       body: { url, content },
     });
     if (error) throw error;
+    
+    // Salvar localmente para atualização imediata dos grids e componentes
     if (data?.titles) {
       localStorage.setItem('msc_m3u_titles', JSON.stringify(data.titles));
     }
-    return { success: true, count: data?.count || 0, rawCount: data?.raw_count || 0 };
+
+    // Fallback: se o backend não enviou stats (versão antiga), calculamos aqui
+    let stats = data?.stats;
+    if (!stats && data?.titles) {
+      const titles = data.titles as string[];
+      const movieCount = titles.filter(t => t.startsWith('0|')).length;
+      const seriesCount = titles.filter(t => t.startsWith('1|')).length;
+      const liveCount = titles.filter(t => t.startsWith('2|')).length;
+      stats = { movieCount, seriesCount, liveCount, total: titles.length, episodes: 0 };
+    }
+
+    return { 
+      success: true, 
+      count: stats?.total || data?.titles?.length || 0, 
+      rawCount: stats?.rawTotal || 0,
+      stats: stats,
+      rawResponse: data // Retornamos para diagnóstico no AdminPanel
+    };
   } catch (e: any) {
     return { success: false, count: 0, error: e.message || 'Erro ao processar M3U' };
   }

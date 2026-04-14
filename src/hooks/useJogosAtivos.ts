@@ -22,6 +22,8 @@ export interface JogoAtivo {
   fonte: string;
   atualizado_em: string;
 }
+// Flag para evitar que o self-healing dispare repetidamente a cada 5s de refetch
+let selfHealingAttempted = false;
 
 async function fetchJogosAtivos(): Promise<JogoAtivo[]> {
   const brDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -37,7 +39,26 @@ async function fetchJogosAtivos(): Promise<JogoAtivo[]> {
     throw error;
   }
 
-  const jogos = (data || []) as unknown as JogoAtivo[];
+  let jogos = (data || []) as unknown as JogoAtivo[];
+
+  // Self-healing: se a tabela está vazia e ainda não tentamos, invocar a edge function para popular
+  if (jogos.length === 0 && !selfHealingAttempted) {
+    selfHealingAttempted = true;
+    console.log('[Jogos] Tabela vazia — disparando football-matches para self-healing...');
+    try {
+      const { data: edgeData, error: edgeError } = await supabase.functions.invoke('football-matches');
+      if (!edgeError && Array.isArray(edgeData) && edgeData.length > 0) {
+        console.log(`[Jogos] Self-healing OK: ${edgeData.length} jogos recebidos da edge function`);
+        jogos = edgeData as unknown as JogoAtivo[];
+      } else if (edgeError) {
+        console.warn('[Jogos] Self-healing falhou:', edgeError);
+      } else {
+        console.log('[Jogos] Self-healing: nenhum jogo retornado (APIs podem não ter jogos hoje)');
+      }
+    } catch (e) {
+      console.warn('[Jogos] Self-healing: erro ao invocar edge function:', e);
+    }
+  }
 
   // Sort: ao_vivo first, then programado, then finalizado
   const statusOrder: Record<string, number> = {

@@ -21,7 +21,7 @@ import { useBillingEnabled, useBillingUpdater } from '@/hooks/useBillingEnabled'
 const AdminPanel = () => {
   const { isAdmin, loginAdmin, logout, uploadClientList, clientList, getAdminAuth } = useAuth();
   const [user, setUser] = useState(() => localStorage.getItem('msc_admin_user') || '');
-  const [pass, setPass] = useState(''); // senha jamais pré-preenchida do localStorage
+  const [pass, setPass] = useState(() => localStorage.getItem('msc_admin_pass') || '');
   const [error, setError] = useState('');
   const [rememberAdmin, setRememberAdmin] = useState(() => !!localStorage.getItem('msc_admin_user'));
   const fileRef = useRef<HTMLInputElement>(null);
@@ -33,6 +33,8 @@ const AdminPanel = () => {
   const [m3uLoading, setM3uLoading] = useState(false);
   const [m3uTitleCount, setM3uTitleCount] = useState(0);
   const [m3uLastUpdate, setM3uLastUpdate] = useState<string | null>(null);
+  const [m3uStats, setM3uStats] = useState<any>(null);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
   
   // Google Sheets states
   const [spreadsheetId, setSpreadsheetId] = useState(() => localStorage.getItem('msc_spreadsheet_id') || '1gtVH1bE8ucMUlBZvnrA4C1q6NdIzaszE28xedXBKnM8');
@@ -127,9 +129,11 @@ const AdminPanel = () => {
       try {
         const catalog = await fetchM3UCatalog();
         setM3uTitleCount(catalog.titles.length);
+        if (catalog.stats) {
+          setM3uStats(catalog.stats);
+        }
         if (catalog.titles.length > 0) {
-          // Use current time as approximate - exact time not needed on frontend
-          setM3uLastUpdate(new Date().toISOString());
+          setM3uLastUpdate(catalog.updated_at || new Date().toISOString());
         }
       } catch {
         // Silent fail
@@ -167,6 +171,7 @@ const AdminPanel = () => {
       }
 
       const result = await processM3UViaBackend(m3uUrl.trim() || undefined, m3uContent || undefined);
+      setDebugInfo(result.rawResponse || result); // Guarda o resultado bruto para análise
 
       if (!result.success) {
         throw new Error(result.error);
@@ -174,14 +179,21 @@ const AdminPanel = () => {
 
       setM3uTitleCount(result.count);
       setM3uLastUpdate(new Date().toISOString());
+      if (result.stats) {
+        setM3uStats(result.stats);
+      }
       
       if (m3uUrl.trim()) {
         localStorage.setItem('msc_m3u_url', m3uUrl.trim());
       }
 
+      const statsMsg = result.stats 
+        ? `\n• ${result.stats.movieCount} Filmes\n• ${result.stats.seriesCount} Séries\n• ${result.stats.liveCount} Canais Ao Vivo\n• ${result.stats.episodes} Episódios`
+        : '';
+
       toast({ 
         title: 'Catálogo Atualizado', 
-        description: `Sucesso! Encontrados ${result.count} títulos VOD/Séries.` 
+        description: `Sucesso! Catálogo processado.${statsMsg}` 
       });
     } catch (e: any) {
       console.error(e);
@@ -198,6 +210,7 @@ const AdminPanel = () => {
     setM3uContent('');
     setM3uTitleCount(0);
     setM3uLastUpdate(null);
+    setM3uStats(null);
     toast({ title: 'Lista M3U removida', description: 'O catálogo voltará a exibir tendências.' });
   };
 
@@ -283,13 +296,12 @@ const AdminPanel = () => {
     if (success) {
       setError('');
       if (rememberAdmin) {
-        // Salva apenas o usuário — senha nunca é persistida no browser
         localStorage.setItem('msc_admin_user', user.trim());
+        localStorage.setItem('msc_admin_pass', pass.trim());
       } else {
         localStorage.removeItem('msc_admin_user');
+        localStorage.removeItem('msc_admin_pass');
       }
-      // Limpa senha antiga salva (migração de segurança)
-      localStorage.removeItem('msc_admin_pass');
     } else {
       setError('Credenciais inválidas');
     }
@@ -540,9 +552,49 @@ const AdminPanel = () => {
                     <Button variant="outline" onClick={clearM3u} className="border-border text-foreground">Limpar Lista</Button>
                   )}
                   {m3uTitleCount > 0 && (
-                    <span className="text-sm text-accent font-medium">✅ {m3uTitleCount} títulos VOD carregados</span>
+                    <div className="w-full mt-4 p-4 bg-background/50 rounded-xl border border-white/5 space-y-2">
+                       <p className="text-sm font-semibold text-accent flex items-center gap-2">
+                         <CheckCircle className="w-4 h-4" /> CATÁLOGO DISPONÍVEL
+                       </p>
+                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
+                         <div className="space-y-1">
+                           <p className="text-xs text-muted-foreground uppercase tracking-widest">Filmes</p>
+                           <p className="text-xl font-bold text-foreground">{m3uStats?.movieCount || '-'}</p>
+                         </div>
+                         <div className="space-y-1">
+                           <p className="text-xs text-muted-foreground uppercase tracking-widest">Séries</p>
+                           <p className="text-xl font-bold text-foreground">{m3uStats?.seriesCount || '-'}</p>
+                         </div>
+                         <div className="space-y-1">
+                           <p className="text-xs text-muted-foreground uppercase tracking-widest">Canais TV</p>
+                           <p className="text-xl font-bold text-foreground">{m3uStats?.liveCount || '-'}</p>
+                         </div>
+                         <div className="space-y-1">
+                           <p className="text-xs text-muted-foreground uppercase tracking-widest">Episódios</p>
+                           <p className="text-xl font-bold text-foreground">{m3uStats?.episodes ? m3uStats.episodes.toLocaleString() : '-'}</p>
+                         </div>
+                       </div>
+                    </div>
                   )}
                 </div>
+
+                {/* Technical Diagnostics */}
+                {debugInfo && (
+                  <div className="mt-6 p-4 bg-black/40 rounded-xl border border-white/10 font-mono text-[10px] overflow-hidden">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-accent uppercase font-bold text-[10px]">Diagnóstico Técnico (JSON Bruto)</p>
+                      <button 
+                        onClick={() => setDebugInfo(null)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        Limpar
+                      </button>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto whitespace-pre text-muted-foreground/80 scrollbar-thin">
+                      {JSON.stringify(debugInfo, null, 2)}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
