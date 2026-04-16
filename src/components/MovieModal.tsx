@@ -209,7 +209,8 @@ const MovieModal = ({
     supabase.functions.invoke('series-lookup', {
       body: { 
         series_id: m3uItem?.id || "SEARCH_BY_TITLE",
-        title: title 
+        title: title,
+        original_title: (movie as any).original_name || (movie as any).original_title || undefined
       }
     })
     .then(({ data, error }) => {

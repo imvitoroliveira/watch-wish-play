@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json().catch(() => ({}));
-    const { series_id, title: searchTerm } = body;
+    const { series_id, title: searchTerm, original_title } = body;
 
     if (!series_id || !searchTerm) {
       throw new Error("Series ID and Search Term are required");
@@ -112,24 +112,92 @@ Deno.serve(async (req) => {
             if (Array.isArray(raw)) processEps(raw);
             else Object.entries(raw).forEach(([s, arr]) => processEps(arr as any[], s));
           }
+        } else {
+          await res.text(); // consume body
         }
       } catch (err) {
         console.warn("[series-lookup] XTream API falhou, tentando fallback...", err.message);
       }
     }
 
+    // --- ESTRATÉGIA 1.5: XTream API busca por nome (quando não temos ID numérico) ---
+    if (episodes.length === 0 && domain) {
+      try {
+        const searchNames = [searchTerm];
+        if (original_title && original_title !== searchTerm) searchNames.push(original_title);
+        // Try short name before ":"
+        const colonIdx = searchTerm.indexOf(':');
+        if (colonIdx > 3) searchNames.push(searchTerm.substring(0, colonIdx).trim());
+
+        const seriesListUrl = `${domain}/player_api.php?username=${username}&password=${password}&action=get_series`;
+        console.log(`[series-lookup] Buscando série por nome via XTream API: ${seriesListUrl.replace(password, '***')}`);
+        const res = await fetch(seriesListUrl, { headers: { "User-Agent": "VLC/3.0.18" } });
+        console.log(`[series-lookup] XTream get_series status: ${res.status}`);
+        if (res.ok) {
+          const allSeries = await res.json();
+          console.log(`[series-lookup] XTream retornou ${Array.isArray(allSeries) ? allSeries.length : 'non-array'} séries`);
+          if (Array.isArray(allSeries)) {
+            const normalizedSearchTerms = searchNames.map(n => normalizeForSearch(n));
+            const found = allSeries.find((s: any) => {
+              const norm = normalizeForSearch(s.name || "");
+              return normalizedSearchTerms.some(term => norm.includes(term) || term.includes(norm));
+            });
+            if (found) {
+              console.log(`[series-lookup] ✅ Encontrada série "${found.name}" (ID: ${found.series_id}) via busca por nome`);
+              const infoUrl = `${domain}/player_api.php?username=${username}&password=${password}&action=get_series_info&series_id=${found.series_id}`;
+              const infoRes = await fetch(infoUrl, { headers: { "User-Agent": "VLC/3.0.18" } });
+              if (infoRes.ok) {
+                const data = await infoRes.json();
+                if (data && data.episodes) {
+                  const raw = data.episodes;
+                  const processEps = (arr: any[], sNum?: string) => {
+                    arr.forEach((ep: any) => {
+                      episodes.push({
+                        episode: Number(ep.episode_num || ep.episode || 1),
+                        season: Number(sNum || ep.season || 1),
+                        url: `${domain}/series/${username}/${password}/${ep.id}.${ep.container_extension || 'mkv'}`,
+                        title: ep.title || `Episódio ${ep.episode_num || ep.episode || 1}`
+                      });
+                    });
+                  };
+                  if (Array.isArray(raw)) processEps(raw);
+                  else Object.entries(raw).forEach(([s, arr]) => processEps(arr as any[], s));
+                }
+              } else {
+                await infoRes.text();
+              }
+            }
+          }
+        } else {
+          await res.text();
+        }
+      } catch (err) {
+        console.warn("[series-lookup] XTream name search falhou:", err.message);
+      }
+    }
+
     // --- ESTRATÉGIA 2: Busca Local via Grep (Fallback M3U) ---
     if (episodes.length === 0) {
-      console.log(`[series-lookup] Fallback: Iniciando busca via Grep em: ${m3uSource.replace(password, '***')}`);
+      // Prepare multiple search terms (PT title, original title, simplified)
+      const searchTerms = [normalizeForSearch(searchTerm)];
+      if (original_title && normalizeForSearch(original_title) !== searchTerms[0]) {
+        searchTerms.push(normalizeForSearch(original_title));
+      }
+      // Also try just the main name before ":" (e.g. "Brooklyn Nine-Nine" from "Brooklyn Nine-Nine: Lei e Desordem")
+      const colonIdx = searchTerm.indexOf(':');
+      if (colonIdx > 3) {
+        const shortName = normalizeForSearch(searchTerm.substring(0, colonIdx));
+        if (!searchTerms.includes(shortName)) searchTerms.push(shortName);
+      }
+
+      console.log(`[series-lookup] Fallback: Buscando por termos: ${JSON.stringify(searchTerms)} em: ${m3uSource.replace(password, '***')}`);
       const res = await fetch(m3uSource, { headers: { "User-Agent": "Mozilla/5.0" } });
+      console.log(`[series-lookup] M3U fetch status: ${res.status}`);
       if (res.ok && res.body) {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         let lastInfLine = "";
-        const targetTitleNormalized = normalizeForSearch(searchTerm);
-
-        console.log(`[series-lookup] Buscando por termo normalizado: "${targetTitleNormalized}"`);
 
         while (true) {
           const { done, value } = await reader.read();
@@ -143,9 +211,10 @@ Deno.serve(async (req) => {
             const trimmed = line.trim();
             if (trimmed.startsWith("#EXTINF:")) {
               lastInfLine = trimmed;
-            } else if (lastInfLine && !trimmed.startsWith("#") && !trimmed.startsWith("http") === false) {
+            } else if (lastInfLine && trimmed.startsWith("http")) {
               const lineNormalized = normalizeForSearch(lastInfLine);
-              if (lineNormalized.includes(targetTitleNormalized)) {
+              const matched = searchTerms.some(term => lineNormalized.includes(term));
+              if (matched) {
                 const se = extractSeasonEpisode(lastInfLine);
                 if (se) {
                   episodes.push({
@@ -153,14 +222,13 @@ Deno.serve(async (req) => {
                     season: se.season,
                     url: trimmed,
                     title: `Episódio ${se.episode}`,
-                    _raw: lastInfLine // Para debug se necessário
                   });
                 }
               }
               lastInfLine = "";
             }
           }
-          if (episodes.length > 1000) break; // Limite de segurança aumentado
+          if (episodes.length > 1000) break;
         }
       }
     }
