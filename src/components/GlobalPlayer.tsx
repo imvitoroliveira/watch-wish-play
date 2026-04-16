@@ -395,7 +395,7 @@ const GlobalPlayer: React.FC = () => {
             poster={currentMedia?.poster}
             muted={isMuted}
             onClick={!isMini ? togglePlay : undefined}
-            referrerPolicy="no-referrer" as any
+            {...{ referrerPolicy: "no-referrer" } as any}
           />
 
           {/* ======================= OVERLAY DO MINI ======================= */}
