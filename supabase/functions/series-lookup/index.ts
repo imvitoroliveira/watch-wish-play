@@ -130,10 +130,12 @@ Deno.serve(async (req) => {
         if (colonIdx > 3) searchNames.push(searchTerm.substring(0, colonIdx).trim());
 
         const seriesListUrl = `${domain}/player_api.php?username=${username}&password=${password}&action=get_series`;
-        console.log(`[series-lookup] Buscando série por nome via XTream API...`);
+        console.log(`[series-lookup] Buscando série por nome via XTream API: ${seriesListUrl.replace(password, '***')}`);
         const res = await fetch(seriesListUrl, { headers: { "User-Agent": "VLC/3.0.18" } });
+        console.log(`[series-lookup] XTream get_series status: ${res.status}`);
         if (res.ok) {
           const allSeries = await res.json();
+          console.log(`[series-lookup] XTream retornou ${Array.isArray(allSeries) ? allSeries.length : 'non-array'} séries`);
           if (Array.isArray(allSeries)) {
             const normalizedSearchTerms = searchNames.map(n => normalizeForSearch(n));
             const found = allSeries.find((s: any) => {
