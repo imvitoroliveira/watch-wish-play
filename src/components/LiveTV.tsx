@@ -147,12 +147,10 @@ const LiveTV = () => {
     const clientM3uUrl = currentClient?.m3u || localStorage.getItem('msc_m3u_url') || '';
     const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
 
-    // Estratégia 1: Construção Local Rápida — Forçar via proxy para evitar CORS/mixed-content em HTTPS
+    // URLs diretas — <video src> permite mixed-content (HTTP de site HTTPS)
     if (credentials && channel.id) {
-      const rawStreamUrl = `${credentials.domain}/${credentials.user}/${credentials.pass}/${channel.id}`;
-      // Canais ao vivo DEVEM passar pelo proxy: browsers bloqueiam fetch/mpegts em HTTP de sites HTTPS
-      const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(rawStreamUrl)}`;
-      playVideo(proxyUrl, {
+      const streamUrl = `${credentials.domain}/${credentials.user}/${credentials.pass}/${channel.id}`;
+      playVideo(streamUrl, {
         id: parseInt(channel.id) || 0,
         title: channel.name,
         poster: channel.logo || '',
