@@ -112,9 +112,65 @@ Deno.serve(async (req) => {
             if (Array.isArray(raw)) processEps(raw);
             else Object.entries(raw).forEach(([s, arr]) => processEps(arr as any[], s));
           }
+        } else {
+          await res.text(); // consume body
         }
       } catch (err) {
         console.warn("[series-lookup] XTream API falhou, tentando fallback...", err.message);
+      }
+    }
+
+    // --- ESTRATÉGIA 1.5: XTream API busca por nome (quando não temos ID numérico) ---
+    if (episodes.length === 0 && domain) {
+      try {
+        const searchNames = [searchTerm];
+        if (original_title && original_title !== searchTerm) searchNames.push(original_title);
+        // Try short name before ":"
+        const colonIdx = searchTerm.indexOf(':');
+        if (colonIdx > 3) searchNames.push(searchTerm.substring(0, colonIdx).trim());
+
+        const seriesListUrl = `${domain}/player_api.php?username=${username}&password=${password}&action=get_series`;
+        console.log(`[series-lookup] Buscando série por nome via XTream API...`);
+        const res = await fetch(seriesListUrl, { headers: { "User-Agent": "VLC/3.0.18" } });
+        if (res.ok) {
+          const allSeries = await res.json();
+          if (Array.isArray(allSeries)) {
+            const normalizedSearchTerms = searchNames.map(n => normalizeForSearch(n));
+            const found = allSeries.find((s: any) => {
+              const norm = normalizeForSearch(s.name || "");
+              return normalizedSearchTerms.some(term => norm.includes(term) || term.includes(norm));
+            });
+            if (found) {
+              console.log(`[series-lookup] ✅ Encontrada série "${found.name}" (ID: ${found.series_id}) via busca por nome`);
+              const infoUrl = `${domain}/player_api.php?username=${username}&password=${password}&action=get_series_info&series_id=${found.series_id}`;
+              const infoRes = await fetch(infoUrl, { headers: { "User-Agent": "VLC/3.0.18" } });
+              if (infoRes.ok) {
+                const data = await infoRes.json();
+                if (data && data.episodes) {
+                  const raw = data.episodes;
+                  const processEps = (arr: any[], sNum?: string) => {
+                    arr.forEach((ep: any) => {
+                      episodes.push({
+                        episode: Number(ep.episode_num || ep.episode || 1),
+                        season: Number(sNum || ep.season || 1),
+                        url: `${domain}/series/${username}/${password}/${ep.id}.${ep.container_extension || 'mkv'}`,
+                        title: ep.title || `Episódio ${ep.episode_num || ep.episode || 1}`
+                      });
+                    });
+                  };
+                  if (Array.isArray(raw)) processEps(raw);
+                  else Object.entries(raw).forEach(([s, arr]) => processEps(arr as any[], s));
+                }
+              } else {
+                await infoRes.text();
+              }
+            }
+          }
+        } else {
+          await res.text();
+        }
+      } catch (err) {
+        console.warn("[series-lookup] XTream name search falhou:", err.message);
       }
     }
 
