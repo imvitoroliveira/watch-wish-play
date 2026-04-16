@@ -15,6 +15,9 @@ interface Channel {
   logo?: string;
 }
 
+const LIVE_CHANNELS_CACHE_ID = '00000000-0000-0000-0000-000000000003';
+const LIVE_CATEGORIES_CACHE_ID = '00000000-0000-0000-0000-000000000002';
+
 const LiveTV = () => {
   const { currentClient } = useAuth();
   const { playVideo } = useVideo();
@@ -24,7 +27,6 @@ const LiveTV = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Busca canais diretamente da API XTream (abordagem mais confiável)
   useEffect(() => {
     const fetchChannels = async () => {
       setLoading(true);
@@ -33,15 +35,13 @@ const LiveTV = () => {
         const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
 
         if (credentials) {
-          // Estratégia 1: XTream API (melhor qualidade de dados)
           await fetchFromXtreamAPI(credentials);
         } else {
-          // Estratégia 2: Fallback para catálogo do banco
-          await fetchFromCatalog();
+          await fetchFromCache();
         }
       } catch (err) {
         console.error('[LiveTV] Erro ao carregar canais:', err);
-        await fetchFromCatalog(); // Último recurso
+        await fetchFromCache();
       } finally {
         setLoading(false);
       }
@@ -50,17 +50,41 @@ const LiveTV = () => {
     fetchChannels();
   }, [currentClient?.m3u]);
 
+  // Salva canais e categorias no Supabase para uso futuro (quando XTream API não estiver acessível)
+  const saveToCache = async (channelList: Channel[], catMap: Record<string, string>) => {
+    try {
+      // Salvar canais no formato compacto: id|catId|name|logo
+      const channelTitles = channelList.map(c => `${c.id}|${c.categoryId}|${c.name}|${c.logo || ''}`);
+      await supabase.from('m3u_catalog').upsert({
+        id: LIVE_CHANNELS_CACHE_ID,
+        titles: channelTitles as any,
+        updated_at: new Date().toISOString(),
+      });
+
+      // Salvar categorias como JSON
+      await supabase.from('m3u_catalog').upsert({
+        id: LIVE_CATEGORIES_CACHE_ID,
+        titles: [JSON.stringify(catMap)] as any,
+        updated_at: new Date().toISOString(),
+      });
+
+      console.log(`[LiveTV] ✅ Cache salvo: ${channelList.length} canais, ${Object.keys(catMap).length} categorias`);
+    } catch (e) {
+      console.warn('[LiveTV] Erro ao salvar cache:', e);
+    }
+  };
+
   const fetchFromXtreamAPI = async (creds: { domain: string; user: string; pass: string }) => {
     try {
-      // Tentativa direta ao servidor IPTV (funciona em HTTP/localhost, pode falhar em HTTPS por mixed-content)
+      // Tenta XTream API diretamente (funciona com IP residencial do usuário)
       const catRes = await fetch(
         `${creds.domain}/player_api.php?username=${creds.user}&password=${creds.pass}&action=get_live_categories`,
         { headers: { 'User-Agent': 'VLC/3.0.18' } }
       );
+      let catMap: Record<string, string> = {};
       if (catRes.ok) {
         const catData = await catRes.json();
         if (Array.isArray(catData)) {
-          const catMap: Record<string, string> = {};
           catData.forEach((c: any) => {
             catMap[String(c.category_id)] = c.category_name;
           });
@@ -82,50 +106,65 @@ const LiveTV = () => {
             logo: item.stream_icon || '',
           })).filter(c => c.id && c.name);
           setChannels(parsed);
+
+          // Salvar no cache do Supabase para acesso futuro (HTTPS preview, etc.)
+          if (parsed.length > 0) {
+            saveToCache(parsed, catMap);
+          }
           return;
         }
       }
     } catch (e) {
-      console.warn('[LiveTV] XTream API direta falhou (CORS/mixed-content), usando catálogo:', e);
+      console.warn('[LiveTV] XTream API falhou (CORS/mixed-content esperado em HTTPS), usando cache:', e);
     }
-    await fetchFromCatalog();
+    await fetchFromCache();
   };
 
-  const fetchFromCatalog = async () => {
+  const fetchFromCache = async () => {
     try {
-      const { data: catData } = await supabase
-        .from('m3u_catalog')
-        .select('titles')
-        .eq('id', '00000000-0000-0000-0000-000000000001')
-        .maybeSingle();
+      console.log('[LiveTV] Carregando canais do cache...');
 
+      // Carregar categorias do cache
       const { data: categoriesData } = await supabase
         .from('m3u_catalog')
         .select('titles')
-        .eq('id', '00000000-0000-0000-0000-000000000002')
+        .eq('id', LIVE_CATEGORIES_CACHE_ID)
         .maybeSingle();
 
       if (categoriesData?.titles?.[0]) {
-        setCategories(JSON.parse(categoriesData.titles[0]));
+        try {
+          const parsed = JSON.parse(categoriesData.titles[0] as string);
+          setCategories(parsed);
+        } catch { /* ignore */ }
       }
 
-      if (catData?.titles) {
+      // Carregar canais do cache
+      const { data: channelsData } = await supabase
+        .from('m3u_catalog')
+        .select('titles')
+        .eq('id', LIVE_CHANNELS_CACHE_ID)
+        .maybeSingle();
+
+      if (channelsData?.titles) {
         const parsed: Channel[] = [];
-        for (const t of catData.titles as string[]) {
-          if (t.startsWith('2|')) {
-            // Novo formato: 2|ID|CatID|Nome
-            const parts = t.split('|');
-            const id = parts[1] || '';
-            const catId = parts[2] || '0';
-            const name = parts.slice(3).join('|');
-            if (id && name) parsed.push({ id, name, categoryId: catId });
+        for (const t of channelsData.titles as string[]) {
+          const parts = (t as string).split('|');
+          if (parts.length >= 3) {
+            parsed.push({
+              id: parts[0],
+              categoryId: parts[1],
+              name: parts[2],
+              logo: parts[3] || '',
+            });
           }
-          // Formato antigo sem prefixo — não é possível recuperar o stream_id
         }
+        console.log(`[LiveTV] ✅ Cache carregado: ${parsed.length} canais`);
         setChannels(parsed);
+      } else {
+        console.warn('[LiveTV] Nenhum cache de canais encontrado. Acesse via localhost primeiro para popular o cache.');
       }
     } catch (e) {
-      console.error('[LiveTV] Erro no fallback de catálogo:', e);
+      console.error('[LiveTV] Erro ao carregar cache:', e);
     }
   };
 
@@ -147,7 +186,6 @@ const LiveTV = () => {
     const clientM3uUrl = currentClient?.m3u || localStorage.getItem('msc_m3u_url') || '';
     const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
 
-    // URLs diretas — <video src> permite mixed-content (HTTP de site HTTPS)
     if (credentials && channel.id) {
       const streamUrl = `${credentials.domain}/${credentials.user}/${credentials.pass}/${channel.id}`;
       playVideo(streamUrl, {
@@ -159,8 +197,6 @@ const LiveTV = () => {
       return;
     }
 
-    // Estratégia 2: Fallback Server-Side (Stream-Lookup)
-    // Usado pelo Gestor ou por Clientes "Lembrar-me" que não recarregaram credenciais localmente.
     import('@/hooks/use-toast').then(({ toast }) => {
       toast({ title: "Sintonizando...", description: `Conectando com o servidor mestre para ${channel.name}`, duration: 3000 });
       
@@ -168,10 +204,7 @@ const LiveTV = () => {
         body: { title: channel.name },
       }).then(({ data, error }) => {
         if (!error && data?.stream_url) {
-          // Sem rewrite de TS para M3U8. A biblioteca mpegts.js no player resolverá nativamente.
-          const finalUrl = data.stream_url;
-          
-          playVideo(finalUrl, {
+          playVideo(data.stream_url, {
             id: channel.id ? parseInt(channel.id) : 0,
             title: channel.name,
             poster: channel.logo || '',
@@ -254,7 +287,11 @@ const LiveTV = () => {
           <div className="bg-card/30 border border-dashed border-border rounded-3xl py-20 flex flex-col items-center justify-center text-center px-4">
             <Tv className="w-12 h-12 text-muted-foreground/30 mb-4" />
             <h3 className="text-lg font-medium text-foreground">Nenhum canal encontrado</h3>
-            <p className="text-muted-foreground text-sm">Tente mudar a categoria ou o termo de busca.</p>
+            <p className="text-muted-foreground text-sm">
+              {channels.length === 0
+                ? 'O cache de canais está vazio. Acesse o app via HTTP (localhost) uma vez para popular automaticamente.'
+                : 'Tente mudar a categoria ou o termo de busca.'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -268,7 +305,6 @@ const LiveTV = () => {
                 onClick={() => handlePlayChannel(channel)}
                 className="group relative aspect-video bg-card border border-border/50 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl hover:shadow-primary/10 hover:border-primary/50 transition-all"
               >
-                {/* Logo do canal ou placeholder */}
                 <div className="absolute inset-0 flex items-center justify-center bg-secondary/30">
                   {channel.logo ? (
                     <img
@@ -282,7 +318,6 @@ const LiveTV = () => {
                   )}
                 </div>
 
-                {/* Info Overlay */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col justify-end p-3">
                   <Badge variant="outline" className="w-fit mb-1.5 bg-black/40 text-[10px] border-white/20 text-white/90">
                     LIVE
@@ -295,7 +330,6 @@ const LiveTV = () => {
                   </p>
                 </div>
 
-                {/* Play Icon on Hover */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
                   <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
                     <Play className="w-5 h-5 text-primary-foreground fill-current" />
