@@ -192,6 +192,7 @@ Deno.serve(async (req) => {
 
       console.log(`[series-lookup] Fallback: Buscando por termos: ${JSON.stringify(searchTerms)} em: ${m3uSource.replace(password, '***')}`);
       const res = await fetch(m3uSource, { headers: { "User-Agent": "Mozilla/5.0" } });
+      console.log(`[series-lookup] M3U fetch status: ${res.status}`);
       if (res.ok && res.body) {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
