@@ -52,11 +52,11 @@ const LiveTV = () => {
 
   const fetchFromXtreamAPI = async (creds: { domain: string; user: string; pass: string }) => {
     try {
-      const proxyBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=`;
-
-      // Buscar categorias via proxy (bypass CORS/mixed-content)
-      const catUrl = `${creds.domain}/player_api.php?username=${creds.user}&password=${creds.pass}&action=get_live_categories`;
-      const catRes = await fetch(proxyBase + encodeURIComponent(catUrl));
+      // Tentativa direta ao servidor IPTV (funciona em HTTP/localhost, pode falhar em HTTPS por mixed-content)
+      const catRes = await fetch(
+        `${creds.domain}/player_api.php?username=${creds.user}&password=${creds.pass}&action=get_live_categories`,
+        { headers: { 'User-Agent': 'VLC/3.0.18' } }
+      );
       if (catRes.ok) {
         const catData = await catRes.json();
         if (Array.isArray(catData)) {
@@ -68,9 +68,10 @@ const LiveTV = () => {
         }
       }
 
-      // Buscar canais via proxy
-      const liveUrl = `${creds.domain}/player_api.php?username=${creds.user}&password=${creds.pass}&action=get_live_streams`;
-      const liveRes = await fetch(proxyBase + encodeURIComponent(liveUrl));
+      const liveRes = await fetch(
+        `${creds.domain}/player_api.php?username=${creds.user}&password=${creds.pass}&action=get_live_streams`,
+        { headers: { 'User-Agent': 'VLC/3.0.18' } }
+      );
       if (liveRes.ok) {
         const liveData = await liveRes.json();
         if (Array.isArray(liveData) && liveData.length > 0) {
@@ -81,13 +82,12 @@ const LiveTV = () => {
             logo: item.stream_icon || '',
           })).filter(c => c.id && c.name);
           setChannels(parsed);
-          return; // Sucesso — não precisa de fallback
+          return;
         }
       }
     } catch (e) {
-      console.warn('[LiveTV] XTream API (via proxy) falhou, tentando catálogo:', e);
+      console.warn('[LiveTV] XTream API direta falhou (CORS/mixed-content), usando catálogo:', e);
     }
-    // Se chegou aqui, XTream falhou — usa catálogo
     await fetchFromCatalog();
   };
 
