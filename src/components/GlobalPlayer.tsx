@@ -184,7 +184,10 @@ const GlobalPlayer: React.FC = () => {
         player.on(mpegts.Events.MEDIA_INFO, () => {
           console.log(`[GlobalPlayer] ✅ MPEGTS OK: ${attempt.id}`);
           setIsLoading(false);
-          player.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+          const playPromise = player.play();
+          if (playPromise && typeof playPromise.then === 'function') {
+            playPromise.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+          }
         });
 
         // Quando o stream proxy corta graciosamente (Supabase Timeout), 
@@ -392,7 +395,7 @@ const GlobalPlayer: React.FC = () => {
             poster={currentMedia?.poster}
             muted={isMuted}
             onClick={!isMini ? togglePlay : undefined}
-            referrerPolicy="no-referrer"
+            referrerPolicy="no-referrer" as any
           />
 
           {/* ======================= OVERLAY DO MINI ======================= */}
