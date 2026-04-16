@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body = await req.json().catch(() => ({}));
-    const { series_id, title: searchTerm } = body;
+    const { series_id, title: searchTerm, original_title } = body;
 
     if (!series_id || !searchTerm) {
       throw new Error("Series ID and Search Term are required");
