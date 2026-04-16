@@ -120,16 +120,25 @@ Deno.serve(async (req) => {
 
     // --- ESTRATÉGIA 2: Busca Local via Grep (Fallback M3U) ---
     if (episodes.length === 0) {
-      console.log(`[series-lookup] Fallback: Iniciando busca via Grep em: ${m3uSource.replace(password, '***')}`);
+      // Prepare multiple search terms (PT title, original title, simplified)
+      const searchTerms = [normalizeForSearch(searchTerm)];
+      if (original_title && normalizeForSearch(original_title) !== searchTerms[0]) {
+        searchTerms.push(normalizeForSearch(original_title));
+      }
+      // Also try just the main name before ":" (e.g. "Brooklyn Nine-Nine" from "Brooklyn Nine-Nine: Lei e Desordem")
+      const colonIdx = searchTerm.indexOf(':');
+      if (colonIdx > 3) {
+        const shortName = normalizeForSearch(searchTerm.substring(0, colonIdx));
+        if (!searchTerms.includes(shortName)) searchTerms.push(shortName);
+      }
+
+      console.log(`[series-lookup] Fallback: Buscando por termos: ${JSON.stringify(searchTerms)} em: ${m3uSource.replace(password, '***')}`);
       const res = await fetch(m3uSource, { headers: { "User-Agent": "Mozilla/5.0" } });
       if (res.ok && res.body) {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         let lastInfLine = "";
-        const targetTitleNormalized = normalizeForSearch(searchTerm);
-
-        console.log(`[series-lookup] Buscando por termo normalizado: "${targetTitleNormalized}"`);
 
         while (true) {
           const { done, value } = await reader.read();
@@ -143,9 +152,10 @@ Deno.serve(async (req) => {
             const trimmed = line.trim();
             if (trimmed.startsWith("#EXTINF:")) {
               lastInfLine = trimmed;
-            } else if (lastInfLine && !trimmed.startsWith("#") && !trimmed.startsWith("http") === false) {
+            } else if (lastInfLine && trimmed.startsWith("http")) {
               const lineNormalized = normalizeForSearch(lastInfLine);
-              if (lineNormalized.includes(targetTitleNormalized)) {
+              const matched = searchTerms.some(term => lineNormalized.includes(term));
+              if (matched) {
                 const se = extractSeasonEpisode(lastInfLine);
                 if (se) {
                   episodes.push({
@@ -153,14 +163,13 @@ Deno.serve(async (req) => {
                     season: se.season,
                     url: trimmed,
                     title: `Episódio ${se.episode}`,
-                    _raw: lastInfLine // Para debug se necessário
                   });
                 }
               }
               lastInfLine = "";
             }
           }
-          if (episodes.length > 1000) break; // Limite de segurança aumentado
+          if (episodes.length > 1000) break;
         }
       }
     }
