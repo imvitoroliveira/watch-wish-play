@@ -348,10 +348,24 @@ const GlobalPlayer: React.FC = () => {
 
   const requestFullscreen = () => {
     const video = videoRef.current;
+    const container = video?.closest('[data-player-root]') as HTMLElement | null;
+
+    // 1. Padrão W3C — Chrome/Android moderno
     if (video?.requestFullscreen) {
-      video.requestFullscreen();
+      video.requestFullscreen().catch(() => {
+        // Silencioso: alguns WebViews rejeitam a Promise sem motivo
+      });
+    // 2. Webkit prefixado — Android WebView legado + Safari desktop
     } else if ((video as any)?.webkitRequestFullscreen) {
       (video as any).webkitRequestFullscreen();
+    // 3. webkitEnterFullscreen — iOS Safari (única forma que funciona no Safari mobile)
+    } else if ((video as any)?.webkitEnterFullscreen) {
+      (video as any).webkitEnterFullscreen();
+    // 4. Fallback no container — quando o WebView bloqueia fullscreen no <video>
+    } else if (container?.requestFullscreen) {
+      container.requestFullscreen();
+    } else if ((container as any)?.webkitRequestFullscreen) {
+      (container as any).webkitRequestFullscreen();
     }
   };
 
@@ -375,6 +389,7 @@ const GlobalPlayer: React.FC = () => {
       {(isFullscreen || isMini) && (
         <motion.div
           key="global-player-container"
+          data-player-root
           initial={{ opacity: 0, scale: isMini ? 0.8 : 1 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: isMini ? 0.8 : 1 }}
