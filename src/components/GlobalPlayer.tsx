@@ -308,9 +308,8 @@ const GlobalPlayer: React.FC = () => {
         // Quando o stream proxy corta graciosamente (Supabase Timeout), 
         // o vídeo atinge o EOF natural sem erro. Ocorrendo isso na LiveTV, forçamos o auto-reconnect.
         const onEndedMpegts = () => {
-          console.log('[GlobalPlayer] Conexão live TV encerrou (EOF Graceful). Iniciando auto-reconnect...');
           clearLoadTimeout();
-          setRetryKey(k => k + 1);
+          scheduleLiveReconnect('mpegts-eof');
         };
         video.onended = onEndedMpegts;
       } else {
