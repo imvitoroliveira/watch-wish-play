@@ -76,46 +76,38 @@ const LiveTV = () => {
 
   const fetchFromXtreamAPI = async (creds: { domain: string; user: string; pass: string }) => {
     try {
-      // Tenta XTream API diretamente (funciona com IP residencial do usuário)
-      const catRes = await fetch(
-        `${creds.domain}/player_api.php?username=${creds.user}&password=${creds.pass}&action=get_live_categories`,
-        { headers: { 'User-Agent': 'VLC/3.0.18' } }
-      );
+      // Server-side proxy: bypassa Mixed Content (HTTPS preview → HTTP IPTV)
+      const [catRes, liveRes] = await Promise.all([
+        supabase.functions.invoke('xtream-proxy', {
+          body: { domain: creds.domain, user: creds.user, pass: creds.pass, action: 'get_live_categories' },
+        }),
+        supabase.functions.invoke('xtream-proxy', {
+          body: { domain: creds.domain, user: creds.user, pass: creds.pass, action: 'get_live_streams' },
+        }),
+      ]);
+
       let catMap: Record<string, string> = {};
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        if (Array.isArray(catData)) {
-          catData.forEach((c: any) => {
-            catMap[String(c.category_id)] = c.category_name;
-          });
-          setCategories(catMap);
-        }
+      if (!catRes.error && Array.isArray(catRes.data)) {
+        catRes.data.forEach((c: any) => {
+          catMap[String(c.category_id)] = c.category_name;
+        });
+        setCategories(catMap);
       }
 
-      const liveRes = await fetch(
-        `${creds.domain}/player_api.php?username=${creds.user}&password=${creds.pass}&action=get_live_streams`,
-        { headers: { 'User-Agent': 'VLC/3.0.18' } }
-      );
-      if (liveRes.ok) {
-        const liveData = await liveRes.json();
-        if (Array.isArray(liveData) && liveData.length > 0) {
-          const parsed: Channel[] = liveData.map((item: any) => ({
-            id: String(item.stream_id || ''),
-            name: item.name || '',
-            categoryId: String(item.category_id || '0'),
-            logo: item.stream_icon || '',
-          })).filter(c => c.id && c.name);
-          setChannels(parsed);
+      if (!liveRes.error && Array.isArray(liveRes.data) && liveRes.data.length > 0) {
+        const parsed: Channel[] = liveRes.data.map((item: any) => ({
+          id: String(item.stream_id || ''),
+          name: item.name || '',
+          categoryId: String(item.category_id || '0'),
+          logo: item.stream_icon || '',
+        })).filter((c: Channel) => c.id && c.name);
+        setChannels(parsed);
 
-          // Salvar no cache do Supabase para acesso futuro (HTTPS preview, etc.)
-          if (parsed.length > 0) {
-            saveToCache(parsed, catMap);
-          }
-          return;
-        }
+        if (parsed.length > 0) saveToCache(parsed, catMap);
+        return;
       }
     } catch (e) {
-      console.warn('[LiveTV] XTream API falhou (CORS/mixed-content esperado em HTTPS), usando cache:', e);
+      console.warn('[LiveTV] xtream-proxy falhou, tentando cache:', e);
     }
     await fetchFromCache();
   };
