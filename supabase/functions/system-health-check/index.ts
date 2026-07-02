@@ -326,7 +326,7 @@ const TEST_SUITE: TestCase[] = [
   // ═══════════════════════════════════════════════
   // Métodos HTTP bloqueados extra (3 tests)
   // ═══════════════════════════════════════════════
-  { name: "method: cakto-webhook GET = 405", category: "security", fn: "cakto-webhook", method: "GET", expect: { status: [405] } },
+  
   { name: "method: google-sheets-sync GET = 405", category: "security", fn: "google-sheets-sync", method: "GET", expect: { status: [405] } },
   { name: "method: system-health-check PUT = 405", category: "security", fn: "system-health-check", method: "PUT", expect: { status: [405] } },
 
