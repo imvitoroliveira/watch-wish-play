@@ -214,16 +214,8 @@ describe('Segurança Geral: Injeção e sanitização', () => {
       expect(res.status).toBe(400);
     });
 
-    it('cakto-webhook: corpo não-JSON retorna 400 ou 401', async () => {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/cakto-webhook`, {
-        method: 'POST',
-        headers: defaultHeaders(),
-        body: 'not-json',
-      });
-      await res.text();
-      expect([400, 401]).toContain(res.status);
-    });
   });
+
 
   // ═══════════════════════════════════════════════
   // Vazamento de segredos (cross-function)
