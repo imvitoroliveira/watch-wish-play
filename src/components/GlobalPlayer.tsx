@@ -86,7 +86,10 @@ const GlobalPlayer: React.FC = () => {
 
     if (!playbackConfirmedRef.current || playedFor < 60_000) {
       console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): reprodução ainda não ficou estável (${playedFor}ms).`);
-      setIsLoading(false);
+      const video = videoRef.current;
+      const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
+      const hasFutureData = Boolean(video && video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA);
+      setIsLoading(Boolean(video && !video.paused && !recentlyAdvanced && !hasFutureData));
       return;
     }
 
@@ -293,12 +296,12 @@ const GlobalPlayer: React.FC = () => {
       loadTimeout = setTimeout(() => {
         console.warn(`[GlobalPlayer] ⏱️ Timeout de carregamento (${attempt.id}), tentando próxima rota...`);
         goToNextAttempt();
-      }, 18000);
+      }, isLiveMedia ? 10_000 : 18_000);
 
       if (attempt.kind === 'hls' && Hls.isSupported()) {
         const hls = new Hls({ 
-          maxBufferLength: isLiveMedia ? 45 : 30, 
-          maxMaxBufferLength: isLiveMedia ? 90 : 60, 
+          maxBufferLength: isLiveMedia ? 12 : 30, 
+          maxMaxBufferLength: isLiveMedia ? 24 : 60, 
           liveSyncDurationCount: 4,
           liveMaxLatencyDurationCount: 10,
           lowLatencyMode: false,
@@ -342,7 +345,7 @@ const GlobalPlayer: React.FC = () => {
           enableWorker: true,
           enableStashBuffer: true,
           stashInitialSize: 512 * 1024,
-          liveBufferLatencyChasing: true,
+          liveBufferLatencyChasing: false,
           autoCleanupSourceBuffer: true,
           autoCleanupMaxBackwardDuration: 30,
           autoCleanupMinBackwardDuration: 10,

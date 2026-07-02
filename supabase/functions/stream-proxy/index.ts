@@ -9,7 +9,7 @@ const corsHeaders = {
 // In-memory rate limiter: IP -> { count, resetAt }
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 30; // max 30 requests per minute per IP
+const RATE_LIMIT_MAX = 180; // live HLS may request many short segments; block only abusive bursts
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
@@ -54,6 +54,16 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("cf-connecting-ip") ||
+      "unknown";
+    if (!checkRateLimit(ip)) {
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded" }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     let streamUrl: string | null = null;
 
     if (req.method === "GET") {
