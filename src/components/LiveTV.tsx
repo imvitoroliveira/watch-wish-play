@@ -198,8 +198,15 @@ const LiveTV = () => {
   }, [channels, selectedCategory, searchQuery]);
 
   const sortedCategories = useMemo(() => {
-    return Object.entries(categories).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [categories]);
+    // Only show categories that actually have channels; if the categories map is empty
+    // (e.g. xtream-proxy failed to return get_live_categories), derive labels from channels.
+    const usedIds = new Set(channels.map(c => c.categoryId));
+    const entries: [string, string][] = [];
+    usedIds.forEach(id => {
+      entries.push([id, categories[id] || `Categoria ${id}`]);
+    });
+    return entries.sort((a, b) => a[1].localeCompare(b[1]));
+  }, [categories, channels]);
 
   // Playback
   const handlePlayChannel = async (channel: Channel) => {
