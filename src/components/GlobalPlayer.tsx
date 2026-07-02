@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import { useVideo } from '@/contexts/VideoContext';
-import { buildProxyUrl } from '@/lib/m3u-client-parser';
-import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Minimize2, Maximize2, Play, Pause, Volume2, VolumeX, Loader2, AlertTriangle } from 'lucide-react';
 
@@ -118,9 +116,7 @@ const GlobalPlayer: React.FC = () => {
 
       const advanced = video.currentTime > snapshotTime + 0.75;
       const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
-      const hasPlayableBuffer = video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
-
-      if (advanced || recentlyAdvanced || hasPlayableBuffer) {
+      if (advanced || recentlyAdvanced) {
         console.log(`[GlobalPlayer] Reconexão cancelada (${reason}): stream voltou a avançar.`);
         setIsLoading(false);
         return;
@@ -173,7 +169,9 @@ const GlobalPlayer: React.FC = () => {
     
     console.log('[GlobalPlayer] URL original processada:', normalizedUrl.substring(0, 80));
 
-    const isHls = normalizedUrl.toLowerCase().includes('.m3u8');
+    const lowerUrl = normalizedUrl.toLowerCase();
+    const isHls = lowerUrl.includes('.m3u8');
+    const isLiveMedia = currentMedia?.media_type === 'tv' || lowerUrl.includes('/live/');
 
     // Estratégia DEFINITIVA: Servidores IPTV NUNCA enviam CORS headers.
     // Portanto, o browser SEMPRE bloqueará fetch/HLS direto ao servidor IPTV.
@@ -181,12 +179,21 @@ const GlobalPlayer: React.FC = () => {
     // O proxy faz o fetch do lado do servidor e repassa com CORS headers corretos.
     // Usamos _cb (Cache-Buster) para OBRIGAR a infraestrutura CDN (Cloudflare/Supabase) a não retornar streams
     // cacheados do passado caso a conexão caia e precisemos recarregar o proxy.
-    const buildSupabaseStreamProxy = (url: string) => `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(url)}&_cb=${Date.now()}`;
-    const supabaseStreamProxy = buildSupabaseStreamProxy(normalizedUrl);
+    const buildSupabaseStreamProxy = (url: string) => (
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(url)}&_cb=${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
     
     // Para streams TS/Raw sem extensão, mpegts.js requer CORS, então o proxy é obrigatório.
     // Para MP4/MKV (filmes/séries), a tag nativa <video src> NÃO sofre bloqueio estrito de CORS e vamos tentar direto.
     const playAttempts: { id: string; url: string; kind: 'hls' | 'mpegts' | 'native' }[] = [];
+    const attemptedUrls = new Set<string>();
+    const addAttempt = (id: string, url: string, kind: 'hls' | 'mpegts' | 'native') => {
+      const key = `${kind}:${url}`;
+      if (attemptedUrls.has(key)) return;
+      attemptedUrls.add(key);
+      playAttempts.push({ id, url, kind });
+    };
+    const liveMatch = normalizedUrl.match(/^(https?:\/\/[^/]+)\/live\/([^/]+)\/([^/]+)\/(\d+)(?:\.(m3u8|ts))?(?:\?.*)?$/i);
 
     // Se for URL de filme sem extensão definida (originado do MovieModal)
     // Adicionamos as extensões corretas para evitar que o NGINX devolva text/html (Erro de Formato)
@@ -196,42 +203,41 @@ const GlobalPlayer: React.FC = () => {
       playAttempts.push({ id: 'proxy_mp4', url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(normalizedUrl + '.mp4')}`, kind: 'native' });
     } else {
       const isDirectFirst = Boolean(
-        normalizedUrl.toLowerCase().match(/\.(mp4|mkv|avi|mov)$/) || 
-        normalizedUrl.toLowerCase().includes('/movie/') || 
-        normalizedUrl.toLowerCase().includes('/series/')
+        lowerUrl.match(/\.(mp4|mkv|avi|mov)$/) || 
+        lowerUrl.includes('/movie/') || 
+        lowerUrl.includes('/series/')
       );
       
-      if (isHls) {
+      if (isLiveMedia && liveMatch) {
+        const [, origin, user, pass, id] = liveMatch;
+        const tsUrl = `${origin}/live/${user}/${pass}/${id}.ts`;
+        const rawUrl = `${origin}/${user}/${pass}/${id}`;
+        const rawTsUrl = `${origin}/${user}/${pass}/${id}.ts`;
+        const hlsUrl = `${origin}/live/${user}/${pass}/${id}.m3u8`;
+
+        // Canais ao vivo XTream costumam anunciar .m3u8, mas entregar MPEG-TS.
+        // Começar por MPEG-TS evita o custo de tentar interpretar um TS infinito como manifesto HLS.
+        addAttempt('live_mpegts_ts', buildSupabaseStreamProxy(tsUrl), 'mpegts');
+        addAttempt('live_mpegts_raw', buildSupabaseStreamProxy(rawUrl), 'mpegts');
+        addAttempt('live_mpegts_raw_ts', buildSupabaseStreamProxy(rawTsUrl), 'mpegts');
+        addAttempt('live_hls_fallback', buildSupabaseStreamProxy(hlsUrl), 'hls');
+        addAttempt('live_native_ts', buildSupabaseStreamProxy(tsUrl), 'native');
+      } else if (isHls) {
         // Live TV em painéis XTream nem sempre entrega uma playlist HLS real.
         // Muitas rotas terminadas em .m3u8 respondem MPEG-TS contínuo (video/mp2t),
         // então tentamos HLS primeiro e MPEG-TS em seguida na mesma URL proxied.
-        playAttempts.push({ id: 'hls_proxy', url: supabaseStreamProxy, kind: 'hls' });
-        playAttempts.push({ id: 'mpegts_proxy', url: supabaseStreamProxy, kind: 'mpegts' });
-        playAttempts.push({ id: 'hls_direta', url: normalizedUrl, kind: 'hls' });
-
-        // Fallbacks Xtream: alguns servidores não aceitam /live/...id.m3u8,
-        // mas aceitam /live/...id.ts ou o formato bruto /user/pass/id usado na M3U original.
-        const liveMatch = normalizedUrl.match(/^(https?:\/\/[^/]+)\/live\/([^/]+)\/([^/]+)\/(\d+)(?:\.(m3u8|ts))?(?:\?.*)?$/i);
-        if (liveMatch) {
-          const [, origin, user, pass, id] = liveMatch;
-          const variants = [
-            `${origin}/live/${user}/${pass}/${id}.ts`,
-            `${origin}/${user}/${pass}/${id}`,
-            `${origin}/${user}/${pass}/${id}.ts`,
-          ];
-          variants.forEach((variant, index) => {
-            playAttempts.push({ id: `mpegts_xtream_${index + 1}`, url: buildSupabaseStreamProxy(variant), kind: 'mpegts' });
-          });
-        }
+        addAttempt('hls_proxy', buildSupabaseStreamProxy(normalizedUrl), 'hls');
+        addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
+        addAttempt('hls_direta', normalizedUrl, 'hls');
       } else if (isDirectFirst) {
-        playAttempts.push({ id: 'direta', url: normalizedUrl, kind: 'native' });
-        playAttempts.push({ id: 'supabase_proxy', url: supabaseStreamProxy, kind: 'native' });
+        addAttempt('direta', normalizedUrl, 'native');
+        addAttempt('supabase_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
       } else {
         // Canais ao vivo vindos do M3U mestre costumam chegar sem extensão e com
         // Content-Type video/mp2t; mpegts.js é o caminho correto nesses casos.
-        playAttempts.push({ id: 'mpegts_proxy', url: supabaseStreamProxy, kind: 'mpegts' });
-        playAttempts.push({ id: 'nativo_proxy', url: supabaseStreamProxy, kind: 'native' });
-        playAttempts.push({ id: 'direta', url: normalizedUrl, kind: 'native' });
+        addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
+        addAttempt('nativo_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
+        addAttempt('direta', normalizedUrl, 'native');
       }
     }
 
@@ -291,8 +297,15 @@ const GlobalPlayer: React.FC = () => {
 
       if (attempt.kind === 'hls' && Hls.isSupported()) {
         const hls = new Hls({ 
-          maxBufferLength: 30, 
-          maxMaxBufferLength: 60, 
+          maxBufferLength: isLiveMedia ? 45 : 30, 
+          maxMaxBufferLength: isLiveMedia ? 90 : 60, 
+          liveSyncDurationCount: 4,
+          liveMaxLatencyDurationCount: 10,
+          lowLatencyMode: false,
+          backBufferLength: isLiveMedia ? 30 : 60,
+          manifestLoadingTimeOut: 12_000,
+          levelLoadingTimeOut: 12_000,
+          fragLoadingTimeOut: 20_000,
           startLevel: -1,
           debug: false 
         });
@@ -327,9 +340,12 @@ const GlobalPlayer: React.FC = () => {
           url: attempt.url
         }, {
           enableWorker: true,
-          enableStashBuffer: false,
-          stashInitialSize: 128 * 1024,
+          enableStashBuffer: true,
+          stashInitialSize: 512 * 1024,
           liveBufferLatencyChasing: true,
+          autoCleanupSourceBuffer: true,
+          autoCleanupMaxBackwardDuration: 30,
+          autoCleanupMinBackwardDuration: 10,
         });
         mpegtsRef.current = player;
         player.attachMediaElement(video);
@@ -406,12 +422,10 @@ const GlobalPlayer: React.FC = () => {
         const cleanup = () => {
           video.removeEventListener('loadeddata', onLoaded);
           video.removeEventListener('error', onError);
-          video.removeEventListener('stalled', onError);
         };
         
         video.addEventListener('loadeddata', onLoaded);
         video.addEventListener('error', onError);
-        video.addEventListener('stalled', onError);
         activeAttemptCleanup = cleanup;
         video.load();
       }
@@ -467,10 +481,18 @@ const GlobalPlayer: React.FC = () => {
       }
     };
 
+    const clearBufferingState = () => {
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
+      setIsLoading(false);
+    };
+
     const onPlay = () => {
       setIsPlaying(true);
       if (!playbackStartAtRef.current) playbackStartAtRef.current = Date.now();
-      setIsLoading(false);
+      clearBufferingState();
     };
     const onPause = () => setIsPlaying(false);
     const onWaiting = () => {
@@ -482,19 +504,22 @@ const GlobalPlayer: React.FC = () => {
       if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
       bufferingTimerRef.current = setTimeout(() => {
         const stalledFor = Date.now() - lastTimeUpdateAtRef.current;
-        if (stalledFor > 8_000) {
+        const hasFutureData = video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+        if (!video.paused && !hasFutureData && stalledFor > 12_000) {
           setIsLoading(true);
-          scheduleLiveReconnect('buffering-stall', 7_000);
+          scheduleLiveReconnect('buffering-stall', 10_000);
         }
-      }, 8_000);
+      }, 12_000);
     };
-    const onCanPlay = () => setIsLoading(false);
+    const onCanPlay = clearBufferingState;
+    const onPlaying = clearBufferingState;
 
     video.addEventListener('timeupdate', onTimeUpdate);
     video.addEventListener('play', onPlay);
     video.addEventListener('pause', onPause);
     video.addEventListener('waiting', onWaiting);
     video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('playing', onPlaying);
 
     return () => {
       video.removeEventListener('timeupdate', onTimeUpdate);
@@ -502,6 +527,7 @@ const GlobalPlayer: React.FC = () => {
       video.removeEventListener('pause', onPause);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('playing', onPlaying);
       if (bufferingTimerRef.current) {
         clearTimeout(bufferingTimerRef.current);
         bufferingTimerRef.current = null;
@@ -563,6 +589,10 @@ const GlobalPlayer: React.FC = () => {
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
+    }
+    if (mpegtsRef.current) {
+      mpegtsRef.current.destroy();
+      mpegtsRef.current = null;
     }
     stopVideo();
   };

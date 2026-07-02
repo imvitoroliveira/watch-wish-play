@@ -221,7 +221,7 @@ const LiveTV = () => {
         id: parseInt(channel.id) || 0,
         title: channel.name,
         poster: channel.logo || '',
-        media_type: 'movie'
+        media_type: 'tv'
       });
       return;
     }
@@ -237,7 +237,7 @@ const LiveTV = () => {
             id: channel.id ? parseInt(channel.id) : 0,
             title: channel.name,
             poster: channel.logo || '',
-            media_type: 'movie'
+            media_type: 'tv'
           });
         } else {
           toast({ title: "Sinal Indisponível", description: "O servidor não conseguiu resolver o stream deste canal.", variant: "destructive" });

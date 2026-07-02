@@ -115,6 +115,7 @@ Deno.serve(async (req) => {
     const forwardHeaders: Record<string, string> = {
       "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
       "Accept": "*/*",
+      "Accept-Encoding": "identity",
       "Connection": "keep-alive",
     };
 
@@ -154,6 +155,13 @@ Deno.serve(async (req) => {
       const val = streamRes.headers.get(h);
       if (val) resHeaders.set(h, val);
     });
+
+    // Live IPTV não deve ser transformado/bufferizado por camadas intermediárias.
+    // Isso reduz pausas longas e evita que segmentos antigos sejam reutilizados após reconnect.
+    resHeaders.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, no-transform");
+    resHeaders.set("Pragma", "no-cache");
+    resHeaders.set("Expires", "0");
+    resHeaders.set("X-Accel-Buffering", "no");
 
     // Se o upstream não mandar content-type, forçar video/mp4 (genérico para browsers)
     if (!resHeaders.has("content-type")) {
