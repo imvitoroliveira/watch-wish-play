@@ -428,7 +428,7 @@ Deno.serve(async (req) => {
         const { data } = await supabase
           .from("payment_transactions")
           .select("id, status, natv_activated, client_username, plan, days")
-          .eq("cakto_transaction_id", abacateTxId)
+          .eq("provider_transaction_id", abacateTxId)
           .maybeSingle();
         existingTx = data;
         console.log(`[Webhook] Pending tx lookup by ID: ${existingTx ? "FOUND" : "NOT FOUND"}`);
