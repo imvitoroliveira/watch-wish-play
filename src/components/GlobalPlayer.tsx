@@ -673,7 +673,6 @@ const GlobalPlayer: React.FC = () => {
             {...({ 'webkit-playsinline': 'true', 'x5-playsinline': 'true' } as Record<string, string>)}
             preload="auto"
 
-            crossOrigin="anonymous"
             poster={currentMedia?.poster}
             muted={isMuted}
             autoPlay
