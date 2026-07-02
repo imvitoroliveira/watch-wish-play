@@ -432,15 +432,42 @@ const GlobalPlayer: React.FC = () => {
 
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
+      lastTimeUpdateAtRef.current = Date.now();
+      lastPlaybackTimeRef.current = video.currentTime;
+      if (!playbackStartAtRef.current) playbackStartAtRef.current = Date.now();
+      if (video.currentTime > 3) playbackConfirmedRef.current = true;
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
+      setIsLoading(false);
       if (video.duration && isFinite(video.duration)) {
         setProgress((video.currentTime / video.duration) * 100);
         setDuration(video.duration);
       }
     };
 
-    const onPlay = () => setIsPlaying(true);
+    const onPlay = () => {
+      setIsPlaying(true);
+      if (!playbackStartAtRef.current) playbackStartAtRef.current = Date.now();
+      setIsLoading(false);
+    };
     const onPause = () => setIsPlaying(false);
-    const onWaiting = () => setIsLoading(true);
+    const onWaiting = () => {
+      if (!playbackConfirmedRef.current) {
+        setIsLoading(true);
+        return;
+      }
+
+      if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = setTimeout(() => {
+        const stalledFor = Date.now() - lastTimeUpdateAtRef.current;
+        if (stalledFor > 8_000) {
+          setIsLoading(true);
+          scheduleLiveReconnect('buffering-stall', 7_000);
+        }
+      }, 8_000);
+    };
     const onCanPlay = () => setIsLoading(false);
 
     video.addEventListener('timeupdate', onTimeUpdate);
@@ -455,8 +482,12 @@ const GlobalPlayer: React.FC = () => {
       video.removeEventListener('pause', onPause);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
     };
-  }, [currentUrl]);
+  }, [currentUrl, scheduleLiveReconnect]);
 
   // --- CONTROLS: Auto-hide após 3s ---
   const resetControlsTimer = useCallback(() => {
