@@ -243,7 +243,7 @@ const GlobalPlayer: React.FC = () => {
         } else {
           // Desktop / Android: MPEG-TS via mpegts.js é o mais rápido para XTream.
           addAttempt('live_mpegts_ts', buildSupabaseStreamProxy(tsUrl), 'mpegts');
-          addAttempt('live_mpegts_raw', buildSsupabaseStreamProxy(rawUrl), 'mpegts');
+          addAttempt('live_mpegts_raw', buildSupabaseStreamProxy(rawUrl), 'mpegts');
           addAttempt('live_mpegts_raw_ts', buildSupabaseStreamProxy(rawTsUrl), 'mpegts');
           addAttempt('live_hls_fallback', buildSupabaseStreamProxy(hlsUrl), 'hls');
           addAttempt('live_native_ts', buildSupabaseStreamProxy(tsUrl), 'native');
