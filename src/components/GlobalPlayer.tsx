@@ -39,6 +39,11 @@ const GlobalPlayer: React.FC = () => {
   const lastReconnectAtRef = useRef<number>(0);
   const playbackStartAtRef = useRef<number>(0);
   const reconnectCountRef = useRef<number>(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTimeUpdateAtRef = useRef<number>(0);
+  const lastPlaybackTimeRef = useRef<number>(0);
+  const playbackConfirmedRef = useRef<boolean>(false);
 
   // Reset contadores de reconexão sempre que a URL muda (novo canal)
   useEffect(() => {
