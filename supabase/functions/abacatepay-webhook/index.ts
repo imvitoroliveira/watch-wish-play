@@ -501,7 +501,8 @@ Deno.serve(async (req) => {
               client_username: username,
               plan: planKey,
               days,
-              cakto_transaction_id: abacateTxId,
+              provider: "abacatepay",
+              provider_transaction_id: abacateTxId,
               status: "approved",
             })
             .select("id")
