@@ -207,7 +207,8 @@ const LiveTV = () => {
     const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
 
     if (credentials && channel.id) {
-      const streamUrl = `${credentials.domain}/${credentials.user}/${credentials.pass}/${channel.id}`;
+      // Xtream Codes live stream format: /live/<user>/<pass>/<id>.m3u8
+      const streamUrl = `${credentials.domain.replace(/\/$/, '')}/live/${credentials.user}/${credentials.pass}/${channel.id}.m3u8`;
       playVideo(streamUrl, {
         id: parseInt(channel.id) || 0,
         title: channel.name,
