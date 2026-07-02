@@ -272,8 +272,41 @@ const LiveTV = () => {
 
   return (
     <div className="flex flex-col md:flex-row gap-6">
-      {/* Sidebar de Categorias */}
-      <aside className="w-full md:w-64 space-y-4">
+      {/* Categorias — Mobile: chips horizontais roláveis */}
+      <div className="md:hidden -mx-4 px-4">
+        <div className="flex items-center gap-2 mb-2 text-foreground font-semibold text-sm">
+          <ListFilter className="w-4 h-4 text-primary" />
+          <span>Categorias</span>
+        </div>
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 snap-x">
+          <button
+            onClick={() => setSelectedCategory('all')}
+            className={`shrink-0 snap-start px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all ${
+              selectedCategory === 'all'
+                ? 'bg-primary text-primary-foreground font-medium shadow-lg shadow-primary/20'
+                : 'bg-card/50 border border-border/50 text-muted-foreground'
+            }`}
+          >
+            Todos
+          </button>
+          {sortedCategories.map(([id, name]) => (
+            <button
+              key={id}
+              onClick={() => setSelectedCategory(id)}
+              className={`shrink-0 snap-start px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all ${
+                selectedCategory === id
+                  ? 'bg-primary text-primary-foreground font-medium shadow-lg shadow-primary/20'
+                  : 'bg-card/50 border border-border/50 text-muted-foreground'
+              }`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Sidebar de Categorias — Desktop/Tablet */}
+      <aside className="hidden md:block w-64 space-y-4">
         <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-4 text-foreground font-semibold">
             <ListFilter className="w-4 h-4 text-primary" />
@@ -306,6 +339,7 @@ const LiveTV = () => {
           </div>
         </div>
       </aside>
+
 
       {/* Grid de Canais */}
       <div className="flex-1 space-y-6">
