@@ -406,6 +406,11 @@ const GlobalPlayer: React.FC = () => {
         activeAttemptCleanup();
         activeAttemptCleanup = null;
       }
+      clearReconnectTimer();
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
       // Limpeza brutal do listener de ended pra evitar leaks em multi-reconnects
       if (video) video.onended = null;
 
@@ -418,7 +423,7 @@ const GlobalPlayer: React.FC = () => {
         mpegtsRef.current = null;
       }
     };
-  }, [currentUrl, retryKey]);
+  }, [currentUrl, retryKey, clearReconnectTimer, scheduleLiveReconnect]);
 
   // --- PROGRESS: Atualizar barra de progresso ---
   useEffect(() => {
