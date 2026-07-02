@@ -334,13 +334,11 @@ const GlobalPlayer: React.FC = () => {
         player.on(mpegts.Events.ERROR, (errType, errDetail) => {
           console.warn(`[GlobalPlayer] ⚠️ MPEGTS Erro (${attempt.id}):`, errType, errDetail);
 
-          // Auto-reconnect só quando o stream já tocou por um tempo razoável (>30s).
-          // Caso contrário, cai no próximo fallback para não entrar em loop de reload.
-          if (playbackStartAtRef.current && Date.now() - playbackStartAtRef.current > 30_000) {
+          // Erros MPEG-TS em live podem ser apenas troca/atraso de segmento.
+          // Só reconecta se, após alguns segundos, o tempo do vídeo não avançar.
+          if (playbackConfirmedRef.current) {
             clearLoadTimeout();
-            player.destroy();
-            mpegtsRef.current = null;
-            scheduleLiveReconnect(`mpegts-error:${errType}`);
+            scheduleLiveReconnect(`mpegts-error:${errType}`, 12_000);
             return;
           }
 
@@ -359,7 +357,7 @@ const GlobalPlayer: React.FC = () => {
         // o vídeo atinge o EOF natural sem erro. Ocorrendo isso na LiveTV, forçamos o auto-reconnect.
         const onEndedMpegts = () => {
           clearLoadTimeout();
-          scheduleLiveReconnect('mpegts-eof');
+          scheduleLiveReconnect('mpegts-eof', 6_000);
         };
         video.onended = onEndedMpegts;
       } else {
