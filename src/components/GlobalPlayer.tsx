@@ -271,6 +271,7 @@ const GlobalPlayer: React.FC = () => {
           activeAttemptCleanup = null;
           setIsLoading(false);
           setHasError(null);
+          if (!playbackStartAtRef.current) playbackStartAtRef.current = Date.now();
           const playPromise = player.play();
           if (playPromise && typeof playPromise.then === 'function') {
             playPromise.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
@@ -279,19 +280,17 @@ const GlobalPlayer: React.FC = () => {
 
         video.addEventListener('canplay', markMpegReady, { once: true });
         activeAttemptCleanup = () => video.removeEventListener('canplay', markMpegReady);
-        
+
         player.on(mpegts.Events.ERROR, (errType, errDetail) => {
           console.warn(`[GlobalPlayer] ⚠️ MPEGTS Erro (${attempt.id}):`, errType, errDetail);
-          
-          // Se a conexão cair (Timeout da Supabase Edge Function ou painel XTream)
-          // mas o vídeo já estava tocando ha alguns segundos, é o fim da sessão de stream.
-          // Disparamos o setRetryKey para reabrir a conexão silenciosamente na mesma hora (Auto-Reconnect).
-          if (video.currentTime > 5) {
-            console.log('[GlobalPlayer] Conexão live TV encerrada. Iniciando auto-reconnect...');
+
+          // Auto-reconnect só quando o stream já tocou por um tempo razoável (>30s).
+          // Caso contrário, cai no próximo fallback para não entrar em loop de reload.
+          if (playbackStartAtRef.current && Date.now() - playbackStartAtRef.current > 30_000) {
             clearLoadTimeout();
             player.destroy();
             mpegtsRef.current = null;
-            setRetryKey(k => k + 1);
+            scheduleLiveReconnect(`mpegts-error:${errType}`);
             return;
           }
 
@@ -299,6 +298,7 @@ const GlobalPlayer: React.FC = () => {
           activeAttemptCleanup = null;
           goToNextAttempt();
         });
+
         
         player.on(mpegts.Events.MEDIA_INFO, () => {
           console.log(`[GlobalPlayer] ✅ MPEGTS OK: ${attempt.id}`);
