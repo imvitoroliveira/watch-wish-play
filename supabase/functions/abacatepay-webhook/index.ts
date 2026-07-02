@@ -374,7 +374,8 @@ Deno.serve(async (req) => {
             client_username: username,
             plan,
             days: planInfo.days,
-            cakto_transaction_id: transactionRef,
+            provider: "abacatepay",
+            provider_transaction_id: transactionRef,
             status: "pending",
           });
           if (txErr) console.warn("[create_billing] Could not store pending tx:", txErr.message);
