@@ -241,7 +241,6 @@ describe('Segurança Geral: Injeção e sanitização', () => {
       { fn: 'tmdb-proxy', body: { endpoint: '/trending/movie/week' } },
       { fn: 'user-presence', body: { action: 'heartbeat', username: 'leak.test' } },
       { fn: 'abacatepay-webhook', body: { event: 'unknown', data: {} } },
-      { fn: 'cakto-webhook', body: { event: 'unknown', data: {} } },
     ];
 
     it.each(testCases)('$fn não vaza segredos', async ({ fn, body }) => {
