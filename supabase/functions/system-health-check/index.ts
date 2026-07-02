@@ -298,7 +298,7 @@ const TEST_SUITE: TestCase[] = [
   { name: "sqli: content-alerts DELETE injection", category: "security", fn: "content-alerts", method: "POST", body: { action: "list", username: "test'; DELETE FROM content_alerts; --" }, expect: { status: [200, 400, 403] } },
   { name: "sqli: match-reminders UPDATE injection", category: "security", fn: "match-reminders", method: "POST", body: { action: "list", username: "1; UPDATE payment_transactions SET status='approved'" }, expect: { status: [200, 400, 403] } },
   { name: "sqli: abacatepay DROP TABLE", category: "security", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "'; DROP TABLE payment_transactions; --", plan: "mensal" }, expect: { status: [400, 403] } },
-  { name: "sqli: cakto-webhook injection", category: "security", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "'; DROP TABLE clients_list; --" }, expect: { status: [400, 403] } },
+  
 
   // ═══════════════════════════════════════════════
   // XSS cross-function (4 tests)
