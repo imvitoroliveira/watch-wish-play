@@ -254,6 +254,7 @@ const GlobalPlayer: React.FC = () => {
         mpegtsRef.current.destroy();
         mpegtsRef.current = null;
       }
+      video.onended = null;
       currentAttempt++;
       tryLoadNext();
     };
