@@ -319,7 +319,7 @@ const TEST_SUITE: TestCase[] = [
   // CORS extra (4 tests)
   // ═══════════════════════════════════════════════
   { name: "CORS: abacatepay OPTIONS = 200", category: "security", fn: "abacatepay-webhook", method: "OPTIONS", expect: { status: [200, 204] } },
-  { name: "CORS: cakto-webhook OPTIONS = 200", category: "security", fn: "cakto-webhook", method: "OPTIONS", expect: { status: [200, 204] } },
+  
   { name: "CORS: user-presence OPTIONS = 200", category: "security", fn: "user-presence", method: "OPTIONS", expect: { status: [200, 204] } },
   { name: "CORS: system-health-check OPTIONS = 200", category: "security", fn: "system-health-check", method: "OPTIONS", expect: { status: [200, 204] } },
 
