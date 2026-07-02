@@ -190,7 +190,21 @@ const GlobalPlayer: React.FC = () => {
     // Para MP4/MKV (filmes/séries), a tag nativa <video src> NÃO sofre bloqueio estrito de CORS e vamos tentar direto.
     const playAttempts: { id: string; url: string; kind: 'hls' | 'mpegts' | 'native' }[] = [];
     const attemptedUrls = new Set<string>();
+
+    // Detecção de mobile / iOS — iOS Safari não expõe MSE, então hls.js e mpegts.js
+    // não funcionam. Precisamos priorizar HLS nativo (video.src=.m3u8) e MP4 direto.
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && 'ontouchend' in (typeof document !== 'undefined' ? document : {} as Document));
+    const isMobile = /Mobi|Android/i.test(ua) || isIOS;
+    const hasMSE = typeof window !== 'undefined' && 'MediaSource' in window;
+    const canMpegts = hasMSE && mpegts.isSupported();
+    const canHlsJs = hasMSE && Hls.isSupported();
+
     const addAttempt = (id: string, url: string, kind: 'hls' | 'mpegts' | 'native') => {
+      // Pula tentativas que dependem de MSE quando o dispositivo não suporta —
+      // evita esperar timeout de 10-18s por rota inviável no iOS.
+      if (kind === 'mpegts' && !canMpegts) return;
+      if (kind === 'hls' && !canHlsJs) return; // HLS nativo é tratado como 'native' abaixo
       const key = `${kind}:${url}`;
       if (attemptedUrls.has(key)) return;
       attemptedUrls.add(key);
@@ -201,16 +215,20 @@ const GlobalPlayer: React.FC = () => {
     // Se for URL de filme sem extensão definida (originado do MovieModal)
     // Adicionamos as extensões corretas para evitar que o NGINX devolva text/html (Erro de Formato)
     if (normalizedUrl.includes('/movie/') && !normalizedUrl.match(/\.(mkv|mp4|avi|ts|m3u8)$/i)) {
-      playAttempts.push({ id: 'direta_mp4', url: `${normalizedUrl}.mp4`, kind: 'native' });
-      playAttempts.push({ id: 'direta_mkv', url: `${normalizedUrl}.mkv`, kind: 'native' });
-      playAttempts.push({ id: 'proxy_mp4', url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(normalizedUrl + '.mp4')}`, kind: 'native' });
+      // No mobile, tentativa direta (http) é bloqueada por Mixed Content — vai direto no proxy.
+      if (!isMobile) {
+        addAttempt('direta_mp4', `${normalizedUrl}.mp4`, 'native');
+        addAttempt('direta_mkv', `${normalizedUrl}.mkv`, 'native');
+      }
+      addAttempt('proxy_mp4', buildSupabaseStreamProxy(`${normalizedUrl}.mp4`), 'native');
+      addAttempt('proxy_mkv', buildSupabaseStreamProxy(`${normalizedUrl}.mkv`), 'native');
     } else {
       const isDirectFirst = Boolean(
-        lowerUrl.match(/\.(mp4|mkv|avi|mov)$/) || 
-        lowerUrl.includes('/movie/') || 
+        lowerUrl.match(/\.(mp4|mkv|avi|mov)$/) ||
+        lowerUrl.includes('/movie/') ||
         lowerUrl.includes('/series/')
       );
-      
+
       if (isLiveMedia && liveMatch) {
         const [, origin, user, pass, id] = liveMatch;
         const tsUrl = `${origin}/live/${user}/${pass}/${id}.ts`;
@@ -218,29 +236,34 @@ const GlobalPlayer: React.FC = () => {
         const rawTsUrl = `${origin}/${user}/${pass}/${id}.ts`;
         const hlsUrl = `${origin}/live/${user}/${pass}/${id}.m3u8`;
 
-        // Canais ao vivo XTream costumam anunciar .m3u8, mas entregar MPEG-TS.
-        // Começar por MPEG-TS evita o custo de tentar interpretar um TS infinito como manifesto HLS.
-        addAttempt('live_mpegts_ts', buildSupabaseStreamProxy(tsUrl), 'mpegts');
-        addAttempt('live_mpegts_raw', buildSupabaseStreamProxy(rawUrl), 'mpegts');
-        addAttempt('live_mpegts_raw_ts', buildSupabaseStreamProxy(rawTsUrl), 'mpegts');
-        addAttempt('live_hls_fallback', buildSupabaseStreamProxy(hlsUrl), 'hls');
-        addAttempt('live_native_ts', buildSupabaseStreamProxy(tsUrl), 'native');
+        if (isIOS) {
+          // iOS: HLS nativo é o único caminho viável (sem MSE).
+          addAttempt('live_ios_hls_native', buildSupabaseStreamProxy(hlsUrl), 'native');
+          addAttempt('live_ios_hls_direct', hlsUrl, 'native');
+        } else {
+          // Desktop / Android: MPEG-TS via mpegts.js é o mais rápido para XTream.
+          addAttempt('live_mpegts_ts', buildSupabaseStreamProxy(tsUrl), 'mpegts');
+          addAttempt('live_mpegts_raw', buildSsupabaseStreamProxy(rawUrl), 'mpegts');
+          addAttempt('live_mpegts_raw_ts', buildSupabaseStreamProxy(rawTsUrl), 'mpegts');
+          addAttempt('live_hls_fallback', buildSupabaseStreamProxy(hlsUrl), 'hls');
+          addAttempt('live_native_ts', buildSupabaseStreamProxy(tsUrl), 'native');
+        }
       } else if (isHls) {
-        // Live TV em painéis XTream nem sempre entrega uma playlist HLS real.
-        // Muitas rotas terminadas em .m3u8 respondem MPEG-TS contínuo (video/mp2t),
-        // então tentamos HLS primeiro e MPEG-TS em seguida na mesma URL proxied.
-        addAttempt('hls_proxy', buildSupabaseStreamProxy(normalizedUrl), 'hls');
-        addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
-        addAttempt('hls_direta', normalizedUrl, 'hls');
+        if (isIOS) {
+          addAttempt('hls_native_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
+          addAttempt('hls_direta', normalizedUrl, 'native');
+        } else {
+          addAttempt('hls_proxy', buildSupabaseStreamProxy(normalizedUrl), 'hls');
+          addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
+          addAttempt('hls_direta', normalizedUrl, 'hls');
+        }
       } else if (isDirectFirst) {
-        addAttempt('direta', normalizedUrl, 'native');
+        if (!isMobile) addAttempt('direta', normalizedUrl, 'native');
         addAttempt('supabase_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
       } else {
-        // Canais ao vivo vindos do M3U mestre costumam chegar sem extensão e com
-        // Content-Type video/mp2t; mpegts.js é o caminho correto nesses casos.
         addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
         addAttempt('nativo_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
-        addAttempt('direta', normalizedUrl, 'native');
+        if (!isMobile) addAttempt('direta', normalizedUrl, 'native');
       }
     }
 
