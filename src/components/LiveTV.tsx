@@ -272,8 +272,8 @@ const LiveTV = () => {
 
   return (
     <div className="flex flex-col md:flex-row gap-6">
-      {/* Sidebar de Categorias — desktop */}
-      <aside className="hidden md:block w-64 space-y-4 shrink-0">
+      {/* Sidebar de Categorias */}
+      <aside className="w-full md:w-64 space-y-4">
         <div className="bg-card/50 border border-border/50 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-4 text-foreground font-semibold">
             <ListFilter className="w-4 h-4 text-primary" />
@@ -306,39 +306,6 @@ const LiveTV = () => {
           </div>
         </div>
       </aside>
-
-      {/* Categorias — mobile: chips com scroll horizontal */}
-      <div className="md:hidden -mx-1 px-1">
-        <div className="flex items-center gap-2 mb-2 text-foreground/80 text-xs font-medium px-1">
-          <ListFilter className="w-3.5 h-3.5 text-primary" />
-          <span>Categorias</span>
-        </div>
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 snap-x">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`shrink-0 snap-start px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all ${
-              selectedCategory === 'all'
-                ? 'bg-primary text-primary-foreground font-medium shadow-md shadow-primary/20'
-                : 'bg-card/60 text-muted-foreground border border-border/50'
-            }`}
-          >
-            Todos
-          </button>
-          {sortedCategories.map(([id, name]) => (
-            <button
-              key={id}
-              onClick={() => setSelectedCategory(id)}
-              className={`shrink-0 snap-start px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all ${
-                selectedCategory === id
-                  ? 'bg-primary text-primary-foreground font-medium shadow-md shadow-primary/20'
-                  : 'bg-card/60 text-muted-foreground border border-border/50'
-              }`}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* Grid de Canais */}
       <div className="flex-1 space-y-6">
