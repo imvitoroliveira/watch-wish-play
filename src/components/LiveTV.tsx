@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useVideo } from '@/contexts/VideoContext';
 import { Search, ListFilter, Play, Tv, Loader2, Signal } from 'lucide-react';
@@ -16,6 +16,18 @@ interface Channel {
   logo?: string;
 }
 
+interface XtreamCategory {
+  category_id?: string | number;
+  category_name?: string;
+}
+
+interface XtreamLiveStream {
+  stream_id?: string | number;
+  name?: string;
+  category_id?: string | number;
+  stream_icon?: string;
+}
+
 const LIVE_CHANNELS_CACHE_ID = '00000000-0000-0000-0000-000000000003';
 const LIVE_CATEGORIES_CACHE_ID = '00000000-0000-0000-0000-000000000002';
 
@@ -28,44 +40,21 @@ const LiveTV = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    const fetchChannels = async () => {
-      setLoading(true);
-      try {
-        const clientM3uUrl = currentClient?.m3u || localStorage.getItem('msc_m3u_url') || '';
-        const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
-
-        if (credentials) {
-          await fetchFromXtreamAPI(credentials);
-        } else {
-          await fetchFromCache();
-        }
-      } catch (err) {
-        console.error('[LiveTV] Erro ao carregar canais:', err);
-        await fetchFromCache();
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchChannels();
-  }, [currentClient?.m3u]);
-
   // Salva canais e categorias no Supabase para uso futuro (quando XTream API não estiver acessível)
-  const saveToCache = async (channelList: Channel[], catMap: Record<string, string>) => {
+  const saveToCache = useCallback(async (channelList: Channel[], catMap: Record<string, string>) => {
     try {
       // Salvar canais no formato compacto: id|catId|name|logo
       const channelTitles = channelList.map(c => `${c.id}|${c.categoryId}|${c.name}|${c.logo || ''}`);
       await supabase.from('m3u_catalog').upsert({
         id: LIVE_CHANNELS_CACHE_ID,
-        titles: channelTitles as any,
+        titles: channelTitles,
         updated_at: new Date().toISOString(),
       });
 
       // Salvar categorias como JSON
       await supabase.from('m3u_catalog').upsert({
         id: LIVE_CATEGORIES_CACHE_ID,
-        titles: [JSON.stringify(catMap)] as any,
+        titles: [JSON.stringify(catMap)],
         updated_at: new Date().toISOString(),
       });
 
@@ -73,9 +62,9 @@ const LiveTV = () => {
     } catch (e) {
       console.warn('[LiveTV] Erro ao salvar cache:', e);
     }
-  };
+  }, []);
 
-  const fetchFromXtreamAPI = async (creds: { domain: string; user: string; pass: string }) => {
+  const fetchFromXtreamAPI = useCallback(async (creds: { domain: string; user: string; pass: string }) => {
     try {
       // Server-side proxy: bypassa Mixed Content (HTTPS preview → HTTP IPTV)
       const [catRes, liveRes] = await Promise.all([
@@ -87,16 +76,16 @@ const LiveTV = () => {
         }),
       ]);
 
-      let catMap: Record<string, string> = {};
+      const catMap: Record<string, string> = {};
       if (!catRes.error && Array.isArray(catRes.data)) {
-        catRes.data.forEach((c: any) => {
+        (catRes.data as XtreamCategory[]).forEach((c) => {
           catMap[String(c.category_id)] = c.category_name;
         });
         setCategories(catMap);
       }
 
       if (!liveRes.error && Array.isArray(liveRes.data) && liveRes.data.length > 0) {
-        const parsed: Channel[] = liveRes.data.map((item: any) => ({
+        const parsed: Channel[] = (liveRes.data as XtreamLiveStream[]).map((item) => ({
           id: String(item.stream_id || ''),
           name: item.name || '',
           categoryId: String(item.category_id || '0'),
@@ -109,11 +98,12 @@ const LiveTV = () => {
       }
     } catch (e) {
       console.warn('[LiveTV] xtream-proxy falhou, tentando cache:', e);
+      throw e;
     }
-    await fetchFromCache();
-  };
+    throw new Error('xtream-proxy não retornou canais ao vivo');
+  }, [saveToCache]);
 
-  const fetchFromCache = async () => {
+  const fetchFromCache = useCallback(async () => {
     try {
       console.log('[LiveTV] Carregando canais do cache...');
 
@@ -186,7 +176,30 @@ const LiveTV = () => {
     } catch (e) {
       console.error('[LiveTV] Erro ao carregar cache:', e);
     }
-  };
+  }, [saveToCache]);
+
+  useEffect(() => {
+    const fetchChannels = async () => {
+      setLoading(true);
+      try {
+        const clientM3uUrl = currentClient?.m3u || localStorage.getItem('msc_m3u_url') || '';
+        const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
+
+        if (credentials) {
+          await fetchFromXtreamAPI(credentials);
+        } else {
+          await fetchFromCache();
+        }
+      } catch (err) {
+        console.error('[LiveTV] Erro ao carregar canais:', err);
+        await fetchFromCache();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChannels();
+  }, [currentClient?.m3u, fetchFromCache, fetchFromXtreamAPI]);
 
   // Filtragem
   const filteredChannels = useMemo(() => {
@@ -221,7 +234,7 @@ const LiveTV = () => {
         id: parseInt(channel.id) || 0,
         title: channel.name,
         poster: channel.logo || '',
-        media_type: 'movie'
+        media_type: 'tv'
       });
       return;
     }
@@ -237,7 +250,7 @@ const LiveTV = () => {
             id: channel.id ? parseInt(channel.id) : 0,
             title: channel.name,
             poster: channel.logo || '',
-            media_type: 'movie'
+            media_type: 'tv'
           });
         } else {
           toast({ title: "Sinal Indisponível", description: "O servidor não conseguiu resolver o stream deste canal.", variant: "destructive" });
