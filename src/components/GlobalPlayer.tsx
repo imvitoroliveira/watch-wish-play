@@ -77,7 +77,8 @@ const GlobalPlayer: React.FC = () => {
     // O proxy faz o fetch do lado do servidor e repassa com CORS headers corretos.
     // Usamos _cb (Cache-Buster) para OBRIGAR a infraestrutura CDN (Cloudflare/Supabase) a não retornar streams
     // cacheados do passado caso a conexão caia e precisemos recarregar o proxy.
-    const supabaseStreamProxy = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(normalizedUrl)}&_cb=${Date.now()}`;
+    const buildSupabaseStreamProxy = (url: string) => `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(url)}&_cb=${Date.now()}`;
+    const supabaseStreamProxy = buildSupabaseStreamProxy(normalizedUrl);
     
     // Para streams TS/Raw sem extensão, mpegts.js requer CORS, então o proxy é obrigatório.
     // Para MP4/MKV (filmes/séries), a tag nativa <video src> NÃO sofre bloqueio estrito de CORS e vamos tentar direto.
@@ -103,6 +104,21 @@ const GlobalPlayer: React.FC = () => {
         playAttempts.push({ id: 'hls_proxy', url: supabaseStreamProxy, kind: 'hls' });
         playAttempts.push({ id: 'mpegts_proxy', url: supabaseStreamProxy, kind: 'mpegts' });
         playAttempts.push({ id: 'hls_direta', url: normalizedUrl, kind: 'hls' });
+
+        // Fallbacks Xtream: alguns servidores não aceitam /live/...id.m3u8,
+        // mas aceitam /live/...id.ts ou o formato bruto /user/pass/id usado na M3U original.
+        const liveMatch = normalizedUrl.match(/^(https?:\/\/[^/]+)\/live\/([^/]+)\/([^/]+)\/(\d+)(?:\.(m3u8|ts))?(?:\?.*)?$/i);
+        if (liveMatch) {
+          const [, origin, user, pass, id] = liveMatch;
+          const variants = [
+            `${origin}/live/${user}/${pass}/${id}.ts`,
+            `${origin}/${user}/${pass}/${id}`,
+            `${origin}/${user}/${pass}/${id}.ts`,
+          ];
+          variants.forEach((variant, index) => {
+            playAttempts.push({ id: `mpegts_xtream_${index + 1}`, url: buildSupabaseStreamProxy(variant), kind: 'mpegts' });
+          });
+        }
       } else if (isDirectFirst) {
         playAttempts.push({ id: 'direta', url: normalizedUrl, kind: 'native' });
         playAttempts.push({ id: 'supabase_proxy', url: supabaseStreamProxy, kind: 'native' });
