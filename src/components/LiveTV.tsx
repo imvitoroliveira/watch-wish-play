@@ -98,8 +98,9 @@ const LiveTV = () => {
       }
     } catch (e) {
       console.warn('[LiveTV] xtream-proxy falhou, tentando cache:', e);
+      throw e;
     }
-    await fetchFromCache();
+    throw new Error('xtream-proxy não retornou canais ao vivo');
   }, [saveToCache]);
 
   const fetchFromCache = useCallback(async () => {
