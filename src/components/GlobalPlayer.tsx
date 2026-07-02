@@ -34,8 +34,16 @@ const GlobalPlayer: React.FC = () => {
   const mpegtsRef = useRef<mpegts.Player | null>(null);
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Detecção robusta de mobile/iOS — iOS não suporta MSE (mpegts.js/hls.js falham),
+  // e navegadores mobile exigem `muted` ao iniciar autoplay.
+  const uaRef = useRef<{ isMobile: boolean; isIOS: boolean }>({
+    isMobile: typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent),
+    isIOS: typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && (navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints! > 1)),
+  });
+
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  // Mobile: começar mudo para permitir autoplay. Usuário pode desmutar via controle.
+  const [isMuted, setIsMuted] = useState(() => uaRef.current.isMobile);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(true);
