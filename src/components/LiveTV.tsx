@@ -355,7 +355,7 @@ const LiveTV = () => {
                     {channel.name}
                   </h4>
                   <p className="text-white/50 text-[10px] truncate">
-                    {categories[channel.categoryId] || 'Geral'}
+                    {categories[channel.categoryId] || (channel.categoryId && isNaN(Number(channel.categoryId)) ? channel.categoryId : 'Geral')}
                   </p>
                 </div>
 
