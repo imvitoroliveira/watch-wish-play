@@ -34,8 +34,16 @@ const GlobalPlayer: React.FC = () => {
   const mpegtsRef = useRef<mpegts.Player | null>(null);
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Detecção robusta de mobile/iOS — iOS não suporta MSE (mpegts.js/hls.js falham),
+  // e navegadores mobile exigem `muted` ao iniciar autoplay.
+  const uaRef = useRef<{ isMobile: boolean; isIOS: boolean }>({
+    isMobile: typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent),
+    isIOS: typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && (navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints! > 1)),
+  });
+
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  // Mobile: começar mudo para permitir autoplay. Usuário pode desmutar via controle.
+  const [isMuted, setIsMuted] = useState(() => uaRef.current.isMobile);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(true);
@@ -165,29 +173,24 @@ const GlobalPlayer: React.FC = () => {
 
     let normalizedUrl = currentUrl;
 
-    // Normalizar URL: servidores IPTV usam HTTP (não possuem certificado SSL).
-    if (normalizedUrl.startsWith('https://') && !normalizedUrl.includes('.m3u8') && !normalizedUrl.includes('youtube') && !normalizedUrl.includes('workers.dev') && !normalizedUrl.includes('supabase.co')) {
+    // Mobile: NÃO fazer downgrade https→http (Mixed Content bloqueia). Manter proxy.
+    const { isMobile, isIOS } = uaRef.current;
+    if (!isMobile && normalizedUrl.startsWith('https://') && !normalizedUrl.includes('.m3u8') && !normalizedUrl.includes('youtube') && !normalizedUrl.includes('workers.dev') && !normalizedUrl.includes('supabase.co')) {
       normalizedUrl = normalizedUrl.replace(/^https:\/\//i, 'http://');
     }
-    
-    console.log('[GlobalPlayer] URL original processada:', normalizedUrl.substring(0, 80));
+
+    console.log('[GlobalPlayer] URL processada:', normalizedUrl.substring(0, 80), '| mobile:', isMobile, '| iOS:', isIOS);
 
     const lowerUrl = normalizedUrl.toLowerCase();
     const isHls = lowerUrl.includes('.m3u8');
     const isLiveMedia = currentMedia?.media_type === 'tv' || lowerUrl.includes('/live/');
+    // iOS Safari NÃO suporta MSE — mpegts.js/hls.js retornam isSupported()=false.
+    const canUseMSE = !isIOS && typeof MediaSource !== 'undefined';
 
-    // Estratégia DEFINITIVA: Servidores IPTV NUNCA enviam CORS headers.
-    // Portanto, o browser SEMPRE bloqueará fetch/HLS direto ao servidor IPTV.
-    // A ÚNICA forma de funcionar é via proxy server-side (Supabase Edge Function).
-    // O proxy faz o fetch do lado do servidor e repassa com CORS headers corretos.
-    // Usamos _cb (Cache-Buster) para OBRIGAR a infraestrutura CDN (Cloudflare/Supabase) a não retornar streams
-    // cacheados do passado caso a conexão caia e precisemos recarregar o proxy.
     const buildSupabaseStreamProxy = (url: string) => (
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(url)}&_cb=${Date.now()}-${Math.random().toString(36).slice(2)}`
     );
-    
-    // Para streams TS/Raw sem extensão, mpegts.js requer CORS, então o proxy é obrigatório.
-    // Para MP4/MKV (filmes/séries), a tag nativa <video src> NÃO sofre bloqueio estrito de CORS e vamos tentar direto.
+
     const playAttempts: { id: string; url: string; kind: 'hls' | 'mpegts' | 'native' }[] = [];
     const attemptedUrls = new Set<string>();
     const addAttempt = (id: string, url: string, kind: 'hls' | 'mpegts' | 'native') => {
@@ -198,19 +201,20 @@ const GlobalPlayer: React.FC = () => {
     };
     const liveMatch = normalizedUrl.match(/^(https?:\/\/[^/]+)\/live\/([^/]+)\/([^/]+)\/(\d+)(?:\.(m3u8|ts))?(?:\?.*)?$/i);
 
-    // Se for URL de filme sem extensão definida (originado do MovieModal)
-    // Adicionamos as extensões corretas para evitar que o NGINX devolva text/html (Erro de Formato)
     if (normalizedUrl.includes('/movie/') && !normalizedUrl.match(/\.(mkv|mp4|avi|ts|m3u8)$/i)) {
-      playAttempts.push({ id: 'direta_mp4', url: `${normalizedUrl}.mp4`, kind: 'native' });
-      playAttempts.push({ id: 'direta_mkv', url: `${normalizedUrl}.mkv`, kind: 'native' });
-      playAttempts.push({ id: 'proxy_mp4', url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(normalizedUrl + '.mp4')}`, kind: 'native' });
+      if (!isMobile) {
+        addAttempt('direta_mp4', `${normalizedUrl}.mp4`, 'native');
+        addAttempt('direta_mkv', `${normalizedUrl}.mkv`, 'native');
+      }
+      addAttempt('proxy_mp4', buildSupabaseStreamProxy(normalizedUrl + '.mp4'), 'native');
+      addAttempt('proxy_mkv', buildSupabaseStreamProxy(normalizedUrl + '.mkv'), 'native');
     } else {
       const isDirectFirst = Boolean(
-        lowerUrl.match(/\.(mp4|mkv|avi|mov)$/) || 
-        lowerUrl.includes('/movie/') || 
+        lowerUrl.match(/\.(mp4|mkv|avi|mov)$/) ||
+        lowerUrl.includes('/movie/') ||
         lowerUrl.includes('/series/')
       );
-      
+
       if (isLiveMedia && liveMatch) {
         const [, origin, user, pass, id] = liveMatch;
         const tsUrl = `${origin}/live/${user}/${pass}/${id}.ts`;
@@ -218,31 +222,34 @@ const GlobalPlayer: React.FC = () => {
         const rawTsUrl = `${origin}/${user}/${pass}/${id}.ts`;
         const hlsUrl = `${origin}/live/${user}/${pass}/${id}.m3u8`;
 
-        // Canais ao vivo XTream costumam anunciar .m3u8, mas entregar MPEG-TS.
-        // Começar por MPEG-TS evita o custo de tentar interpretar um TS infinito como manifesto HLS.
-        addAttempt('live_mpegts_ts', buildSupabaseStreamProxy(tsUrl), 'mpegts');
-        addAttempt('live_mpegts_raw', buildSupabaseStreamProxy(rawUrl), 'mpegts');
-        addAttempt('live_mpegts_raw_ts', buildSupabaseStreamProxy(rawTsUrl), 'mpegts');
-        addAttempt('live_hls_fallback', buildSupabaseStreamProxy(hlsUrl), 'hls');
-        addAttempt('live_native_ts', buildSupabaseStreamProxy(tsUrl), 'native');
+        if (canUseMSE) {
+          addAttempt('live_mpegts_ts', buildSupabaseStreamProxy(tsUrl), 'mpegts');
+          addAttempt('live_mpegts_raw', buildSupabaseStreamProxy(rawUrl), 'mpegts');
+          addAttempt('live_mpegts_raw_ts', buildSupabaseStreamProxy(rawTsUrl), 'mpegts');
+          addAttempt('live_hls_fallback', buildSupabaseStreamProxy(hlsUrl), 'hls');
+          addAttempt('live_native_ts', buildSupabaseStreamProxy(tsUrl), 'native');
+        } else {
+          // iOS: usar HLS nativo (Safari suporta .m3u8 direto no <video>)
+          addAttempt('live_hls_ios_proxy', buildSupabaseStreamProxy(hlsUrl), 'native');
+          addAttempt('live_hls_ios_direct', hlsUrl, 'native');
+        }
       } else if (isHls) {
-        // Live TV em painéis XTream nem sempre entrega uma playlist HLS real.
-        // Muitas rotas terminadas em .m3u8 respondem MPEG-TS contínuo (video/mp2t),
-        // então tentamos HLS primeiro e MPEG-TS em seguida na mesma URL proxied.
-        addAttempt('hls_proxy', buildSupabaseStreamProxy(normalizedUrl), 'hls');
-        addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
-        addAttempt('hls_direta', normalizedUrl, 'hls');
+        if (canUseMSE) {
+          addAttempt('hls_proxy', buildSupabaseStreamProxy(normalizedUrl), 'hls');
+          addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
+        }
+        addAttempt('hls_nativo_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
+        if (!isMobile) addAttempt('hls_direta', normalizedUrl, 'native');
       } else if (isDirectFirst) {
-        addAttempt('direta', normalizedUrl, 'native');
+        if (!isMobile) addAttempt('direta', normalizedUrl, 'native');
         addAttempt('supabase_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
       } else {
-        // Canais ao vivo vindos do M3U mestre costumam chegar sem extensão e com
-        // Content-Type video/mp2t; mpegts.js é o caminho correto nesses casos.
-        addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
+        if (canUseMSE) addAttempt('mpegts_proxy', buildSupabaseStreamProxy(normalizedUrl), 'mpegts');
         addAttempt('nativo_proxy', buildSupabaseStreamProxy(normalizedUrl), 'native');
-        addAttempt('direta', normalizedUrl, 'native');
+        if (!isMobile) addAttempt('direta', normalizedUrl, 'native');
       }
     }
+
 
 
     let currentAttempt = 0;
@@ -663,10 +670,15 @@ const GlobalPlayer: React.FC = () => {
             ref={videoRef}
             className={isMini ? "w-full h-full object-cover" : "w-full h-full object-contain pointer-events-auto"}
             playsInline
+            {...({ 'webkit-playsinline': 'true', 'x5-playsinline': 'true' } as Record<string, string>)}
+            preload="auto"
+
             poster={currentMedia?.poster}
             muted={isMuted}
+            autoPlay
             onClick={!isMini ? togglePlay : undefined}
           />
+
 
           {/* ======================= OVERLAY DO MINI ======================= */}
           {isMini && (
