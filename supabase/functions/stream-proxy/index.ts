@@ -162,9 +162,70 @@ Deno.serve(async (req) => {
 
     console.log(`[stream-proxy] Resposta upstream: ${streamRes.status} | Type: ${resHeaders.get("content-type")}`);
 
-    // Middleware M3U8: Extrair texto e reescrever segmentos para forçar o proxy
-    if (playableUrl.toLowerCase().includes(".m3u8")) {
-      let m3u8Text = await streamRes.text();
+    // Middleware M3U8: só tratar como playlist quando o CORPO realmente for #EXTM3U.
+    // Alguns painéis XTream respondem uma rota ".m3u8" com MPEG-TS ao vivo (video/mp2t).
+    // Se usarmos streamRes.text() nesses casos, a função fica presa lendo um stream infinito
+    // e o player permanece em loading eterno.
+    const contentType = (streamRes.headers.get("content-type") || "").toLowerCase();
+    const mayBeM3u8 = playableUrl.toLowerCase().includes(".m3u8") || contentType.includes("mpegurl");
+
+    if (mayBeM3u8 && streamRes.body) {
+      const reader = streamRes.body.getReader();
+      const firstRead = await reader.read();
+
+      if (firstRead.done || !firstRead.value) {
+        return new Response(null, {
+          status: streamRes.status,
+          headers: resHeaders,
+        });
+      }
+
+      const decoder = new TextDecoder();
+      const firstChunkText = decoder.decode(firstRead.value, { stream: true });
+
+      if (!firstChunkText.trimStart().startsWith("#EXTM3U")) {
+        const passthroughStream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(firstRead.value!);
+
+            const pump = async () => {
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  if (value) controller.enqueue(value);
+                }
+                controller.close();
+              } catch (err) {
+                controller.error(err);
+              }
+            };
+
+            pump();
+          },
+          cancel() {
+            reader.cancel().catch(() => {});
+          },
+        });
+
+        if (!resHeaders.has("content-type") || resHeaders.get("content-type")?.includes("mpegurl")) {
+          resHeaders.set("content-type", "video/mp2t");
+        }
+
+        return new Response(passthroughStream, {
+          status: streamRes.status,
+          headers: resHeaders,
+        });
+      }
+
+      let m3u8Text = firstChunkText;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) m3u8Text += decoder.decode(value, { stream: true });
+      }
+      m3u8Text += decoder.decode();
+
       const proxyBaseUrl = new URL(req.url).origin + new URL(req.url).pathname + "?url=";
       const upstreamBaseUrl = playableUrl.substring(0, playableUrl.lastIndexOf("/") + 1);
 
