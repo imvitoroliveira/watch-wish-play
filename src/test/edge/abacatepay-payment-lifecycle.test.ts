@@ -72,7 +72,7 @@ describe('AbacatePay: Ciclo de vida completo de pagamento', () => {
         expect(pending).toBeDefined();
         expect(pending.plan).toBe('mensal');
         expect(pending.days).toBe(30);
-        expect(pending.cakto_transaction_id).toContain('abacate_bill_');
+        expect(pending.provider_transaction_id).toContain('abacate_bill_');
       }
       // Se RLS bloqueou, o teste anterior já validou que o billing foi criado
       expect(true).toBe(true);

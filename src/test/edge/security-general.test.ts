@@ -214,16 +214,8 @@ describe('Segurança Geral: Injeção e sanitização', () => {
       expect(res.status).toBe(400);
     });
 
-    it('cakto-webhook: corpo não-JSON retorna 400 ou 401', async () => {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/cakto-webhook`, {
-        method: 'POST',
-        headers: defaultHeaders(),
-        body: 'not-json',
-      });
-      await res.text();
-      expect([400, 401]).toContain(res.status);
-    });
   });
+
 
   // ═══════════════════════════════════════════════
   // Vazamento de segredos (cross-function)
@@ -249,7 +241,6 @@ describe('Segurança Geral: Injeção e sanitização', () => {
       { fn: 'tmdb-proxy', body: { endpoint: '/trending/movie/week' } },
       { fn: 'user-presence', body: { action: 'heartbeat', username: 'leak.test' } },
       { fn: 'abacatepay-webhook', body: { event: 'unknown', data: {} } },
-      { fn: 'cakto-webhook', body: { event: 'unknown', data: {} } },
     ];
 
     it.each(testCases)('$fn não vaza segredos', async ({ fn, body }) => {
@@ -288,7 +279,6 @@ describe('Segurança Geral: Injeção e sanitização', () => {
       'admin-login',
       'client-login',
       'abacatepay-webhook',
-      'cakto-webhook',
       'user-presence',
       'tmdb-proxy',
     ])('%s OPTIONS retorna CORS', async (fn) => {

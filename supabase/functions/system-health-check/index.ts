@@ -177,13 +177,8 @@ const TEST_SUITE: TestCase[] = [
   { name: "m3u-auto-refresh: retorna count ou skipped", category: "integration", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { status: [200, 500] } },
   { name: "m3u-auto-refresh: não vazar segredos", category: "security", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "source_url"] } },
 
-  // ═══════════════════════════════════════════════
-  // cakto-webhook (4 tests)
-  // ═══════════════════════════════════════════════
-  { name: "cakto-webhook: checkout sem plan = 400", category: "functional", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "hc_test" }, expect: { status: [400] } },
-  { name: "cakto-webhook: evento sem assinatura = 401", category: "functional", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc_event", data: {} }, expect: { status: [401] } },
-  { name: "cakto-webhook: não vazar tokens de pagamento", category: "security", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "test" }, expect: { notContains: ["CAKTO_CLIENT_SECRET", "CAKTO_CLIENT_ID", "NATV_API_TOKEN", "service_role"] } },
-  { name: "cakto-webhook: formato estável", category: "regression", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc", data: {} }, expect: { status: [401] } },
+  // (cakto-webhook removido — legado descontinuado)
+
 
   // ═══════════════════════════════════════════════
   // abacatepay-webhook (18 tests) — Ciclo completo de pagamento
@@ -303,7 +298,7 @@ const TEST_SUITE: TestCase[] = [
   { name: "sqli: content-alerts DELETE injection", category: "security", fn: "content-alerts", method: "POST", body: { action: "list", username: "test'; DELETE FROM content_alerts; --" }, expect: { status: [200, 400, 403] } },
   { name: "sqli: match-reminders UPDATE injection", category: "security", fn: "match-reminders", method: "POST", body: { action: "list", username: "1; UPDATE payment_transactions SET status='approved'" }, expect: { status: [200, 400, 403] } },
   { name: "sqli: abacatepay DROP TABLE", category: "security", fn: "abacatepay-webhook", method: "POST", body: { action: "create_billing", username: "'; DROP TABLE payment_transactions; --", plan: "mensal" }, expect: { status: [400, 403] } },
-  { name: "sqli: cakto-webhook injection", category: "security", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "'; DROP TABLE clients_list; --" }, expect: { status: [400, 403] } },
+  
 
   // ═══════════════════════════════════════════════
   // XSS cross-function (4 tests)
@@ -324,14 +319,14 @@ const TEST_SUITE: TestCase[] = [
   // CORS extra (4 tests)
   // ═══════════════════════════════════════════════
   { name: "CORS: abacatepay OPTIONS = 200", category: "security", fn: "abacatepay-webhook", method: "OPTIONS", expect: { status: [200, 204] } },
-  { name: "CORS: cakto-webhook OPTIONS = 200", category: "security", fn: "cakto-webhook", method: "OPTIONS", expect: { status: [200, 204] } },
+  
   { name: "CORS: user-presence OPTIONS = 200", category: "security", fn: "user-presence", method: "OPTIONS", expect: { status: [200, 204] } },
   { name: "CORS: system-health-check OPTIONS = 200", category: "security", fn: "system-health-check", method: "OPTIONS", expect: { status: [200, 204] } },
 
   // ═══════════════════════════════════════════════
   // Métodos HTTP bloqueados extra (3 tests)
   // ═══════════════════════════════════════════════
-  { name: "method: cakto-webhook GET = 405", category: "security", fn: "cakto-webhook", method: "GET", expect: { status: [405] } },
+  
   { name: "method: google-sheets-sync GET = 405", category: "security", fn: "google-sheets-sync", method: "GET", expect: { status: [405] } },
   { name: "method: system-health-check PUT = 405", category: "security", fn: "system-health-check", method: "PUT", expect: { status: [405] } },
 
@@ -485,12 +480,8 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // cakto-webhook: checkout without plan should have error
-  if (test.name === "cakto-webhook: checkout sem plan = 400") {
-    if (data && typeof data === "object" && !data.error) {
-      return "Esperava campo 'error' na resposta de validação.";
-    }
-  }
+
+
 
   // tmdb-proxy search: results should be an array
   if (test.name === "tmdb-proxy: search retorna results") {

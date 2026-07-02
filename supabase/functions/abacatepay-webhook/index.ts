@@ -374,7 +374,8 @@ Deno.serve(async (req) => {
             client_username: username,
             plan,
             days: planInfo.days,
-            cakto_transaction_id: transactionRef,
+            provider: "abacatepay",
+            provider_transaction_id: transactionRef,
             status: "pending",
           });
           if (txErr) console.warn("[create_billing] Could not store pending tx:", txErr.message);
@@ -427,7 +428,7 @@ Deno.serve(async (req) => {
         const { data } = await supabase
           .from("payment_transactions")
           .select("id, status, natv_activated, client_username, plan, days")
-          .eq("cakto_transaction_id", abacateTxId)
+          .eq("provider_transaction_id", abacateTxId)
           .maybeSingle();
         existingTx = data;
         console.log(`[Webhook] Pending tx lookup by ID: ${existingTx ? "FOUND" : "NOT FOUND"}`);
@@ -500,7 +501,8 @@ Deno.serve(async (req) => {
               client_username: username,
               plan: planKey,
               days,
-              cakto_transaction_id: abacateTxId,
+              provider: "abacatepay",
+              provider_transaction_id: abacateTxId,
               status: "approved",
             })
             .select("id")

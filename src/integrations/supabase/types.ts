@@ -320,35 +320,38 @@ export type Database = {
       payment_transactions: {
         Row: {
           activated_at: string | null
-          cakto_transaction_id: string | null
           client_username: string
           created_at: string
           days: number
           id: string
           natv_activated: boolean
           plan: string
+          provider: string
+          provider_transaction_id: string | null
           status: string
         }
         Insert: {
           activated_at?: string | null
-          cakto_transaction_id?: string | null
           client_username: string
           created_at?: string
           days: number
           id?: string
           natv_activated?: boolean
           plan: string
+          provider?: string
+          provider_transaction_id?: string | null
           status?: string
         }
         Update: {
           activated_at?: string | null
-          cakto_transaction_id?: string | null
           client_username?: string
           created_at?: string
           days?: number
           id?: string
           natv_activated?: boolean
           plan?: string
+          provider?: string
+          provider_transaction_id?: string | null
           status?: string
         }
         Relationships: []
