@@ -7,6 +7,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Minimize2, Maximize2, Play, Pause, Volume2, VolumeX, Loader2, AlertTriangle } from 'lucide-react';
 
+type WebkitVideoElement = HTMLVideoElement & {
+  webkitRequestFullscreen?: () => void;
+  webkitEnterFullscreen?: () => void;
+};
+
+type WebkitContainerElement = HTMLElement & {
+  webkitRequestFullscreen?: () => void;
+};
+
 /**
  * GlobalPlayer — Player de vídeo fullscreen + mini-player para a V2.
  * 
@@ -39,42 +48,92 @@ const GlobalPlayer: React.FC = () => {
   const lastReconnectAtRef = useRef<number>(0);
   const playbackStartAtRef = useRef<number>(0);
   const reconnectCountRef = useRef<number>(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bufferingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTimeUpdateAtRef = useRef<number>(0);
+  const lastPlaybackTimeRef = useRef<number>(0);
+  const playbackConfirmedRef = useRef<boolean>(false);
 
   // Reset contadores de reconexão sempre que a URL muda (novo canal)
   useEffect(() => {
     lastReconnectAtRef.current = 0;
     playbackStartAtRef.current = 0;
     reconnectCountRef.current = 0;
+    lastTimeUpdateAtRef.current = 0;
+    lastPlaybackTimeRef.current = 0;
+    playbackConfirmedRef.current = false;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (bufferingTimerRef.current) {
+      clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
+    }
   }, [currentUrl]);
 
-  // Reconexão controlada: só reconecta se o stream tocou por >30s e respeita cooldown de 20s.
-  const scheduleLiveReconnect = useCallback((reason: string) => {
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  // Reconexão controlada: só recarrega quando o vídeo realmente parou de avançar.
+  // Erros/transições curtas de buffer em TV ao vivo são comuns e não devem derrubar o player.
+  const scheduleLiveReconnect = useCallback((reason: string, delayMs = 10_000) => {
     const now = Date.now();
     const playedFor = playbackStartAtRef.current ? now - playbackStartAtRef.current : 0;
     const sinceLast = now - lastReconnectAtRef.current;
 
-    if (playedFor < 30_000) {
-      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): stream tocou apenas ${playedFor}ms.`);
-      setHasError('Stream instável. Feche e abra o canal novamente.');
+    if (!playbackConfirmedRef.current || playedFor < 60_000) {
+      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): reprodução ainda não ficou estável (${playedFor}ms).`);
       setIsLoading(false);
       return;
     }
-    if (sinceLast < 20_000) {
+
+    if (sinceLast < 45_000) {
       console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): cooldown (${sinceLast}ms desde a última).`);
       return;
     }
-    if (reconnectCountRef.current >= 5) {
-      console.warn('[GlobalPlayer] Reconexão abortada: limite de 5 atingido.');
-      setHasError('Muitas reconexões seguidas. Feche e abra o canal novamente.');
+
+    if (reconnectCountRef.current >= 3) {
+      console.warn('[GlobalPlayer] Reconexão abortada: limite de 3 atingido.');
+      setHasError('O sinal deste canal ficou instável. Feche e abra o canal novamente.');
       setIsLoading(false);
       return;
     }
-    reconnectCountRef.current += 1;
-    lastReconnectAtRef.current = now;
-    playbackStartAtRef.current = 0;
-    console.log(`[GlobalPlayer] Auto-reconnect #${reconnectCountRef.current} (${reason}).`);
-    setRetryKey(k => k + 1);
-  }, []);
+
+    if (reconnectTimerRef.current) {
+      console.warn(`[GlobalPlayer] Reconexão já em observação (${reason}); aguardando confirmação de travamento.`);
+      return;
+    }
+
+    clearReconnectTimer();
+    const snapshotTime = lastPlaybackTimeRef.current;
+    reconnectTimerRef.current = setTimeout(() => {
+      const video = videoRef.current;
+      reconnectTimerRef.current = null;
+      if (!video || !currentUrl) return;
+
+      const advanced = video.currentTime > snapshotTime + 0.75;
+      const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
+      const hasPlayableBuffer = video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+
+      if (advanced || recentlyAdvanced || hasPlayableBuffer) {
+        console.log(`[GlobalPlayer] Reconexão cancelada (${reason}): stream voltou a avançar.`);
+        setIsLoading(false);
+        return;
+      }
+
+      reconnectCountRef.current += 1;
+      lastReconnectAtRef.current = Date.now();
+      playbackStartAtRef.current = 0;
+      playbackConfirmedRef.current = false;
+      console.log(`[GlobalPlayer] Auto-reconnect #${reconnectCountRef.current} (${reason}).`);
+      setRetryKey(k => k + 1);
+    }, delayMs);
+  }, [clearReconnectTimer, currentUrl]);
 
 
   // --- SETUP: Carregar stream quando URL muda ---
@@ -89,6 +148,11 @@ const GlobalPlayer: React.FC = () => {
     setProgress(0);
     setDuration(0);
     setCurrentTime(0);
+    clearReconnectTimer();
+    if (bufferingTimerRef.current) {
+      clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
+    }
 
     // Destruir instâncias antigas
     if (hlsRef.current) {
@@ -199,6 +263,7 @@ const GlobalPlayer: React.FC = () => {
         mpegtsRef.current.destroy();
         mpegtsRef.current = null;
       }
+      video.onended = null;
       currentAttempt++;
       tryLoadNext();
     };
@@ -246,6 +311,11 @@ const GlobalPlayer: React.FC = () => {
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             console.warn(`[GlobalPlayer] ⚠️ HLS Erro (${attempt.id}):`, data.type);
+            if (playbackConfirmedRef.current) {
+              clearLoadTimeout();
+              scheduleLiveReconnect(`hls-error:${data.type}`, 12_000);
+              return;
+            }
             goToNextAttempt();
           }
         });
@@ -284,13 +354,11 @@ const GlobalPlayer: React.FC = () => {
         player.on(mpegts.Events.ERROR, (errType, errDetail) => {
           console.warn(`[GlobalPlayer] ⚠️ MPEGTS Erro (${attempt.id}):`, errType, errDetail);
 
-          // Auto-reconnect só quando o stream já tocou por um tempo razoável (>30s).
-          // Caso contrário, cai no próximo fallback para não entrar em loop de reload.
-          if (playbackStartAtRef.current && Date.now() - playbackStartAtRef.current > 30_000) {
+          // Erros MPEG-TS em live podem ser apenas troca/atraso de segmento.
+          // Só reconecta se, após alguns segundos, o tempo do vídeo não avançar.
+          if (playbackConfirmedRef.current) {
             clearLoadTimeout();
-            player.destroy();
-            mpegtsRef.current = null;
-            scheduleLiveReconnect(`mpegts-error:${errType}`);
+            scheduleLiveReconnect(`mpegts-error:${errType}`, 12_000);
             return;
           }
 
@@ -309,7 +377,7 @@ const GlobalPlayer: React.FC = () => {
         // o vídeo atinge o EOF natural sem erro. Ocorrendo isso na LiveTV, forçamos o auto-reconnect.
         const onEndedMpegts = () => {
           clearLoadTimeout();
-          scheduleLiveReconnect('mpegts-eof');
+          scheduleLiveReconnect('mpegts-eof', 6_000);
         };
         video.onended = onEndedMpegts;
       } else {
@@ -329,7 +397,7 @@ const GlobalPlayer: React.FC = () => {
           cleanup();
         };
         
-        const onError = (e: any) => {
+        const onError = () => {
           console.warn(`[GlobalPlayer] ⚠️ Erro Nativo (${attempt.id}):`, video.error?.message || 'Falha no carregamento');
           cleanup();
           goToNextAttempt();
@@ -358,6 +426,11 @@ const GlobalPlayer: React.FC = () => {
         activeAttemptCleanup();
         activeAttemptCleanup = null;
       }
+      clearReconnectTimer();
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
       // Limpeza brutal do listener de ended pra evitar leaks em multi-reconnects
       if (video) video.onended = null;
 
@@ -370,7 +443,7 @@ const GlobalPlayer: React.FC = () => {
         mpegtsRef.current = null;
       }
     };
-  }, [currentUrl, retryKey]);
+  }, [currentUrl, retryKey, clearReconnectTimer, scheduleLiveReconnect]);
 
   // --- PROGRESS: Atualizar barra de progresso ---
   useEffect(() => {
@@ -379,15 +452,42 @@ const GlobalPlayer: React.FC = () => {
 
     const onTimeUpdate = () => {
       setCurrentTime(video.currentTime);
+      lastTimeUpdateAtRef.current = Date.now();
+      lastPlaybackTimeRef.current = video.currentTime;
+      if (!playbackStartAtRef.current) playbackStartAtRef.current = Date.now();
+      if (video.currentTime > 3) playbackConfirmedRef.current = true;
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
+      setIsLoading(false);
       if (video.duration && isFinite(video.duration)) {
         setProgress((video.currentTime / video.duration) * 100);
         setDuration(video.duration);
       }
     };
 
-    const onPlay = () => setIsPlaying(true);
+    const onPlay = () => {
+      setIsPlaying(true);
+      if (!playbackStartAtRef.current) playbackStartAtRef.current = Date.now();
+      setIsLoading(false);
+    };
     const onPause = () => setIsPlaying(false);
-    const onWaiting = () => setIsLoading(true);
+    const onWaiting = () => {
+      if (!playbackConfirmedRef.current) {
+        setIsLoading(true);
+        return;
+      }
+
+      if (bufferingTimerRef.current) clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = setTimeout(() => {
+        const stalledFor = Date.now() - lastTimeUpdateAtRef.current;
+        if (stalledFor > 8_000) {
+          setIsLoading(true);
+          scheduleLiveReconnect('buffering-stall', 7_000);
+        }
+      }, 8_000);
+    };
     const onCanPlay = () => setIsLoading(false);
 
     video.addEventListener('timeupdate', onTimeUpdate);
@@ -402,8 +502,12 @@ const GlobalPlayer: React.FC = () => {
       video.removeEventListener('pause', onPause);
       video.removeEventListener('waiting', onWaiting);
       video.removeEventListener('canplay', onCanPlay);
+      if (bufferingTimerRef.current) {
+        clearTimeout(bufferingTimerRef.current);
+        bufferingTimerRef.current = null;
+      }
     };
-  }, [currentUrl]);
+  }, [currentUrl, scheduleLiveReconnect]);
 
   // --- CONTROLS: Auto-hide após 3s ---
   const resetControlsTimer = useCallback(() => {
@@ -466,6 +570,8 @@ const GlobalPlayer: React.FC = () => {
   const requestFullscreen = () => {
     const video = videoRef.current;
     const container = video?.closest('[data-player-root]') as HTMLElement | null;
+    const webkitVideo = video as WebkitVideoElement | null;
+    const webkitContainer = container as WebkitContainerElement | null;
 
     // 1. Padrão W3C — Chrome/Android moderno
     if (video?.requestFullscreen) {
@@ -473,16 +579,16 @@ const GlobalPlayer: React.FC = () => {
         // Silencioso: alguns WebViews rejeitam a Promise sem motivo
       });
     // 2. Webkit prefixado — Android WebView legado + Safari desktop
-    } else if ((video as any)?.webkitRequestFullscreen) {
-      (video as any).webkitRequestFullscreen();
+    } else if (webkitVideo?.webkitRequestFullscreen) {
+      webkitVideo.webkitRequestFullscreen();
     // 3. webkitEnterFullscreen — iOS Safari (única forma que funciona no Safari mobile)
-    } else if ((video as any)?.webkitEnterFullscreen) {
-      (video as any).webkitEnterFullscreen();
+    } else if (webkitVideo?.webkitEnterFullscreen) {
+      webkitVideo.webkitEnterFullscreen();
     // 4. Fallback no container — quando o WebView bloqueia fullscreen no <video>
     } else if (container?.requestFullscreen) {
       container.requestFullscreen();
-    } else if ((container as any)?.webkitRequestFullscreen) {
-      (container as any).webkitRequestFullscreen();
+    } else if (webkitContainer?.webkitRequestFullscreen) {
+      webkitContainer.webkitRequestFullscreen();
     }
   };
 
@@ -527,7 +633,6 @@ const GlobalPlayer: React.FC = () => {
             poster={currentMedia?.poster}
             muted={isMuted}
             onClick={!isMini ? togglePlay : undefined}
-            {...{ referrerPolicy: "no-referrer" } as any}
           />
 
           {/* ======================= OVERLAY DO MINI ======================= */}
