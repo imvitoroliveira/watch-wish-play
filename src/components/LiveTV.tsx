@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { getCredentialsFromM3uUrl } from '@/lib/m3u-client-parser';
+import { parseCatalogItem } from '@/lib/m3u-parser';
 import { supabase } from '@/integrations/supabase/client';
 
 interface Channel {
@@ -152,8 +153,35 @@ const LiveTV = () => {
         }
         console.log(`[LiveTV] ✅ Cache carregado: ${parsed.length} canais`);
         setChannels(parsed);
+        return;
+      }
+
+      const { data: catalogData, error: catalogError } = await supabase.functions.invoke('parse-m3u', {
+        method: 'GET',
+      });
+
+      if (catalogError) throw catalogError;
+
+      const liveTitles = Array.isArray(catalogData?.titles)
+        ? (catalogData.titles as string[]).filter(t => t.startsWith('2|'))
+        : [];
+
+      if (liveTitles.length > 0) {
+        const parsed = liveTitles.map((t) => {
+          const item = parseCatalogItem(t);
+          return {
+            id: item.id,
+            categoryId: item.catId || '0',
+            name: item.name,
+            logo: '',
+          };
+        }).filter((c) => c.id && c.name);
+
+        console.log(`[LiveTV] ✅ Catálogo principal carregado: ${parsed.length} canais`);
+        setChannels(parsed);
+        if (parsed.length > 0) saveToCache(parsed, categoriesData?.titles?.[0] ? JSON.parse(categoriesData.titles[0] as string) : {});
       } else {
-        console.warn('[LiveTV] Nenhum cache de canais encontrado. Acesse via localhost primeiro para popular o cache.');
+        console.warn('[LiveTV] Nenhum canal encontrado no cache separado nem no catálogo principal.');
       }
     } catch (e) {
       console.error('[LiveTV] Erro ao carregar cache:', e);
@@ -281,7 +309,7 @@ const LiveTV = () => {
             <h3 className="text-lg font-medium text-foreground">Nenhum canal encontrado</h3>
             <p className="text-muted-foreground text-sm">
               {channels.length === 0
-                ? 'O cache de canais está vazio. Acesse o app via HTTP (localhost) uma vez para popular automaticamente.'
+                ? 'Não foi possível carregar os canais do catálogo sincronizado. Tente atualizar a página em alguns instantes.'
                 : 'Tente mudar a categoria ou o termo de busca.'}
             </p>
           </div>
