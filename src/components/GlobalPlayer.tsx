@@ -36,6 +36,46 @@ const GlobalPlayer: React.FC = () => {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [retryKey, setRetryKey] = useState(0); // Força re-execução do useEffect
+  const lastReconnectAtRef = useRef<number>(0);
+  const playbackStartAtRef = useRef<number>(0);
+  const reconnectCountRef = useRef<number>(0);
+
+  // Reset contadores de reconexão sempre que a URL muda (novo canal)
+  useEffect(() => {
+    lastReconnectAtRef.current = 0;
+    playbackStartAtRef.current = 0;
+    reconnectCountRef.current = 0;
+  }, [currentUrl]);
+
+  // Reconexão controlada: só reconecta se o stream tocou por >30s e respeita cooldown de 20s.
+  const scheduleLiveReconnect = useCallback((reason: string) => {
+    const now = Date.now();
+    const playedFor = playbackStartAtRef.current ? now - playbackStartAtRef.current : 0;
+    const sinceLast = now - lastReconnectAtRef.current;
+
+    if (playedFor < 30_000) {
+      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): stream tocou apenas ${playedFor}ms.`);
+      setHasError('Stream instável. Feche e abra o canal novamente.');
+      setIsLoading(false);
+      return;
+    }
+    if (sinceLast < 20_000) {
+      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): cooldown (${sinceLast}ms desde a última).`);
+      return;
+    }
+    if (reconnectCountRef.current >= 5) {
+      console.warn('[GlobalPlayer] Reconexão abortada: limite de 5 atingido.');
+      setHasError('Muitas reconexões seguidas. Feche e abra o canal novamente.');
+      setIsLoading(false);
+      return;
+    }
+    reconnectCountRef.current += 1;
+    lastReconnectAtRef.current = now;
+    playbackStartAtRef.current = 0;
+    console.log(`[GlobalPlayer] Auto-reconnect #${reconnectCountRef.current} (${reason}).`);
+    setRetryKey(k => k + 1);
+  }, []);
+
 
   // --- SETUP: Carregar stream quando URL muda ---
   useEffect(() => {
@@ -231,6 +271,7 @@ const GlobalPlayer: React.FC = () => {
           activeAttemptCleanup = null;
           setIsLoading(false);
           setHasError(null);
+          if (!playbackStartAtRef.current) playbackStartAtRef.current = Date.now();
           const playPromise = player.play();
           if (playPromise && typeof playPromise.then === 'function') {
             playPromise.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
@@ -239,19 +280,17 @@ const GlobalPlayer: React.FC = () => {
 
         video.addEventListener('canplay', markMpegReady, { once: true });
         activeAttemptCleanup = () => video.removeEventListener('canplay', markMpegReady);
-        
+
         player.on(mpegts.Events.ERROR, (errType, errDetail) => {
           console.warn(`[GlobalPlayer] ⚠️ MPEGTS Erro (${attempt.id}):`, errType, errDetail);
-          
-          // Se a conexão cair (Timeout da Supabase Edge Function ou painel XTream)
-          // mas o vídeo já estava tocando ha alguns segundos, é o fim da sessão de stream.
-          // Disparamos o setRetryKey para reabrir a conexão silenciosamente na mesma hora (Auto-Reconnect).
-          if (video.currentTime > 5) {
-            console.log('[GlobalPlayer] Conexão live TV encerrada. Iniciando auto-reconnect...');
+
+          // Auto-reconnect só quando o stream já tocou por um tempo razoável (>30s).
+          // Caso contrário, cai no próximo fallback para não entrar em loop de reload.
+          if (playbackStartAtRef.current && Date.now() - playbackStartAtRef.current > 30_000) {
             clearLoadTimeout();
             player.destroy();
             mpegtsRef.current = null;
-            setRetryKey(k => k + 1);
+            scheduleLiveReconnect(`mpegts-error:${errType}`);
             return;
           }
 
@@ -259,6 +298,7 @@ const GlobalPlayer: React.FC = () => {
           activeAttemptCleanup = null;
           goToNextAttempt();
         });
+
         
         player.on(mpegts.Events.MEDIA_INFO, () => {
           console.log(`[GlobalPlayer] ✅ MPEGTS OK: ${attempt.id}`);
@@ -268,9 +308,8 @@ const GlobalPlayer: React.FC = () => {
         // Quando o stream proxy corta graciosamente (Supabase Timeout), 
         // o vídeo atinge o EOF natural sem erro. Ocorrendo isso na LiveTV, forçamos o auto-reconnect.
         const onEndedMpegts = () => {
-          console.log('[GlobalPlayer] Conexão live TV encerrou (EOF Graceful). Iniciando auto-reconnect...');
           clearLoadTimeout();
-          setRetryKey(k => k + 1);
+          scheduleLiveReconnect('mpegts-eof');
         };
         video.onended = onEndedMpegts;
       } else {
