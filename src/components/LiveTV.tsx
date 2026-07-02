@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useVideo } from '@/contexts/VideoContext';
 import { Search, ListFilter, Play, Tv, Loader2, Signal } from 'lucide-react';
@@ -40,31 +40,8 @@ const LiveTV = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    const fetchChannels = async () => {
-      setLoading(true);
-      try {
-        const clientM3uUrl = currentClient?.m3u || localStorage.getItem('msc_m3u_url') || '';
-        const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
-
-        if (credentials) {
-          await fetchFromXtreamAPI(credentials);
-        } else {
-          await fetchFromCache();
-        }
-      } catch (err) {
-        console.error('[LiveTV] Erro ao carregar canais:', err);
-        await fetchFromCache();
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchChannels();
-  }, [currentClient?.m3u]);
-
   // Salva canais e categorias no Supabase para uso futuro (quando XTream API não estiver acessível)
-  const saveToCache = async (channelList: Channel[], catMap: Record<string, string>) => {
+  const saveToCache = useCallback(async (channelList: Channel[], catMap: Record<string, string>) => {
     try {
       // Salvar canais no formato compacto: id|catId|name|logo
       const channelTitles = channelList.map(c => `${c.id}|${c.categoryId}|${c.name}|${c.logo || ''}`);
@@ -85,9 +62,9 @@ const LiveTV = () => {
     } catch (e) {
       console.warn('[LiveTV] Erro ao salvar cache:', e);
     }
-  };
+  }, []);
 
-  const fetchFromXtreamAPI = async (creds: { domain: string; user: string; pass: string }) => {
+  const fetchFromXtreamAPI = useCallback(async (creds: { domain: string; user: string; pass: string }) => {
     try {
       // Server-side proxy: bypassa Mixed Content (HTTPS preview → HTTP IPTV)
       const [catRes, liveRes] = await Promise.all([
@@ -123,9 +100,9 @@ const LiveTV = () => {
       console.warn('[LiveTV] xtream-proxy falhou, tentando cache:', e);
     }
     await fetchFromCache();
-  };
+  }, [saveToCache]);
 
-  const fetchFromCache = async () => {
+  const fetchFromCache = useCallback(async () => {
     try {
       console.log('[LiveTV] Carregando canais do cache...');
 
@@ -198,7 +175,30 @@ const LiveTV = () => {
     } catch (e) {
       console.error('[LiveTV] Erro ao carregar cache:', e);
     }
-  };
+  }, [saveToCache]);
+
+  useEffect(() => {
+    const fetchChannels = async () => {
+      setLoading(true);
+      try {
+        const clientM3uUrl = currentClient?.m3u || localStorage.getItem('msc_m3u_url') || '';
+        const credentials = getCredentialsFromM3uUrl(clientM3uUrl);
+
+        if (credentials) {
+          await fetchFromXtreamAPI(credentials);
+        } else {
+          await fetchFromCache();
+        }
+      } catch (err) {
+        console.error('[LiveTV] Erro ao carregar canais:', err);
+        await fetchFromCache();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChannels();
+  }, [currentClient?.m3u, fetchFromCache, fetchFromXtreamAPI]);
 
   // Filtragem
   const filteredChannels = useMemo(() => {
