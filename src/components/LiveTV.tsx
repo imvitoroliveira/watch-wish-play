@@ -16,6 +16,18 @@ interface Channel {
   logo?: string;
 }
 
+interface XtreamCategory {
+  category_id?: string | number;
+  category_name?: string;
+}
+
+interface XtreamLiveStream {
+  stream_id?: string | number;
+  name?: string;
+  category_id?: string | number;
+  stream_icon?: string;
+}
+
 const LIVE_CHANNELS_CACHE_ID = '00000000-0000-0000-0000-000000000003';
 const LIVE_CATEGORIES_CACHE_ID = '00000000-0000-0000-0000-000000000002';
 
@@ -58,14 +70,14 @@ const LiveTV = () => {
       const channelTitles = channelList.map(c => `${c.id}|${c.categoryId}|${c.name}|${c.logo || ''}`);
       await supabase.from('m3u_catalog').upsert({
         id: LIVE_CHANNELS_CACHE_ID,
-        titles: channelTitles as any,
+        titles: channelTitles,
         updated_at: new Date().toISOString(),
       });
 
       // Salvar categorias como JSON
       await supabase.from('m3u_catalog').upsert({
         id: LIVE_CATEGORIES_CACHE_ID,
-        titles: [JSON.stringify(catMap)] as any,
+        titles: [JSON.stringify(catMap)],
         updated_at: new Date().toISOString(),
       });
 
@@ -87,16 +99,16 @@ const LiveTV = () => {
         }),
       ]);
 
-      let catMap: Record<string, string> = {};
+      const catMap: Record<string, string> = {};
       if (!catRes.error && Array.isArray(catRes.data)) {
-        catRes.data.forEach((c: any) => {
+        (catRes.data as XtreamCategory[]).forEach((c) => {
           catMap[String(c.category_id)] = c.category_name;
         });
         setCategories(catMap);
       }
 
       if (!liveRes.error && Array.isArray(liveRes.data) && liveRes.data.length > 0) {
-        const parsed: Channel[] = liveRes.data.map((item: any) => ({
+        const parsed: Channel[] = (liveRes.data as XtreamLiveStream[]).map((item) => ({
           id: String(item.stream_id || ''),
           name: item.name || '',
           categoryId: String(item.category_id || '0'),

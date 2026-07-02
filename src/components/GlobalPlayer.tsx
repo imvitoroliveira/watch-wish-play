@@ -457,7 +457,7 @@ const GlobalPlayer: React.FC = () => {
         mpegtsRef.current = null;
       }
     };
-  }, [currentUrl, retryKey, clearReconnectTimer, scheduleLiveReconnect]);
+  }, [currentUrl, currentMedia?.media_type, retryKey, clearReconnectTimer, scheduleLiveReconnect]);
 
   // --- PROGRESS: Atualizar barra de progresso ---
   useEffect(() => {
