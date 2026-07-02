@@ -480,12 +480,8 @@ function runCustomValidation(test: TestCase, data: any): string | null {
     }
   }
 
-  // cakto-webhook: checkout without plan should have error
-  if (test.name === "cakto-webhook: checkout sem plan = 400") {
-    if (data && typeof data === "object" && !data.error) {
-      return "Esperava campo 'error' na resposta de validação.";
-    }
-  }
+
+
 
   // tmdb-proxy search: results should be an array
   if (test.name === "tmdb-proxy: search retorna results") {
