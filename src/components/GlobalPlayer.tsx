@@ -81,14 +81,14 @@ const GlobalPlayer: React.FC = () => {
     
     // Para streams TS/Raw sem extensão, mpegts.js requer CORS, então o proxy é obrigatório.
     // Para MP4/MKV (filmes/séries), a tag nativa <video src> NÃO sofre bloqueio estrito de CORS e vamos tentar direto.
-    const playAttempts: { id: string, url: string }[] = [];
+    const playAttempts: { id: string; url: string; kind: 'hls' | 'mpegts' | 'native' }[] = [];
 
     // Se for URL de filme sem extensão definida (originado do MovieModal)
     // Adicionamos as extensões corretas para evitar que o NGINX devolva text/html (Erro de Formato)
     if (normalizedUrl.includes('/movie/') && !normalizedUrl.match(/\.(mkv|mp4|avi|ts|m3u8)$/i)) {
-      playAttempts.push({ id: 'direta_mp4', url: `${normalizedUrl}.mp4` });
-      playAttempts.push({ id: 'direta_mkv', url: `${normalizedUrl}.mkv` });
-      playAttempts.push({ id: 'proxy_mp4', url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(normalizedUrl + '.mp4')}` });
+      playAttempts.push({ id: 'direta_mp4', url: `${normalizedUrl}.mp4`, kind: 'native' });
+      playAttempts.push({ id: 'direta_mkv', url: `${normalizedUrl}.mkv`, kind: 'native' });
+      playAttempts.push({ id: 'proxy_mp4', url: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stream-proxy?url=${encodeURIComponent(normalizedUrl + '.mp4')}`, kind: 'native' });
     } else {
       const isDirectFirst = Boolean(
         normalizedUrl.toLowerCase().match(/\.(mp4|mkv|avi|mov)$/) || 
@@ -96,17 +96,51 @@ const GlobalPlayer: React.FC = () => {
         normalizedUrl.toLowerCase().includes('/series/')
       );
       
-      if (isDirectFirst) {
-        playAttempts.push({ id: 'direta', url: normalizedUrl });
-        playAttempts.push({ id: 'supabase_proxy', url: supabaseStreamProxy });
+      if (isHls) {
+        // Live TV em painéis XTream nem sempre entrega uma playlist HLS real.
+        // Muitas rotas terminadas em .m3u8 respondem MPEG-TS contínuo (video/mp2t),
+        // então tentamos HLS primeiro e MPEG-TS em seguida na mesma URL proxied.
+        playAttempts.push({ id: 'hls_proxy', url: supabaseStreamProxy, kind: 'hls' });
+        playAttempts.push({ id: 'mpegts_proxy', url: supabaseStreamProxy, kind: 'mpegts' });
+        playAttempts.push({ id: 'hls_direta', url: normalizedUrl, kind: 'hls' });
+      } else if (isDirectFirst) {
+        playAttempts.push({ id: 'direta', url: normalizedUrl, kind: 'native' });
+        playAttempts.push({ id: 'supabase_proxy', url: supabaseStreamProxy, kind: 'native' });
       } else {
-        playAttempts.push({ id: 'supabase_proxy', url: supabaseStreamProxy });
-        playAttempts.push({ id: 'direta', url: normalizedUrl });
+        // Canais ao vivo vindos do M3U mestre costumam chegar sem extensão e com
+        // Content-Type video/mp2t; mpegts.js é o caminho correto nesses casos.
+        playAttempts.push({ id: 'mpegts_proxy', url: supabaseStreamProxy, kind: 'mpegts' });
+        playAttempts.push({ id: 'nativo_proxy', url: supabaseStreamProxy, kind: 'native' });
+        playAttempts.push({ id: 'direta', url: normalizedUrl, kind: 'native' });
       }
     }
 
 
     let currentAttempt = 0;
+    let disposed = false;
+    let loadTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const clearLoadTimeout = () => {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
+      }
+    };
+
+    const goToNextAttempt = () => {
+      if (disposed) return;
+      clearLoadTimeout();
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      if (mpegtsRef.current) {
+        mpegtsRef.current.destroy();
+        mpegtsRef.current = null;
+      }
+      currentAttempt++;
+      tryLoadNext();
+    };
 
     const tryLoadNext = () => {
       if (currentAttempt >= playAttempts.length) {
@@ -119,7 +153,13 @@ const GlobalPlayer: React.FC = () => {
       const attempt = playAttempts[currentAttempt];
       console.log(`[GlobalPlayer] 🔄 Tentativa ${currentAttempt + 1}/${playAttempts.length}: ${attempt.id} -> ${attempt.url.substring(0, 100)}`);
 
-      if (isHls && Hls.isSupported()) {
+      clearLoadTimeout();
+      loadTimeout = setTimeout(() => {
+        console.warn(`[GlobalPlayer] ⏱️ Timeout de carregamento (${attempt.id}), tentando próxima rota...`);
+        goToNextAttempt();
+      }, 18000);
+
+      if (attempt.kind === 'hls' && Hls.isSupported()) {
         const hls = new Hls({ 
           maxBufferLength: 30, 
           maxMaxBufferLength: 60, 
@@ -133,6 +173,7 @@ const GlobalPlayer: React.FC = () => {
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           console.log(`[GlobalPlayer] ✅ HLS OK: ${attempt.id}`);
+          clearLoadTimeout();
           setIsLoading(false);
           video.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
         });
@@ -140,26 +181,36 @@ const GlobalPlayer: React.FC = () => {
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             console.warn(`[GlobalPlayer] ⚠️ HLS Erro (${attempt.id}):`, data.type);
-            hls.destroy();
-            hlsRef.current = null;
-            currentAttempt++;
-            tryLoadNext();
+            goToNextAttempt();
           }
         });
-      } else if (
-        mpegts.getFeatureList().mseLivePlayback && 
-        (attempt.url.toLowerCase().includes('.ts') || 
-        (!attempt.url.match(/\.(mp4|mkv|avi|mov|m3u8)$/i) && !attempt.url.includes('/movie/') && !attempt.url.includes('/series/')))
-      ) {
+      } else if (attempt.kind === 'mpegts' && mpegts.isSupported()) {
         // Live TV fallback to raw TS over MSE via mpegts.js
         const player = mpegts.createPlayer({
-          type: 'mse', // default para MPEG-TS over HTTP
+          type: 'mpegts',
           isLive: true,
           url: attempt.url
+        }, {
+          enableWorker: true,
+          enableStashBuffer: false,
+          stashInitialSize: 128 * 1024,
+          liveBufferLatencyChasing: true,
         });
         mpegtsRef.current = player;
         player.attachMediaElement(video);
         player.load();
+
+        const markMpegReady = () => {
+          clearLoadTimeout();
+          setIsLoading(false);
+          setHasError(null);
+          const playPromise = player.play();
+          if (playPromise && typeof playPromise.then === 'function') {
+            playPromise.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+          }
+        };
+
+        video.addEventListener('canplay', markMpegReady, { once: true });
         
         player.on(mpegts.Events.ERROR, (errType, errDetail) => {
           console.warn(`[GlobalPlayer] ⚠️ MPEGTS Erro (${attempt.id}):`, errType, errDetail);
@@ -169,45 +220,37 @@ const GlobalPlayer: React.FC = () => {
           // Disparamos o setRetryKey para reabrir a conexão silenciosamente na mesma hora (Auto-Reconnect).
           if (video.currentTime > 5) {
             console.log('[GlobalPlayer] Conexão live TV encerrada. Iniciando auto-reconnect...');
+            clearLoadTimeout();
             player.destroy();
             mpegtsRef.current = null;
             setRetryKey(k => k + 1);
             return;
           }
 
-          player.destroy();
-          mpegtsRef.current = null;
-          currentAttempt++;
-          tryLoadNext();
+          video.removeEventListener('canplay', markMpegReady);
+          goToNextAttempt();
         });
         
         player.on(mpegts.Events.MEDIA_INFO, () => {
           console.log(`[GlobalPlayer] ✅ MPEGTS OK: ${attempt.id}`);
-          setIsLoading(false);
-          const playPromise = player.play();
-          if (playPromise && typeof playPromise.then === 'function') {
-            playPromise.then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-          }
+          markMpegReady();
         });
 
         // Quando o stream proxy corta graciosamente (Supabase Timeout), 
         // o vídeo atinge o EOF natural sem erro. Ocorrendo isso na LiveTV, forçamos o auto-reconnect.
         const onEndedMpegts = () => {
           console.log('[GlobalPlayer] Conexão live TV encerrou (EOF Graceful). Iniciando auto-reconnect...');
+          clearLoadTimeout();
           setRetryKey(k => k + 1);
         };
         video.onended = onEndedMpegts;
-
-        // Guardamos a função de cleanup em uma flag ou var caso precisássemos, 
-        // mas o useEffect retornará um cleanup no component destrution.
-        // Contudo, é melhor limpar se der erro:
-        const originalError = player.on.bind(player);
       } else {
         // Direct Playback (MP4, MKV) ou Native Safari para HLS
         video.src = attempt.url;
         
         const onLoaded = () => {
           console.log(`[GlobalPlayer] ✅ Video OK: ${attempt.id}`);
+          clearLoadTimeout();
           setIsLoading(false);
           setHasError(null);
           setDuration(video.duration || 0);
@@ -220,9 +263,8 @@ const GlobalPlayer: React.FC = () => {
         
         const onError = (e: any) => {
           console.warn(`[GlobalPlayer] ⚠️ Erro Nativo (${attempt.id}):`, video.error?.message || 'Falha no carregamento');
-          currentAttempt++;
           cleanup();
-          tryLoadNext();
+          goToNextAttempt();
         };
 
         const cleanup = () => {
@@ -241,6 +283,8 @@ const GlobalPlayer: React.FC = () => {
     tryLoadNext();
 
     return () => {
+      disposed = true;
+      clearLoadTimeout();
       // Limpeza brutal do listener de ended pra evitar leaks em multi-reconnects
       if (video) video.onended = null;
 
