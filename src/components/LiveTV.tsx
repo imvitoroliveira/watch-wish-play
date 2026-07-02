@@ -198,12 +198,13 @@ const LiveTV = () => {
   }, [channels, selectedCategory, searchQuery]);
 
   const sortedCategories = useMemo(() => {
-    // Only show categories that actually have channels; if the categories map is empty
-    // (e.g. xtream-proxy failed to return get_live_categories), derive labels from channels.
-    const usedIds = new Set(channels.map(c => c.categoryId));
+    // Prioriza o nome da categoria vindo do próprio M3U (group-title) ou do XTream get_live_categories.
+    // Se o categoryId já for um texto (ex.: "GLOBO"), usa direto como label.
+    const usedIds = new Set(channels.map(c => c.categoryId).filter(Boolean));
     const entries: [string, string][] = [];
     usedIds.forEach(id => {
-      entries.push([id, categories[id] || `Categoria ${id}`]);
+      const label = categories[id] || (isNaN(Number(id)) ? id : `Categoria ${id}`);
+      entries.push([id, label]);
     });
     return entries.sort((a, b) => a[1].localeCompare(b[1]));
   }, [categories, channels]);
