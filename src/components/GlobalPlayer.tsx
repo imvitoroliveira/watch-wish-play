@@ -50,36 +50,76 @@ const GlobalPlayer: React.FC = () => {
     lastReconnectAtRef.current = 0;
     playbackStartAtRef.current = 0;
     reconnectCountRef.current = 0;
+    lastTimeUpdateAtRef.current = 0;
+    lastPlaybackTimeRef.current = 0;
+    playbackConfirmedRef.current = false;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (bufferingTimerRef.current) {
+      clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
+    }
   }, [currentUrl]);
 
-  // Reconexão controlada: só reconecta se o stream tocou por >30s e respeita cooldown de 20s.
-  const scheduleLiveReconnect = useCallback((reason: string) => {
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  // Reconexão controlada: só recarrega quando o vídeo realmente parou de avançar.
+  // Erros/transições curtas de buffer em TV ao vivo são comuns e não devem derrubar o player.
+  const scheduleLiveReconnect = useCallback((reason: string, delayMs = 10_000) => {
     const now = Date.now();
     const playedFor = playbackStartAtRef.current ? now - playbackStartAtRef.current : 0;
     const sinceLast = now - lastReconnectAtRef.current;
 
-    if (playedFor < 30_000) {
-      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): stream tocou apenas ${playedFor}ms.`);
-      setHasError('Stream instável. Feche e abra o canal novamente.');
+    if (!playbackConfirmedRef.current || playedFor < 60_000) {
+      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): reprodução ainda não ficou estável (${playedFor}ms).`);
       setIsLoading(false);
       return;
     }
-    if (sinceLast < 20_000) {
+
+    if (sinceLast < 45_000) {
       console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): cooldown (${sinceLast}ms desde a última).`);
       return;
     }
-    if (reconnectCountRef.current >= 5) {
-      console.warn('[GlobalPlayer] Reconexão abortada: limite de 5 atingido.');
-      setHasError('Muitas reconexões seguidas. Feche e abra o canal novamente.');
+
+    if (reconnectCountRef.current >= 3) {
+      console.warn('[GlobalPlayer] Reconexão abortada: limite de 3 atingido.');
+      setHasError('O sinal deste canal ficou instável. Feche e abra o canal novamente.');
       setIsLoading(false);
       return;
     }
-    reconnectCountRef.current += 1;
-    lastReconnectAtRef.current = now;
-    playbackStartAtRef.current = 0;
-    console.log(`[GlobalPlayer] Auto-reconnect #${reconnectCountRef.current} (${reason}).`);
-    setRetryKey(k => k + 1);
-  }, []);
+
+    clearReconnectTimer();
+    const snapshotTime = lastPlaybackTimeRef.current;
+    reconnectTimerRef.current = setTimeout(() => {
+      const video = videoRef.current;
+      reconnectTimerRef.current = null;
+      if (!video || !currentUrl) return;
+
+      const advanced = video.currentTime > snapshotTime + 0.75;
+      const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
+      const hasPlayableBuffer = video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+
+      if (advanced || recentlyAdvanced || hasPlayableBuffer) {
+        console.log(`[GlobalPlayer] Reconexão cancelada (${reason}): stream voltou a avançar.`);
+        setIsLoading(false);
+        return;
+      }
+
+      reconnectCountRef.current += 1;
+      lastReconnectAtRef.current = Date.now();
+      playbackStartAtRef.current = 0;
+      playbackConfirmedRef.current = false;
+      console.log(`[GlobalPlayer] Auto-reconnect #${reconnectCountRef.current} (${reason}).`);
+      setRetryKey(k => k + 1);
+    }, delayMs);
+  }, [clearReconnectTimer, currentUrl]);
 
 
   // --- SETUP: Carregar stream quando URL muda ---
