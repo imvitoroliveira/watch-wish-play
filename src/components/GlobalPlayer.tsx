@@ -670,10 +670,18 @@ const GlobalPlayer: React.FC = () => {
             ref={videoRef}
             className={isMini ? "w-full h-full object-cover" : "w-full h-full object-contain pointer-events-auto"}
             playsInline
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-expect-error atributo legado iOS
+            webkit-playsinline="true"
+            x5-playsinline="true"
+            preload="auto"
+            crossOrigin="anonymous"
             poster={currentMedia?.poster}
             muted={isMuted}
+            autoPlay
             onClick={!isMini ? togglePlay : undefined}
           />
+
 
           {/* ======================= OVERLAY DO MINI ======================= */}
           {isMini && (
