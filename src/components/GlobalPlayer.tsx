@@ -671,13 +671,12 @@ const GlobalPlayer: React.FC = () => {
             className={isMini ? "w-full h-full object-cover" : "w-full h-full object-contain pointer-events-auto"}
             playsInline
             {...({ 'webkit-playsinline': 'true', 'x5-playsinline': 'true' } as Record<string, string>)}
-            preload="auto"
-
             poster={currentMedia?.poster}
             muted={isMuted}
-            autoPlay
             onClick={!isMini ? togglePlay : undefined}
           />
+
+
 
 
           {/* ======================= OVERLAY DO MINI ======================= */}
