@@ -279,7 +279,6 @@ describe('Segurança Geral: Injeção e sanitização', () => {
       'admin-login',
       'client-login',
       'abacatepay-webhook',
-      'cakto-webhook',
       'user-presence',
       'tmdb-proxy',
     ])('%s OPTIONS retorna CORS', async (fn) => {
