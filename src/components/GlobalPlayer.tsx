@@ -134,6 +134,11 @@ const GlobalPlayer: React.FC = () => {
     setProgress(0);
     setDuration(0);
     setCurrentTime(0);
+    clearReconnectTimer();
+    if (bufferingTimerRef.current) {
+      clearTimeout(bufferingTimerRef.current);
+      bufferingTimerRef.current = null;
+    }
 
     // Destruir instâncias antigas
     if (hlsRef.current) {
