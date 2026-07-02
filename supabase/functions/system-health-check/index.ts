@@ -177,13 +177,8 @@ const TEST_SUITE: TestCase[] = [
   { name: "m3u-auto-refresh: retorna count ou skipped", category: "integration", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { status: [200, 500] } },
   { name: "m3u-auto-refresh: não vazar segredos", category: "security", fn: "m3u-auto-refresh", method: "POST", body: {}, expect: { notContains: ["service_role", "SUPABASE_SERVICE_ROLE_KEY", "source_url"] } },
 
-  // ═══════════════════════════════════════════════
-  // cakto-webhook (4 tests)
-  // ═══════════════════════════════════════════════
-  { name: "cakto-webhook: checkout sem plan = 400", category: "functional", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "hc_test" }, expect: { status: [400] } },
-  { name: "cakto-webhook: evento sem assinatura = 401", category: "functional", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc_event", data: {} }, expect: { status: [401] } },
-  { name: "cakto-webhook: não vazar tokens de pagamento", category: "security", fn: "cakto-webhook", method: "POST", body: { action: "get_checkout_url", username: "test" }, expect: { notContains: ["CAKTO_CLIENT_SECRET", "CAKTO_CLIENT_ID", "NATV_API_TOKEN", "service_role"] } },
-  { name: "cakto-webhook: formato estável", category: "regression", fn: "cakto-webhook", method: "POST", body: { event: "unknown_hc", data: {} }, expect: { status: [401] } },
+  // (cakto-webhook removido — legado descontinuado)
+
 
   // ═══════════════════════════════════════════════
   // abacatepay-webhook (18 tests) — Ciclo completo de pagamento
