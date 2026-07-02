@@ -7,6 +7,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Minimize2, Maximize2, Play, Pause, Volume2, VolumeX, Loader2, AlertTriangle } from 'lucide-react';
 
+type WebkitVideoElement = HTMLVideoElement & {
+  webkitRequestFullscreen?: () => void;
+  webkitEnterFullscreen?: () => void;
+};
+
+type WebkitContainerElement = HTMLElement & {
+  webkitRequestFullscreen?: () => void;
+};
+
 /**
  * GlobalPlayer — Player de vídeo fullscreen + mini-player para a V2.
  * 
@@ -388,7 +397,7 @@ const GlobalPlayer: React.FC = () => {
           cleanup();
         };
         
-        const onError = (e: any) => {
+        const onError = () => {
           console.warn(`[GlobalPlayer] ⚠️ Erro Nativo (${attempt.id}):`, video.error?.message || 'Falha no carregamento');
           cleanup();
           goToNextAttempt();
@@ -561,6 +570,8 @@ const GlobalPlayer: React.FC = () => {
   const requestFullscreen = () => {
     const video = videoRef.current;
     const container = video?.closest('[data-player-root]') as HTMLElement | null;
+    const webkitVideo = video as WebkitVideoElement | null;
+    const webkitContainer = container as WebkitContainerElement | null;
 
     // 1. Padrão W3C — Chrome/Android moderno
     if (video?.requestFullscreen) {
@@ -568,16 +579,16 @@ const GlobalPlayer: React.FC = () => {
         // Silencioso: alguns WebViews rejeitam a Promise sem motivo
       });
     // 2. Webkit prefixado — Android WebView legado + Safari desktop
-    } else if ((video as any)?.webkitRequestFullscreen) {
-      (video as any).webkitRequestFullscreen();
+    } else if (webkitVideo?.webkitRequestFullscreen) {
+      webkitVideo.webkitRequestFullscreen();
     // 3. webkitEnterFullscreen — iOS Safari (única forma que funciona no Safari mobile)
-    } else if ((video as any)?.webkitEnterFullscreen) {
-      (video as any).webkitEnterFullscreen();
+    } else if (webkitVideo?.webkitEnterFullscreen) {
+      webkitVideo.webkitEnterFullscreen();
     // 4. Fallback no container — quando o WebView bloqueia fullscreen no <video>
     } else if (container?.requestFullscreen) {
       container.requestFullscreen();
-    } else if ((container as any)?.webkitRequestFullscreen) {
-      (container as any).webkitRequestFullscreen();
+    } else if (webkitContainer?.webkitRequestFullscreen) {
+      webkitContainer.webkitRequestFullscreen();
     }
   };
 
@@ -622,7 +633,7 @@ const GlobalPlayer: React.FC = () => {
             poster={currentMedia?.poster}
             muted={isMuted}
             onClick={!isMini ? togglePlay : undefined}
-            {...{ referrerPolicy: "no-referrer" } as any}
+            referrerPolicy="no-referrer"
           />
 
           {/* ======================= OVERLAY DO MINI ======================= */}
