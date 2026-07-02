@@ -119,6 +119,7 @@ const GlobalPlayer: React.FC = () => {
     let currentAttempt = 0;
     let disposed = false;
     let loadTimeout: ReturnType<typeof setTimeout> | null = null;
+    let activeAttemptCleanup: (() => void) | null = null;
 
     const clearLoadTimeout = () => {
       if (loadTimeout) {
@@ -130,6 +131,10 @@ const GlobalPlayer: React.FC = () => {
     const goToNextAttempt = () => {
       if (disposed) return;
       clearLoadTimeout();
+      if (activeAttemptCleanup) {
+        activeAttemptCleanup();
+        activeAttemptCleanup = null;
+      }
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -154,6 +159,10 @@ const GlobalPlayer: React.FC = () => {
       console.log(`[GlobalPlayer] 🔄 Tentativa ${currentAttempt + 1}/${playAttempts.length}: ${attempt.id} -> ${attempt.url.substring(0, 100)}`);
 
       clearLoadTimeout();
+      if (activeAttemptCleanup) {
+        activeAttemptCleanup();
+        activeAttemptCleanup = null;
+      }
       loadTimeout = setTimeout(() => {
         console.warn(`[GlobalPlayer] ⏱️ Timeout de carregamento (${attempt.id}), tentando próxima rota...`);
         goToNextAttempt();
@@ -202,6 +211,8 @@ const GlobalPlayer: React.FC = () => {
 
         const markMpegReady = () => {
           clearLoadTimeout();
+          video.removeEventListener('canplay', markMpegReady);
+          activeAttemptCleanup = null;
           setIsLoading(false);
           setHasError(null);
           const playPromise = player.play();
@@ -211,6 +222,7 @@ const GlobalPlayer: React.FC = () => {
         };
 
         video.addEventListener('canplay', markMpegReady, { once: true });
+        activeAttemptCleanup = () => video.removeEventListener('canplay', markMpegReady);
         
         player.on(mpegts.Events.ERROR, (errType, errDetail) => {
           console.warn(`[GlobalPlayer] ⚠️ MPEGTS Erro (${attempt.id}):`, errType, errDetail);
@@ -228,6 +240,7 @@ const GlobalPlayer: React.FC = () => {
           }
 
           video.removeEventListener('canplay', markMpegReady);
+          activeAttemptCleanup = null;
           goToNextAttempt();
         });
         
@@ -276,6 +289,7 @@ const GlobalPlayer: React.FC = () => {
         video.addEventListener('loadeddata', onLoaded);
         video.addEventListener('error', onError);
         video.addEventListener('stalled', onError);
+        activeAttemptCleanup = cleanup;
         video.load();
       }
     };
@@ -285,6 +299,10 @@ const GlobalPlayer: React.FC = () => {
     return () => {
       disposed = true;
       clearLoadTimeout();
+      if (activeAttemptCleanup) {
+        activeAttemptCleanup();
+        activeAttemptCleanup = null;
+      }
       // Limpeza brutal do listener de ended pra evitar leaks em multi-reconnects
       if (video) video.onended = null;
 
