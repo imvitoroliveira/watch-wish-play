@@ -215,12 +215,13 @@ function parseM3UContent(content: string): { titles: string[]; rawCount: number;
             const isSeries = !isLive && ((currentGroup && isSeriesRegex.test(currentGroup)) || isSeriesRegex.test(title));
             
             const typeValue = isLive ? "2" : (isSeries ? "1" : "0");
+            const groupClean = (currentGroup || "").replace(/\|/g, "/").trim();
             
             if (streamId) {
               const existing = titlesMap.get(cleaned);
               // Evitar que um episódio sobrescreva uma série já salva
               if (!existing) {
-                titlesMap.set(cleaned, `${streamId}|${typeValue}`);
+                titlesMap.set(cleaned, `${streamId}|${typeValue}|${groupClean}`);
                 if (typeValue === "0") movieCount++;
                 else if (typeValue === "1") seriesCount++;
                 else liveCount++;
@@ -234,8 +235,8 @@ function parseM3UContent(content: string): { titles: string[]; rawCount: number;
   }
 
   const titles = Array.from(titlesMap.entries()).map(([name, rest]) => {
-    const [id, type] = rest.split('|');
-    return `${type}|${id}||${name}`;
+    const [id, type, group] = rest.split('|');
+    return `${type}|${id}|${group || ''}|${name}`;
   });
 
   return { 
@@ -285,8 +286,9 @@ async function streamParseM3U(stream: ReadableStream<Uint8Array>): Promise<{ tit
               const isSeriesRegex = /\b(série|series|S\d{1,2})\b/i;
               const isSeries = !isLive && (isSeriesRegex.test(title) || (currentGroup && isSeriesRegex.test(currentGroup)));
               const typeValue = isLive ? "2" : (isSeries ? "1" : "0");
+              const groupClean = (currentGroup || "").replace(/\|/g, "/").trim();
               if (streamId && !titlesMap.has(cleaned)) {
-                titlesMap.set(cleaned, `${streamId}|${typeValue}`);
+                titlesMap.set(cleaned, `${streamId}|${typeValue}|${groupClean}`);
                 if (typeValue === "0") movieCount++; else if (typeValue === "1") seriesCount++; else liveCount++;
               }
             }
@@ -298,8 +300,8 @@ async function streamParseM3U(stream: ReadableStream<Uint8Array>): Promise<{ tit
   }
 
   const titles = Array.from(titlesMap.entries()).map(([name, rest]) => {
-    const [id, type] = rest.split('|');
-    return `${type}|${id}||${name}`;
+    const [id, type, group] = rest.split('|');
+    return `${type}|${id}|${group || ''}|${name}`;
   });
 
   return { 
