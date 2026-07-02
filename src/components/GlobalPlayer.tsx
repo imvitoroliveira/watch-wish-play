@@ -95,6 +95,11 @@ const GlobalPlayer: React.FC = () => {
       return;
     }
 
+    if (reconnectTimerRef.current) {
+      console.warn(`[GlobalPlayer] Reconexão já em observação (${reason}); aguardando confirmação de travamento.`);
+      return;
+    }
+
     clearReconnectTimer();
     const snapshotTime = lastPlaybackTimeRef.current;
     reconnectTimerRef.current = setTimeout(() => {
@@ -296,6 +301,11 @@ const GlobalPlayer: React.FC = () => {
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
             console.warn(`[GlobalPlayer] ⚠️ HLS Erro (${attempt.id}):`, data.type);
+            if (playbackConfirmedRef.current) {
+              clearLoadTimeout();
+              scheduleLiveReconnect(`hls-error:${data.type}`, 12_000);
+              return;
+            }
             goToNextAttempt();
           }
         });
