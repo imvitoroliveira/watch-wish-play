@@ -32,7 +32,7 @@ async function fetchBillingStatus(): Promise<boolean> {
  * @returns {{ billingEnabled: boolean, loading: boolean }}
  */
 export const useBillingEnabled = () => {
-  const { data: billingEnabled = false, isLoading: loading } = useQuery({
+  const { data: billingEnabled = true, isLoading: loading } = useQuery({
     queryKey: BILLING_QUERY_KEY,
     queryFn: fetchBillingStatus,
     staleTime: STALE_TIME,
