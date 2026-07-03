@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (error) throw error;
-      return new Response(JSON.stringify(data || { billing_enabled: false }), {
+      return new Response(JSON.stringify(data || { billing_enabled: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
