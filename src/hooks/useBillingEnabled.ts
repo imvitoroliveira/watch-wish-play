@@ -18,8 +18,9 @@ async function fetchBillingStatus(): Promise<boolean> {
   const { data, error } = await supabase.functions.invoke('app-settings', {
     body: { action: 'get' },
   });
-  if (error || !data) return false;
-  return !!data.billing_enabled;
+  // Default ON — admin can temporarily disable via toggle
+  if (error || !data) return true;
+  return data.billing_enabled !== false;
 }
 
 /**
