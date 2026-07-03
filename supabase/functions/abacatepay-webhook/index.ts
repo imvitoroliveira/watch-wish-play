@@ -54,6 +54,25 @@ function generateDeterministicCpf(username: string): string {
   return [...base, d1, d2].join("").replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 
+function normalizeBrazilianPhone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    digits = digits.slice(2);
+  }
+  return digits.length === 10 || digits.length === 11 ? digits : null;
+}
+
+function buildCustomerEmail(username: string): string {
+  const local = username
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, ".")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 48) || "cliente";
+  return `${local}@clientestoptv.com.br`;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // WEBHOOK SECRET VALIDATION
 // AbacatePay sends secret as:
@@ -308,31 +327,46 @@ Deno.serve(async (req) => {
         ? username.split(".")[0].charAt(0).toUpperCase() + username.split(".")[0].slice(1)
         : username;
 
-      // Try to get phone from clients_list
-      let clientPhone = "";
       try {
-        const { data: clientsRow } = await supabase
-          .from("clients_list")
-          .select("clients")
-          .eq("id", "00000000-0000-0000-0000-000000000001")
-          .maybeSingle();
-        if (clientsRow?.clients && Array.isArray(clientsRow.clients)) {
-          const found = (clientsRow.clients as any[]).find((c: any) => c.u === username);
-          if (found?.Notas) {
-            const digits = found.Notas.replace(/\D/g, "");
-            if (digits.length >= 10) clientPhone = digits;
+        let clientPhone = "";
+        try {
+          const { data: clientsRow } = await supabase
+            .from("clients_list")
+            .select("clients")
+            .eq("id", "00000000-0000-0000-0000-000000000001")
+            .maybeSingle();
+          if (clientsRow?.clients && Array.isArray(clientsRow.clients)) {
+            const found = (clientsRow.clients as any[]).find((c: any) => c.u === username);
+            const phoneCandidates = [found?.Notas, found?.notas, found?.NOTAS, found?.n, found?.N];
+            clientPhone = phoneCandidates.map(normalizeBrazilianPhone).find(Boolean) || "";
           }
+        } catch (err) {
+          console.warn("[create_billing] Could not fetch client phone:", err);
         }
-      } catch (err) {
-        console.warn("[create_billing] Could not fetch client phone:", err);
-      }
 
-      try {
         const customerObj = {
           name: displayName,
-          email: "preenchaseuemail@aqui.com",
-          cellphone: clientPhone || "00000000000",
+          email: buildCustomerEmail(username),
+          cellphone: clientPhone || "11999999999",
           taxId: generateDeterministicCpf(username),
+        };
+
+        const billingPayload = {
+          frequency: "ONE_TIME",
+          methods: ["PIX"],
+          returnUrl,
+          completionUrl: returnUrl,
+          customer: customerObj,
+          products: [
+            {
+              externalId: `${plan}_${username}`,
+              name: planInfo.label,
+              description: `${planInfo.label} - ${username}`,
+              quantity: 1,
+              price: planInfo.priceCents,
+            },
+          ],
+          metadata: { username, plan, displayName },
         };
 
         const abacateRes = await fetch("https://api.abacatepay.com/v1/billing/create", {
@@ -341,28 +375,18 @@ Deno.serve(async (req) => {
             Authorization: `Bearer ${abacateApiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            frequency: "ONE_TIME",
-            methods: ["PIX"],
-            returnUrl,
-            completionUrl: returnUrl,
-            customer: customerObj,
-            products: [
-              {
-                externalId: `${plan}_${username}`,
-                name: planInfo.label,
-                description: `Renovação ${planInfo.label} - ${username}`,
-                quantity: 1,
-                price: planInfo.priceCents,
-              },
-            ],
-            metadata: { username, plan },
-          }),
+          body: JSON.stringify(billingPayload),
         });
 
-        const abacateData = await abacateRes.json();
+        const abacateRaw = await abacateRes.text();
+        let abacateData: any = null;
+        try {
+          abacateData = abacateRaw ? JSON.parse(abacateRaw) : null;
+        } catch {
+          console.error("[create_billing] AbacatePay returned non-JSON response", { status: abacateRes.status });
+        }
         if (!abacateRes.ok || !abacateData?.data?.url) {
-          console.error("[create_billing] AbacatePay API error:", JSON.stringify(abacateData));
+          console.error("[create_billing] AbacatePay API error:", JSON.stringify({ status: abacateRes.status, data: abacateData }));
           return jsonResponse({ error: "failed to create billing" }, 502);
         }
 
