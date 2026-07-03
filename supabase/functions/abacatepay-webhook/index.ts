@@ -357,7 +357,6 @@ Deno.serve(async (req) => {
           returnUrl,
           completionUrl: returnUrl,
           customer: customerObj,
-          externalId: `${plan}_${username}`,
           products: [
             {
               externalId: `${plan}_${username}`,
