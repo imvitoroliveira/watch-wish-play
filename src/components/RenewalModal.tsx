@@ -9,6 +9,19 @@ interface RenewalModalProps {
   onClose: () => void;
 }
 
+const resolveStoredRenewalUsername = () => {
+  const fromExpiredLogin = localStorage.getItem('msc_renewal_username')?.trim();
+  if (fromExpiredLogin) return fromExpiredLogin;
+
+  try {
+    const saved = localStorage.getItem('msc_client');
+    return saved ? (JSON.parse(saved)?.u || '').trim() : '';
+  } catch {
+    localStorage.removeItem('msc_client');
+    return '';
+  }
+};
+
 const plans = [
   {
     id: 'mensal',
@@ -52,19 +65,10 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
 
   const handleSelectPlan = async (plan: typeof plans[0]) => {
-    // Resolve username: prop → localStorage fallback
-    let effectiveUsername = (username || '').trim();
-    if (!effectiveUsername) {
-      try {
-        const saved = localStorage.getItem('msc_client');
-        if (saved) effectiveUsername = (JSON.parse(saved)?.u || '').trim();
-      } catch {
-        /* ignore */
-      }
-    }
+    const effectiveUsername = (username || '').trim() || resolveStoredRenewalUsername();
 
     if (!effectiveUsername) {
-      toast.error('Sessão expirada. Faça login novamente para renovar.');
+      toast.error('Não foi possível identificar o usuário. Volte ao login e tente novamente.');
       return;
     }
 
