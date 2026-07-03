@@ -158,12 +158,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const uploadClientList = async (data: ClientData[]) => {
-    setClientList(data);
+    // Preserve per-client m3u URLs that already exist in the current list.
+    // Spreadsheet re-uploads don't carry the m3u column, so without this
+    // merge every re-import would wipe the individual M3U URLs configured
+    // manually by the admin.
+    const existingM3uByUser = new Map<string, string>();
+    for (const c of clientList) {
+      if (c?.u && c?.m3u) existingM3uByUser.set(c.u, c.m3u);
+    }
+    const merged = data.map((c) => {
+      if (c?.m3u) return c; // incoming already has one — respect it
+      const prev = existingM3uByUser.get(c?.u);
+      return prev ? { ...c, m3u: prev } : c;
+    });
+
+    setClientList(merged);
 
     try {
       await supabase.functions.invoke('manage-clients', {
         method: 'POST',
-        body: { clients: data },
+        body: { clients: merged },
         headers: { 'x-admin-auth': adminAuth },
       });
     } catch {
