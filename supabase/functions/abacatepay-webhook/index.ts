@@ -54,6 +54,25 @@ function generateDeterministicCpf(username: string): string {
   return [...base, d1, d2].join("").replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
 }
 
+function normalizeBrazilianPhone(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  let digits = value.replace(/\D/g, "");
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+    digits = digits.slice(2);
+  }
+  return digits.length === 10 || digits.length === 11 ? digits : null;
+}
+
+function buildCustomerEmail(username: string): string {
+  const local = username
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, ".")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 48) || "cliente";
+  return `${local}@clientestoptv.com.br`;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // WEBHOOK SECRET VALIDATION
 // AbacatePay sends secret as:
@@ -309,11 +328,35 @@ Deno.serve(async (req) => {
         : username;
 
       try {
+        let clientPhone = "";
+        try {
+          const { data: clientsRow } = await supabase
+            .from("clients_list")
+            .select("clients")
+            .eq("id", "00000000-0000-0000-0000-000000000001")
+            .maybeSingle();
+          if (clientsRow?.clients && Array.isArray(clientsRow.clients)) {
+            const found = (clientsRow.clients as any[]).find((c: any) => c.u === username);
+            const phoneCandidates = [found?.Notas, found?.notas, found?.NOTAS, found?.n, found?.N];
+            clientPhone = phoneCandidates.map(normalizeBrazilianPhone).find(Boolean) || "";
+          }
+        } catch (err) {
+          console.warn("[create_billing] Could not fetch client phone:", err);
+        }
+
+        const customerObj = {
+          name: displayName,
+          email: buildCustomerEmail(username),
+          cellphone: clientPhone || "11999999999",
+          taxId: generateDeterministicCpf(username),
+        };
+
         const billingPayload = {
           frequency: "ONE_TIME",
           methods: ["PIX"],
           returnUrl,
           completionUrl: returnUrl,
+          customer: customerObj,
           externalId: `${plan}_${username}`,
           products: [
             {
