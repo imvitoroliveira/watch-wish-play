@@ -27,6 +27,19 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+const CLIENT_STORAGE_KEY = 'msc_client';
+const RENEWAL_USERNAME_KEY = 'msc_renewal_username';
+
+const parseStoredClient = (): ClientData | null => {
+  try {
+    const saved = localStorage.getItem(CLIENT_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    localStorage.removeItem(CLIENT_STORAGE_KEY);
+    return null;
+  }
+};
+
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
@@ -41,8 +54,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return sessionStorage.getItem('msc_admin_auth') || '';
   });
   const [currentClient, setCurrentClient] = useState<ClientData | null>(() => {
-    const saved = localStorage.getItem('msc_client');
-    return saved ? JSON.parse(saved) : null;
+    return parseStoredClient();
   });
   const [clientList, setClientList] = useState<ClientData[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
@@ -113,9 +125,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const loginClient = async (user: string, pass: string): Promise<{ success: boolean; reason?: string }> => {
+    const normalizedUser = user.trim();
+    const normalizedPass = pass.trim();
+
     try {
       const { data, error } = await supabase.functions.invoke('client-login', {
-        body: { action: 'login', username: user, password: pass },
+        body: { action: 'login', username: normalizedUser, password: normalizedPass },
       });
 
       if (error) {
@@ -123,6 +138,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (!data?.success) {
+        if (data?.reason === 'expired') {
+          localStorage.setItem(RENEWAL_USERNAME_KEY, normalizedUser);
+        }
         return { success: false, reason: data?.reason || 'invalid' };
       }
 
@@ -130,7 +148,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const client: ClientData = { ...data.client };
       delete client.p;
       setCurrentClient(client);
-      localStorage.setItem('msc_client', JSON.stringify(client));
+      localStorage.setItem(CLIENT_STORAGE_KEY, JSON.stringify(client));
+      localStorage.removeItem(RENEWAL_USERNAME_KEY);
       return { success: true };
     } catch {
       return { success: false, reason: 'error' };
@@ -154,7 +173,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setClientList([]);
     sessionStorage.removeItem('msc_admin_token');
     sessionStorage.removeItem('msc_admin_auth');
-    localStorage.removeItem('msc_client');
+    localStorage.removeItem(CLIENT_STORAGE_KEY);
+    localStorage.removeItem(RENEWAL_USERNAME_KEY);
   };
 
   const uploadClientList = async (data: ClientData[]) => {
