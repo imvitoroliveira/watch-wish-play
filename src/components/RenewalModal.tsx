@@ -52,11 +52,27 @@ const RenewalModal = ({ username, onClose }: RenewalModalProps) => {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
 
   const handleSelectPlan = async (plan: typeof plans[0]) => {
+    // Resolve username: prop → localStorage fallback
+    let effectiveUsername = (username || '').trim();
+    if (!effectiveUsername) {
+      try {
+        const saved = localStorage.getItem('msc_client');
+        if (saved) effectiveUsername = (JSON.parse(saved)?.u || '').trim();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!effectiveUsername) {
+      toast.error('Sessão expirada. Faça login novamente para renovar.');
+      return;
+    }
+
     setLoadingPlan(plan.id);
 
     try {
       const { data, error } = await supabase.functions.invoke('abacatepay-webhook', {
-        body: { action: 'create_billing', username, plan: plan.id },
+        body: { action: 'create_billing', username: effectiveUsername, plan: plan.id },
       });
 
       if (error || !data?.success || !data?.url) {
