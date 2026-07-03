@@ -6,13 +6,27 @@ import RenewalModal from '@/components/RenewalModal';
 import { Button } from '@/components/ui/button';
 import { useBillingEnabled } from '@/hooks/useBillingEnabled';
 
+const resolveRenewalUsername = () => {
+  const fromRenewalLogin = localStorage.getItem('msc_renewal_username')?.trim();
+  if (fromRenewalLogin) return fromRenewalLogin;
+
+  try {
+    const savedClient = localStorage.getItem('msc_client');
+    const fromClient = savedClient ? JSON.parse(savedClient)?.u?.trim() : '';
+    if (fromClient) return fromClient;
+  } catch {
+    localStorage.removeItem('msc_client');
+  }
+
+  return '';
+};
+
 const ExpiredScreen = () => {
   const navigate = useNavigate();
   const [showRenewal, setShowRenewal] = useState(false);
   const { billingEnabled } = useBillingEnabled();
 
-  const savedClient = localStorage.getItem('msc_client');
-  const username = savedClient ? JSON.parse(savedClient)?.u || '' : '';
+  const username = resolveRenewalUsername();
 
   // Auto-show renewal popup when billing is enabled
   useEffect(() => {
