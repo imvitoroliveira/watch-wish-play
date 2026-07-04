@@ -59,6 +59,9 @@ const GlobalPlayer: React.FC = () => {
   const lastTimeUpdateAtRef = useRef<number>(0);
   const lastPlaybackTimeRef = useRef<number>(0);
   const playbackConfirmedRef = useRef<boolean>(false);
+  // Reconexão silenciosa: quando true, próximo (re)load NÃO mostra spinner nem apaga a tela.
+  const silentReconnectRef = useRef<boolean>(false);
+  const framePosterRef = useRef<string | null>(null);
 
   // Reset contadores de reconexão sempre que a URL muda (novo canal)
   useEffect(() => {
