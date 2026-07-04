@@ -71,6 +71,8 @@ const GlobalPlayer: React.FC = () => {
     lastTimeUpdateAtRef.current = 0;
     lastPlaybackTimeRef.current = 0;
     playbackConfirmedRef.current = false;
+    silentReconnectRef.current = false;
+    framePosterRef.current = null;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
