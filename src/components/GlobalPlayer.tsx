@@ -440,7 +440,9 @@ const GlobalPlayer: React.FC = () => {
         // o vídeo atinge o EOF natural sem erro. Ocorrendo isso na LiveTV, forçamos o auto-reconnect.
         const onEndedMpegts = () => {
           clearLoadTimeout();
-          scheduleLiveReconnect('mpegts-eof', 6_000);
+          // Corte esperado (~6min) pelo timeout da Edge Function → reconexão silenciosa e imediata.
+          captureCurrentFrame();
+          scheduleLiveReconnect('mpegts-eof', 400, { silent: true });
         };
         video.onended = onEndedMpegts;
       } else {
