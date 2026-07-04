@@ -180,13 +180,18 @@ const GlobalPlayer: React.FC = () => {
     const video = videoRef.current;
     if (!video || !currentUrl) return;
 
-    // Resetar estados
-    setIsLoading(true);
+    const silent = silentReconnectRef.current;
+    silentReconnectRef.current = false;
+
+    // Resetar estados (mas em reconexão silenciosa mantemos loading=false e último frame como poster)
+    if (!silent) {
+      setIsLoading(true);
+      setProgress(0);
+      setDuration(0);
+      setCurrentTime(0);
+    }
     setHasError(null);
     setIsPlaying(false);
-    setProgress(0);
-    setDuration(0);
-    setCurrentTime(0);
     clearReconnectTimer();
     if (bufferingTimerRef.current) {
       clearTimeout(bufferingTimerRef.current);
