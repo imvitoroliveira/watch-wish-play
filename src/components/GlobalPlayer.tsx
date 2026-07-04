@@ -59,6 +59,9 @@ const GlobalPlayer: React.FC = () => {
   const lastTimeUpdateAtRef = useRef<number>(0);
   const lastPlaybackTimeRef = useRef<number>(0);
   const playbackConfirmedRef = useRef<boolean>(false);
+  // Reconexão silenciosa: quando true, próximo (re)load NÃO mostra spinner nem apaga a tela.
+  const silentReconnectRef = useRef<boolean>(false);
+  const framePosterRef = useRef<string | null>(null);
 
   // Reset contadores de reconexão sempre que a URL muda (novo canal)
   useEffect(() => {
@@ -68,6 +71,8 @@ const GlobalPlayer: React.FC = () => {
     lastTimeUpdateAtRef.current = 0;
     lastPlaybackTimeRef.current = 0;
     playbackConfirmedRef.current = false;
+    silentReconnectRef.current = false;
+    framePosterRef.current = null;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -85,32 +90,53 @@ const GlobalPlayer: React.FC = () => {
     }
   }, []);
 
+  // Captura o frame atual do vídeo para usar como poster durante o reconnect (evita tela preta).
+  const captureCurrentFrame = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      framePosterRef.current = canvas.toDataURL('image/jpeg', 0.6);
+    } catch {
+      // Alguns browsers/streams marcam o canvas como "tainted" — ignorar silenciosamente.
+    }
+  }, []);
+
   // Reconexão controlada: só recarrega quando o vídeo realmente parou de avançar.
   // Erros/transições curtas de buffer em TV ao vivo são comuns e não devem derrubar o player.
-  const scheduleLiveReconnect = useCallback((reason: string, delayMs = 10_000) => {
+  // `silent`: reconexão esperada (ex.: EOF do proxy a cada ~6min) — sem spinner, sem cooldown, sem limite.
+  const scheduleLiveReconnect = useCallback((reason: string, delayMs = 10_000, opts?: { silent?: boolean }) => {
+    const silent = opts?.silent === true;
     const now = Date.now();
     const playedFor = playbackStartAtRef.current ? now - playbackStartAtRef.current : 0;
     const sinceLast = now - lastReconnectAtRef.current;
 
-    if (!playbackConfirmedRef.current || playedFor < 60_000) {
-      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): reprodução ainda não ficou estável (${playedFor}ms).`);
-      const video = videoRef.current;
-      const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
-      const hasFutureData = Boolean(video && video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA);
-      setIsLoading(Boolean(video && !video.paused && !recentlyAdvanced && !hasFutureData));
-      return;
-    }
+    if (!silent) {
+      if (!playbackConfirmedRef.current || playedFor < 60_000) {
+        console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): reprodução ainda não ficou estável (${playedFor}ms).`);
+        const video = videoRef.current;
+        const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
+        const hasFutureData = Boolean(video && video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA);
+        setIsLoading(Boolean(video && !video.paused && !recentlyAdvanced && !hasFutureData));
+        return;
+      }
 
-    if (sinceLast < 45_000) {
-      console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): cooldown (${sinceLast}ms desde a última).`);
-      return;
-    }
+      if (sinceLast < 45_000) {
+        console.warn(`[GlobalPlayer] Reconexão ignorada (${reason}): cooldown (${sinceLast}ms desde a última).`);
+        return;
+      }
 
-    if (reconnectCountRef.current >= 3) {
-      console.warn('[GlobalPlayer] Reconexão abortada: limite de 3 atingido.');
-      setHasError('O sinal deste canal ficou instável. Feche e abra o canal novamente.');
-      setIsLoading(false);
-      return;
+      if (reconnectCountRef.current >= 3) {
+        console.warn('[GlobalPlayer] Reconexão abortada: limite de 3 atingido.');
+        setHasError('O sinal deste canal ficou instável. Feche e abra o canal novamente.');
+        setIsLoading(false);
+        return;
+      }
     }
 
     if (reconnectTimerRef.current) {
@@ -125,22 +151,30 @@ const GlobalPlayer: React.FC = () => {
       reconnectTimerRef.current = null;
       if (!video || !currentUrl) return;
 
-      const advanced = video.currentTime > snapshotTime + 0.75;
-      const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
-      if (advanced || recentlyAdvanced) {
-        console.log(`[GlobalPlayer] Reconexão cancelada (${reason}): stream voltou a avançar.`);
-        setIsLoading(false);
-        return;
+      if (!silent) {
+        const advanced = video.currentTime > snapshotTime + 0.75;
+        const recentlyAdvanced = Date.now() - lastTimeUpdateAtRef.current < 4_000;
+        if (advanced || recentlyAdvanced) {
+          console.log(`[GlobalPlayer] Reconexão cancelada (${reason}): stream voltou a avançar.`);
+          setIsLoading(false);
+          return;
+        }
       }
 
-      reconnectCountRef.current += 1;
+      if (silent) {
+        // Congela o último frame como poster para eliminar o flash preto.
+        captureCurrentFrame();
+        silentReconnectRef.current = true;
+      } else {
+        reconnectCountRef.current += 1;
+      }
       lastReconnectAtRef.current = Date.now();
       playbackStartAtRef.current = 0;
       playbackConfirmedRef.current = false;
-      console.log(`[GlobalPlayer] Auto-reconnect #${reconnectCountRef.current} (${reason}).`);
+      console.log(`[GlobalPlayer] Auto-reconnect${silent ? ' (silent)' : ` #${reconnectCountRef.current}`} (${reason}).`);
       setRetryKey(k => k + 1);
     }, delayMs);
-  }, [clearReconnectTimer, currentUrl]);
+  }, [clearReconnectTimer, currentUrl, captureCurrentFrame]);
 
 
   // --- SETUP: Carregar stream quando URL muda ---
@@ -148,13 +182,18 @@ const GlobalPlayer: React.FC = () => {
     const video = videoRef.current;
     if (!video || !currentUrl) return;
 
-    // Resetar estados
-    setIsLoading(true);
+    const silent = silentReconnectRef.current;
+    silentReconnectRef.current = false;
+
+    // Resetar estados (mas em reconexão silenciosa mantemos loading=false e último frame como poster)
+    if (!silent) {
+      setIsLoading(true);
+      setProgress(0);
+      setDuration(0);
+      setCurrentTime(0);
+    }
     setHasError(null);
     setIsPlaying(false);
-    setProgress(0);
-    setDuration(0);
-    setCurrentTime(0);
     clearReconnectTimer();
     if (bufferingTimerRef.current) {
       clearTimeout(bufferingTimerRef.current);
@@ -403,7 +442,9 @@ const GlobalPlayer: React.FC = () => {
         // o vídeo atinge o EOF natural sem erro. Ocorrendo isso na LiveTV, forçamos o auto-reconnect.
         const onEndedMpegts = () => {
           clearLoadTimeout();
-          scheduleLiveReconnect('mpegts-eof', 6_000);
+          // Corte esperado (~6min) pelo timeout da Edge Function → reconexão silenciosa e imediata.
+          captureCurrentFrame();
+          scheduleLiveReconnect('mpegts-eof', 400, { silent: true });
         };
         video.onended = onEndedMpegts;
       } else {
@@ -671,7 +712,7 @@ const GlobalPlayer: React.FC = () => {
             className={isMini ? "w-full h-full object-cover" : "w-full h-full object-contain pointer-events-auto"}
             playsInline
             {...({ 'webkit-playsinline': 'true', 'x5-playsinline': 'true' } as Record<string, string>)}
-            poster={currentMedia?.poster}
+            poster={framePosterRef.current || currentMedia?.poster}
             muted={isMuted}
             onClick={!isMini ? togglePlay : undefined}
           />
