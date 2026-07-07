@@ -334,5 +334,8 @@ export function useMovieState() {
     setChallengeKey,
     m3uNormalized, // Exportamos o map para montar o Link Pessoal
     m3uStats,      // Estatísticas para o Dashboard
+    loadMoreByGenre,
+    loadingMoreGenre,
+    genreTotals,
   };
 }
