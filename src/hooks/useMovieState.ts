@@ -21,6 +21,18 @@ function saveMovieMap(key: string, map: Map<number, TMDBMovie>) {
   localStorage.setItem(key, JSON.stringify([...map.values()]));
 }
 
+// Normaliza o rótulo bruto de categoria numa chave curta de gênero (deve casar com AssistirPortal)
+function normalizeGenreKey(raw: string): string {
+  if (!raw) return '';
+  return raw.toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(FILMES?|SERIES?|VOD|MOVIES?|CANAIS?)\b/g, '')
+    .replace(/\b(4K|UHD|FHD|HD|SD|DUBLADO|LEGENDADO|DUB|LEG|NACIONAL|LANCAMENTOS?|LANCAMENTO)\b/g, '')
+    .replace(/[|\-–:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function useMovieState() {
   const { currentClient } = useAuth();
 
