@@ -80,7 +80,10 @@ const DashboardV2 = () => {
     m3uMovies,
     m3uSeries,
     searchFullM3U,
-    m3uStats
+    m3uStats,
+    loadMoreByGenre,
+    loadingMoreGenre,
+    genreTotals,
   } = useMovieState();
 
   // Heartbeat: send presence every 3 minutes
