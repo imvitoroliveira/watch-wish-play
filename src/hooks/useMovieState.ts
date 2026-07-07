@@ -21,6 +21,18 @@ function saveMovieMap(key: string, map: Map<number, TMDBMovie>) {
   localStorage.setItem(key, JSON.stringify([...map.values()]));
 }
 
+// Normaliza o rótulo bruto de categoria numa chave curta de gênero (deve casar com AssistirPortal)
+function normalizeGenreKey(raw: string): string {
+  if (!raw) return '';
+  return raw.toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(FILMES?|SERIES?|VOD|MOVIES?|CANAIS?)\b/g, '')
+    .replace(/\b(4K|UHD|FHD|HD|SD|DUBLADO|LEGENDADO|DUB|LEG|NACIONAL|LANCAMENTOS?|LANCAMENTO)\b/g, '')
+    .replace(/[|\-–:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function useMovieState() {
   const { currentClient } = useAuth();
 
@@ -34,7 +46,7 @@ export function useMovieState() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
   // Normalized map now holds { stream_id, isSeries } along with the title key
-  const [m3uNormalized, setM3uNormalized] = useState<Map<string, { id: string, isSeries: boolean }>>(new Map());
+  const [m3uNormalized, setM3uNormalized] = useState<Map<string, { id: string, isSeries: boolean, cat: string, raw: string }>>(new Map());
   const [hasM3U, setHasM3U] = useState(false);
   const [m3uConfirmedMovies, setM3uConfirmedMovies] = useState<TMDBMovie[]>([]);
   const [contentAlerts, setContentAlerts] = useState<Set<number>>(new Set());
@@ -69,7 +81,7 @@ export function useMovieState() {
 
         if (m3uTitles.length > 0) {
           setHasM3U(true);
-          const map = new Map<string, { id: string, isSeries: boolean }>();
+          const map = new Map<string, { id: string, isSeries: boolean, cat: string, raw: string }>();
           const movieTitles: string[] = [];
           const seriesTitles: string[] = [];
           const categoryByTitle = new Map<string, string>(); // normalized title -> category name
@@ -84,13 +96,13 @@ export function useMovieState() {
               const normalized = normalizeTitle(name);
               const isSeries = type === '1';
               if (id && normalized) {
-                map.set(normalized, { id, isSeries });
                 // Resolve numeric ids to names via catMaps; otherwise use as-is
                 let catLabel = catId || '';
                 if (catLabel && /^\d+$/.test(catLabel)) {
                   const pool = isSeries ? catMaps.series : catMaps.vod;
                   catLabel = pool?.[catLabel] || catLabel;
                 }
+                map.set(normalized, { id, isSeries, cat: catLabel, raw: name });
                 if (catLabel) categoryByTitle.set(normalized, catLabel);
                 if (isSeries) seriesTitles.push(name);
                 else movieTitles.push(name);
@@ -101,7 +113,7 @@ export function useMovieState() {
               
               const normalized = normalizeTitle(t);
               if (normalized && !map.has(normalized)) {
-                map.set(normalized, { id: '', isSeries: false });
+                map.set(normalized, { id: '', isSeries: false, cat: '', raw: t });
                 movieTitles.push(t);
               }
             }
@@ -165,6 +177,61 @@ export function useMovieState() {
     // 4. Filtramos para garantir que o resultado bate com a categoria da aba (tv ou movie)
     return finalResults.filter(m => m.media_type === type);
   }, [m3uNormalized]);
+
+  // Contagem total de títulos por gênero no catálogo M3U completo (para exibir "de X no catálogo")
+  const genreTotals = useCallback((type: 'movie' | 'tv') => {
+    const totals = new Map<string, number>();
+    const wantSeries = type === 'tv';
+    for (const { isSeries, cat } of m3uNormalized.values()) {
+      if (isSeries !== wantSeries) continue;
+      const key = normalizeGenreKey(cat);
+      if (!key) continue;
+      totals.set(key, (totals.get(key) || 0) + 1);
+    }
+    return totals;
+  }, [m3uNormalized]);
+
+  const [loadingMoreGenre, setLoadingMoreGenre] = useState<string | null>(null);
+
+  const loadMoreByGenre = useCallback(async (genreKey: string, type: 'movie' | 'tv', batchSize = 50) => {
+    if (!genreKey) return 0;
+    const wantSeries = type === 'tv';
+    const alreadyIds = new Set<string>((type === 'tv' ? m3uSeries : m3uMovies).map(m => normalizeTitle((m as any)._exactM3uTitle || m.title || m.name || '')));
+
+    const candidates: string[] = [];
+    for (const [norm, info] of m3uNormalized.entries()) {
+      if (info.isSeries !== wantSeries) continue;
+      if (normalizeGenreKey(info.cat) !== genreKey) continue;
+      if (alreadyIds.has(norm)) continue;
+      candidates.push(info.raw);
+      if (candidates.length >= batchSize) break;
+    }
+    if (candidates.length === 0) return 0;
+
+    setLoadingMoreGenre(genreKey);
+    try {
+      const found = await searchByTitles(candidates, batchSize, type);
+      const withMeta = found.map(m => {
+        const exact = candidates.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || '')) || m.title || m.name || '';
+        const cat = m3uNormalized.get(normalizeTitle(exact))?.cat || '';
+        return { ...m, _exactM3uTitle: exact, _m3uCategory: cat };
+      });
+      if (type === 'tv') {
+        setM3uSeries(prev => {
+          const seen = new Set(prev.map(p => p.id));
+          return [...prev, ...withMeta.filter(m => !seen.has(m.id))];
+        });
+      } else {
+        setM3uMovies(prev => {
+          const seen = new Set(prev.map(p => p.id));
+          return [...prev, ...withMeta.filter(m => !seen.has(m.id))];
+        });
+      }
+      return withMeta.length;
+    } finally {
+      setLoadingMoreGenre(null);
+    }
+  }, [m3uNormalized, m3uMovies, m3uSeries]);
 
   // Content alerts
   useEffect(() => {
@@ -267,5 +334,8 @@ export function useMovieState() {
     setChallengeKey,
     m3uNormalized, // Exportamos o map para montar o Link Pessoal
     m3uStats,      // Estatísticas para o Dashboard
+    loadMoreByGenre,
+    loadingMoreGenre,
+    genreTotals,
   };
 }
