@@ -178,6 +178,61 @@ export function useMovieState() {
     return finalResults.filter(m => m.media_type === type);
   }, [m3uNormalized]);
 
+  // Contagem total de títulos por gênero no catálogo M3U completo (para exibir "de X no catálogo")
+  const genreTotals = useCallback((type: 'movie' | 'tv') => {
+    const totals = new Map<string, number>();
+    const wantSeries = type === 'tv';
+    for (const { isSeries, cat } of m3uNormalized.values()) {
+      if (isSeries !== wantSeries) continue;
+      const key = normalizeGenreKey(cat);
+      if (!key) continue;
+      totals.set(key, (totals.get(key) || 0) + 1);
+    }
+    return totals;
+  }, [m3uNormalized]);
+
+  const [loadingMoreGenre, setLoadingMoreGenre] = useState<string | null>(null);
+
+  const loadMoreByGenre = useCallback(async (genreKey: string, type: 'movie' | 'tv', batchSize = 50) => {
+    if (!genreKey) return 0;
+    const wantSeries = type === 'tv';
+    const alreadyIds = new Set<string>((type === 'tv' ? m3uSeries : m3uMovies).map(m => normalizeTitle((m as any)._exactM3uTitle || m.title || m.name || '')));
+
+    const candidates: string[] = [];
+    for (const [norm, info] of m3uNormalized.entries()) {
+      if (info.isSeries !== wantSeries) continue;
+      if (normalizeGenreKey(info.cat) !== genreKey) continue;
+      if (alreadyIds.has(norm)) continue;
+      candidates.push(info.raw);
+      if (candidates.length >= batchSize) break;
+    }
+    if (candidates.length === 0) return 0;
+
+    setLoadingMoreGenre(genreKey);
+    try {
+      const found = await searchByTitles(candidates, batchSize, type);
+      const withMeta = found.map(m => {
+        const exact = candidates.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || '')) || m.title || m.name || '';
+        const cat = m3uNormalized.get(normalizeTitle(exact))?.cat || '';
+        return { ...m, _exactM3uTitle: exact, _m3uCategory: cat };
+      });
+      if (type === 'tv') {
+        setM3uSeries(prev => {
+          const seen = new Set(prev.map(p => p.id));
+          return [...prev, ...withMeta.filter(m => !seen.has(m.id))];
+        });
+      } else {
+        setM3uMovies(prev => {
+          const seen = new Set(prev.map(p => p.id));
+          return [...prev, ...withMeta.filter(m => !seen.has(m.id))];
+        });
+      }
+      return withMeta.length;
+    } finally {
+      setLoadingMoreGenre(null);
+    }
+  }, [m3uNormalized, m3uMovies, m3uSeries]);
+
   // Content alerts
   useEffect(() => {
     if (!currentClient?.u) return;
