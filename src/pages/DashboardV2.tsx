@@ -131,6 +131,9 @@ const DashboardV2 = () => {
               getAvailability={getAvailability}
               searchFullM3U={searchFullM3U}
               m3uStats={m3uStats}
+              loadMoreByGenre={loadMoreByGenre}
+              loadingMoreGenre={loadingMoreGenre}
+              genreTotals={genreTotals}
             />
           </motion.div>
         )}
