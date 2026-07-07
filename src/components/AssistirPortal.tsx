@@ -42,11 +42,13 @@ const AssistirPortal = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TMDBMovie[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [selectedGenre, setSelectedGenre] = useState<string>('all');
 
   // Limpa busca ao trocar de categoria
   useEffect(() => {
     setSearchQuery('');
     setSearchResults(null);
+    setSelectedGenre('all');
   }, [view]);
 
   // Debounce para busca no catálogo total
