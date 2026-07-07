@@ -238,6 +238,26 @@ const AssistirPortal = ({
         </div>
       </div>
 
+      {(view === 'movies' || view === 'series') && genres.length > 1 && (
+        <div className="flex flex-wrap gap-2 -mt-2">
+          <button
+            onClick={() => setSelectedGenre('all')}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-colors ${selectedGenre === 'all' ? 'bg-primary text-primary-foreground border-primary' : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'}`}
+          >
+            Todos ({baseList.length})
+          </button>
+          {genres.map(([g, c]) => (
+            <button
+              key={g}
+              onClick={() => setSelectedGenre(g)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-colors ${selectedGenre === g ? 'bg-primary text-primary-foreground border-primary' : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'}`}
+            >
+              {g} ({c})
+            </button>
+          ))}
+        </div>
+      )}
+
       {view === 'tv' ? (
         <LiveTV />
       ) : (
