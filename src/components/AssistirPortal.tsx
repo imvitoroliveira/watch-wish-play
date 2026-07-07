@@ -267,19 +267,46 @@ const AssistirPortal = ({
       {view === 'tv' ? (
         <LiveTV />
       ) : (
-        <MovieGrid
-          movies={displayList}
-          loading={false}
-          favorites={favorites}
-          watchedSet={watchedSet}
-          contentAlerts={contentAlerts}
-          onMovieClick={onMovieClick}
-          onToggleFavorite={onToggleFavorite}
-          onToggleWatched={onToggleWatched}
-          onToggleContentAlert={onToggleContentAlert}
-          getAvailability={getAvailability}
-          emptyMessage={searchQuery ? "Nenhum resultado encontrado para esta busca." : "Nenhum item disponível nesta categoria."}
-        />
+        <>
+          <MovieGrid
+            movies={displayList}
+            loading={false}
+            favorites={favorites}
+            watchedSet={watchedSet}
+            contentAlerts={contentAlerts}
+            onMovieClick={onMovieClick}
+            onToggleFavorite={onToggleFavorite}
+            onToggleWatched={onToggleWatched}
+            onToggleContentAlert={onToggleContentAlert}
+            getAvailability={getAvailability}
+            emptyMessage={searchQuery ? "Nenhum resultado encontrado para esta busca." : "Nenhum item disponível nesta categoria."}
+          />
+          {selectedGenre !== 'all' && !searchQuery && loadMoreByGenre && (() => {
+            const type: 'movie' | 'tv' = view === 'series' ? 'tv' : 'movie';
+            const totalInCatalog = genreTotals?.(type).get(selectedGenre) || displayList.length;
+            const remaining = Math.max(0, totalInCatalog - displayList.length);
+            const isLoading = loadingMoreGenre === selectedGenre;
+            if (remaining === 0) return null;
+            return (
+              <div className="flex flex-col items-center gap-2 pt-6">
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
+                  Mostrando {displayList.length} de ~{totalInCatalog} títulos de {selectedGenre} no catálogo
+                </p>
+                <Button
+                  disabled={isLoading}
+                  onClick={() => loadMoreByGenre(selectedGenre, type, 50)}
+                  className="rounded-full px-8 bg-primary/90 hover:bg-primary"
+                >
+                  {isLoading ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Carregando...</>
+                  ) : (
+                    <>Carregar mais títulos de {selectedGenre}</>
+                  )}
+                </Button>
+              </div>
+            );
+          })()}
+        </>
       )}
     </motion.div>
   );
