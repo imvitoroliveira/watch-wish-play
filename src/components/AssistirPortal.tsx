@@ -20,6 +20,9 @@ interface AssistirPortalProps {
   getAvailability: (movie: TMDBMovie) => 'available' | 'soon' | 'unknown';
   searchFullM3U: (query: string, type: 'movie' | 'tv') => Promise<TMDBMovie[]>;
   m3uStats?: any;
+  loadMoreByGenre?: (genreKey: string, type: 'movie' | 'tv', batchSize?: number) => Promise<number>;
+  loadingMoreGenre?: string | null;
+  genreTotals?: (type: 'movie' | 'tv') => Map<string, number>;
 }
 
 type ViewMode = 'selection' | 'tv' | 'movies' | 'series';
