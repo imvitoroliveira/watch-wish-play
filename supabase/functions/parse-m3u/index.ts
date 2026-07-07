@@ -65,6 +65,19 @@ async function processXtreamAPI(url: string, proxyRequest: Request): Promise<{ t
     const username = credsMatch[2];
     const password = credsMatch[3];
 
+    // 0. VOD & Series categories (id -> name)
+    const fetchCats = async (action: string): Promise<Record<string, string>> => {
+      try {
+        const r = await fetch(`${baseUrl}/player_api.php?username=${username}&password=${password}&action=${action}`, { headers: { "User-Agent": "VLC/3.0.18" } });
+        if (!r.ok) return {};
+        const arr = await r.json();
+        const map: Record<string, string> = {};
+        if (Array.isArray(arr)) arr.forEach((c: any) => { map[String(c.category_id)] = String(c.category_name || "").replace(/\|/g, "/").trim(); });
+        return map;
+      } catch { return {}; }
+    };
+    const [vodCats, seriesCats] = await Promise.all([fetchCats("get_vod_categories"), fetchCats("get_series_categories")]);
+
     // 1. VOD Streams
     const vodUrl = `${baseUrl}/player_api.php?username=${username}&password=${password}&action=get_vod_streams`;
     const resVod = await fetch(vodUrl, { headers: { "User-Agent": "VLC/3.0.18" } });
@@ -77,7 +90,8 @@ async function processXtreamAPI(url: string, proxyRequest: Request): Promise<{ t
           if (item.name && streamId) {
             const cleaned = cleanTitle(item.name);
             if (cleaned.length > 1 && !titlesMap.has(cleaned)) {
-              titlesMap.set(cleaned, `${streamId}|0`);
+              const catName = vodCats[String(item.category_id)] || "";
+              titlesMap.set(cleaned, `${streamId}|0|${catName}`);
               movieCount++;
             }
           }
@@ -97,7 +111,8 @@ async function processXtreamAPI(url: string, proxyRequest: Request): Promise<{ t
           if (item.name && seriesId) {
             const cleaned = cleanTitle(item.name);
             if (cleaned.length > 1) {
-              titlesMap.set(cleaned, `${seriesId}|1`);
+              const catName = seriesCats[String(item.category_id)] || "";
+              titlesMap.set(cleaned, `${seriesId}|1|${catName}`);
               seriesCount++;
             }
           }
