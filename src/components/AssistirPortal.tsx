@@ -40,6 +40,9 @@ const AssistirPortal = ({
   getAvailability,
   searchFullM3U,
   m3uStats,
+  loadMoreByGenre,
+  loadingMoreGenre,
+  genreTotals,
 }: AssistirPortalProps) => {
   const [view, setView] = useState<ViewMode>('selection');
   const [searchQuery, setSearchQuery] = useState('');
