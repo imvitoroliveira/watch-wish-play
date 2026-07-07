@@ -46,7 +46,7 @@ export function useMovieState() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
   // Normalized map now holds { stream_id, isSeries } along with the title key
-  const [m3uNormalized, setM3uNormalized] = useState<Map<string, { id: string, isSeries: boolean }>>(new Map());
+  const [m3uNormalized, setM3uNormalized] = useState<Map<string, { id: string, isSeries: boolean, cat: string, raw: string }>>(new Map());
   const [hasM3U, setHasM3U] = useState(false);
   const [m3uConfirmedMovies, setM3uConfirmedMovies] = useState<TMDBMovie[]>([]);
   const [contentAlerts, setContentAlerts] = useState<Set<number>>(new Set());
