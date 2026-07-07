@@ -157,7 +157,35 @@ const AssistirPortal = ({
   };
 
   const currentList = view === 'movies' ? m3uMovies : view === 'series' ? m3uSeries : [];
-  const displayList = searchResults !== null ? searchResults : currentList;
+  const baseList = searchResults !== null ? searchResults : currentList;
+
+  // Normaliza o nome bruto da categoria (vindo do M3U/XTream) num rótulo curto de gênero.
+  const normalizeGenre = (raw: string): string => {
+    if (!raw) return '';
+    let s = raw.toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\b(FILMES?|SERIES?|VOD|MOVIES?|CANAIS?)\b/g, '')
+      .replace(/\b(4K|UHD|FHD|HD|SD|DUBLADO|LEGENDADO|DUB|LEG|NACIONAL|LANCAMENTOS?|LANCAMENTO)\b/g, '')
+      .replace(/[|\-–:]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    // Pega o primeiro termo significativo (gênero principal)
+    return s || '';
+  };
+
+  const genreCounts = new Map<string, number>();
+  if (view === 'movies' || view === 'series') {
+    for (const m of baseList) {
+      const g = normalizeGenre((m as any)._m3uCategory || '');
+      if (!g) continue;
+      genreCounts.set(g, (genreCounts.get(g) || 0) + 1);
+    }
+  }
+  const genres = [...genreCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+
+  const displayList = selectedGenre === 'all'
+    ? baseList
+    : baseList.filter(m => normalizeGenre((m as any)._m3uCategory || '') === selectedGenre);
 
   return (
     <motion.div 
