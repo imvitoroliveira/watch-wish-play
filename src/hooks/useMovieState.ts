@@ -81,7 +81,7 @@ export function useMovieState() {
 
         if (m3uTitles.length > 0) {
           setHasM3U(true);
-          const map = new Map<string, { id: string, isSeries: boolean }>();
+          const map = new Map<string, { id: string, isSeries: boolean, cat: string, raw: string }>();
           const movieTitles: string[] = [];
           const seriesTitles: string[] = [];
           const categoryByTitle = new Map<string, string>(); // normalized title -> category name
@@ -96,13 +96,13 @@ export function useMovieState() {
               const normalized = normalizeTitle(name);
               const isSeries = type === '1';
               if (id && normalized) {
-                map.set(normalized, { id, isSeries });
                 // Resolve numeric ids to names via catMaps; otherwise use as-is
                 let catLabel = catId || '';
                 if (catLabel && /^\d+$/.test(catLabel)) {
                   const pool = isSeries ? catMaps.series : catMaps.vod;
                   catLabel = pool?.[catLabel] || catLabel;
                 }
+                map.set(normalized, { id, isSeries, cat: catLabel, raw: name });
                 if (catLabel) categoryByTitle.set(normalized, catLabel);
                 if (isSeries) seriesTitles.push(name);
                 else movieTitles.push(name);
@@ -113,7 +113,7 @@ export function useMovieState() {
               
               const normalized = normalizeTitle(t);
               if (normalized && !map.has(normalized)) {
-                map.set(normalized, { id: '', isSeries: false });
+                map.set(normalized, { id: '', isSeries: false, cat: '', raw: t });
                 movieTitles.push(t);
               }
             }
