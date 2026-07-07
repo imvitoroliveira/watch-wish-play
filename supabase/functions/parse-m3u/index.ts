@@ -77,6 +77,19 @@ async function processXtreamAPI(url: string, proxyRequest: Request): Promise<{ t
       } catch { return {}; }
     };
     const [vodCats, seriesCats] = await Promise.all([fetchCats("get_vod_categories"), fetchCats("get_series_categories")]);
+    console.log(`[parse-m3u] VOD categories: ${Object.keys(vodCats).length}, Series categories: ${Object.keys(seriesCats).length}`);
+
+    // Persist VOD + Series category maps so frontend can resolve ids -> names
+    try {
+      const supabaseUrl2 = Deno.env.get("SUPABASE_URL")!;
+      const supabaseServiceKey2 = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const sb2 = createClient(supabaseUrl2, supabaseServiceKey2);
+      await sb2.from("m3u_catalog").upsert({
+        id: "00000000-0000-0000-0000-000000000003",
+        titles: [JSON.stringify({ vod: vodCats, series: seriesCats })],
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e) { console.error("Failed to persist vod/series cats:", e); }
 
     // 1. VOD Streams
     const vodUrl = `${baseUrl}/player_api.php?username=${username}&password=${password}&action=get_vod_streams`;
@@ -90,7 +103,8 @@ async function processXtreamAPI(url: string, proxyRequest: Request): Promise<{ t
           if (item.name && streamId) {
             const cleaned = cleanTitle(item.name);
             if (cleaned.length > 1 && !titlesMap.has(cleaned)) {
-              const catName = vodCats[String(item.category_id)] || "";
+              const rawCatId = String(item.category_id || "");
+              const catName = vodCats[rawCatId] || rawCatId || "";
               titlesMap.set(cleaned, `${streamId}|0|${catName}`);
               movieCount++;
             }
@@ -111,7 +125,8 @@ async function processXtreamAPI(url: string, proxyRequest: Request): Promise<{ t
           if (item.name && seriesId) {
             const cleaned = cleanTitle(item.name);
             if (cleaned.length > 1) {
-              const catName = seriesCats[String(item.category_id)] || "";
+              const rawCatId = String(item.category_id || "");
+              const catName = seriesCats[rawCatId] || rawCatId || "";
               titlesMap.set(cleaned, `${seriesId}|1|${catName}`);
               seriesCount++;
             }
@@ -119,6 +134,7 @@ async function processXtreamAPI(url: string, proxyRequest: Request): Promise<{ t
         });
       }
     }
+
 
     // 3. Live Streams (Canais)
     const liveUrl = `${baseUrl}/player_api.php?username=${username}&password=${password}&action=get_live_streams`;
@@ -354,6 +370,10 @@ Deno.serve(async (req) => {
       if (url.searchParams.get("action") === "categories") {
         const { data } = await supabase.from("m3u_catalog").select("titles").eq("id", "00000000-0000-0000-0000-000000000002").maybeSingle();
         return new Response(JSON.stringify({ categories: data?.titles?.[0] ? JSON.parse(data.titles[0]) : {} }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      if (url.searchParams.get("action") === "vod_categories") {
+        const { data } = await supabase.from("m3u_catalog").select("titles").eq("id", "00000000-0000-0000-0000-000000000003").maybeSingle();
+        return new Response(JSON.stringify(data?.titles?.[0] ? JSON.parse(data.titles[0]) : { vod: {}, series: {} }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       
       const { data } = await supabase.from("m3u_catalog").select("titles, updated_at").eq("id", "00000000-0000-0000-0000-000000000001").maybeSingle();
