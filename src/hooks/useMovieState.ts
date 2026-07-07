@@ -63,28 +63,24 @@ export function useMovieState() {
           const map = new Map<string, { id: string, isSeries: boolean }>();
           const movieTitles: string[] = [];
           const seriesTitles: string[] = [];
+          const categoryByTitle = new Map<string, string>(); // normalized title -> category name
 
           for (const t of m3uTitles) {
-            // Suporte a AMBOS os formatos:
-            // Novo: "0|12345||Nome do Filme" | "1|67890||Nome da Série" | "2|11111|5|Canal"
-            // Antigo: "Nome do Filme" (sem prefixo)
             const firstPipe = t.indexOf('|');
             
             if (firstPipe > 0 && firstPipe <= 2 && ['0','1','2'].includes(t[0])) {
-              // === FORMATO NOVO: Tipo|ID|CatID|Nome ===
               const { type, id, catId, name } = parseCatalogItem(t);
-              if (type === '2') continue; // Canais ao vivo não entram no mapa de VOD
+              if (type === '2') continue;
               
               const normalized = normalizeTitle(name);
               const isSeries = type === '1';
               if (id && normalized) {
                 map.set(normalized, { id, isSeries });
+                if (catId) categoryByTitle.set(normalized, catId);
                 if (isSeries) seriesTitles.push(name);
                 else movieTitles.push(name);
               }
             } else {
-              // === FORMATO ANTIGO: Nome puro ===
-              // Canais ao vivo têm palavras-chave específicas; todo o resto é VOD
               const isLikelyLive = /\b(globo|sbt|record|band|tv|canal|sportv|premiere|espn|uhf|hbo|max)\b/i.test(t);
               if (isLikelyLive) continue;
               
@@ -104,14 +100,14 @@ export function useMovieState() {
           searchByTitles(seriesTitles, 150, 'tv')
         ]);
         
-        const foundMoviesWithNames = foundMovies.map(m => {
-          const tMatch = movieTitles.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || ''));
-          return { ...m, _exactM3uTitle: tMatch || m.title || m.name };
-        });
-        const foundSeriesWithNames = foundSeries.map(m => {
-          const tMatch = seriesTitles.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || ''));
-          return { ...m, _exactM3uTitle: tMatch || m.title || m.name };
-        });
+        const attachMeta = (m: TMDBMovie, pool: string[]) => {
+          const tMatch = pool.find(t => normalizeTitle(t) === normalizeTitle(m.title || m.name || ''));
+          const exact = tMatch || m.title || m.name || '';
+          const cat = categoryByTitle.get(normalizeTitle(exact)) || '';
+          return { ...m, _exactM3uTitle: exact, _m3uCategory: cat };
+        };
+        const foundMoviesWithNames = foundMovies.map(m => attachMeta(m, movieTitles));
+        const foundSeriesWithNames = foundSeries.map(m => attachMeta(m, seriesTitles));
         
         setM3uMovies(foundMoviesWithNames);
         setM3uSeries(foundSeriesWithNames);
