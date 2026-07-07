@@ -62,12 +62,9 @@ export function useMovieState() {
         // Fetch vod/series category id -> name map (best effort)
         let catMaps: { vod: Record<string,string>, series: Record<string,string> } = { vod: {}, series: {} };
         try {
-          const { data } = await supabase.functions.invoke('parse-m3u', { method: 'GET', body: null as any });
-          // separate call for the map endpoint
           const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-m3u?action=vod_categories`;
           const res = await fetch(url, { headers: { apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` } });
           if (res.ok) catMaps = await res.json();
-          void data;
         } catch { /* ignore */ }
 
         if (m3uTitles.length > 0) {
