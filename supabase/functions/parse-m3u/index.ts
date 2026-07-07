@@ -371,6 +371,10 @@ Deno.serve(async (req) => {
         const { data } = await supabase.from("m3u_catalog").select("titles").eq("id", "00000000-0000-0000-0000-000000000002").maybeSingle();
         return new Response(JSON.stringify({ categories: data?.titles?.[0] ? JSON.parse(data.titles[0]) : {} }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      if (url.searchParams.get("action") === "vod_categories") {
+        const { data } = await supabase.from("m3u_catalog").select("titles").eq("id", "00000000-0000-0000-0000-000000000003").maybeSingle();
+        return new Response(JSON.stringify(data?.titles?.[0] ? JSON.parse(data.titles[0]) : { vod: {}, series: {} }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
       
       const { data } = await supabase.from("m3u_catalog").select("titles, updated_at").eq("id", "00000000-0000-0000-0000-000000000001").maybeSingle();
       const titles = (data?.titles as string[]) || [];
